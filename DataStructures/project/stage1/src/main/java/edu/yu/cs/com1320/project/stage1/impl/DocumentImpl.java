@@ -14,6 +14,7 @@ public class DocumentImpl implements Document{
         this.uri = uri;
         this.binaryData = binaryData;
         this.metadata = new HashMap<>();
+        // test
     }
 
     public DocumentImpl(URI uri, String txt){
