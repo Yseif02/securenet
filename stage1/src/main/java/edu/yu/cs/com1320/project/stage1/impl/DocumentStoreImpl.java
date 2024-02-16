@@ -1,5 +1,8 @@
 package edu.yu.cs.com1320.project.stage1.impl;
 
+import edu.yu.cs.com1320.project.stage1.Document;
+import edu.yu.cs.com1320.project.stage1.DocumentStore;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -8,7 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
-public class DocumentStoreImpl implements DocumentStore{
+public class DocumentStoreImpl implements DocumentStore {
     protected HashMap<URI, Document> documentStore;
 
     public DocumentStoreImpl(){
@@ -27,7 +30,7 @@ public class DocumentStoreImpl implements DocumentStore{
      */
     @Override
     public String setMetadata(URI uri, String key, String value) {
-        if(uri == null || key == null || key.isEmpty()){
+        if(uri == null || uri.toString().isEmpty() || get(uri) == null || key == null || key.isEmpty()){
             throw new IllegalArgumentException();
         }
         Document doc = get(uri);
@@ -46,7 +49,7 @@ public class DocumentStoreImpl implements DocumentStore{
      */
     @Override
     public String getMetadata(URI uri, String key) {
-        if(uri == null || key == null || key.isEmpty() || get(uri) == null) throw new IllegalArgumentException();
+        if(uri == null || key == null || key.isEmpty() || get(uri) == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
         return get(uri).getMetadataValue(key);
     }
 
@@ -63,12 +66,12 @@ public class DocumentStoreImpl implements DocumentStore{
      */
     @Override
     public int put(InputStream input, URI uri, DocumentFormat format) throws IOException {
+        if (format == null || uri == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
         boolean docExists = false;
         int previousHashCode = 0;
         if(get(uri) != null){
             docExists = true;
             previousHashCode = get(uri).hashCode();
-            //documentStore.remove(uri);
         }
         if (input == null) {
             if (docExists) {
@@ -77,33 +80,22 @@ public class DocumentStoreImpl implements DocumentStore{
             }
             return 0;
         }
-        byte[] text = input.readAllBytes();
+
+        byte[] contents = input.readAllBytes();
+        input.close();
         BasicFileAttributes metaData = Files.readAttributes(Paths.get(uri), BasicFileAttributes.class);
         if (format == DocumentFormat.BINARY) {
-            Document document = new DocumentImpl(uri, text);
-            documentStore.put(uri, document);
+            Document document = new DocumentImpl(uri, contents);
+            this.documentStore.put(uri, document);
         } else if (format == DocumentFormat.TXT) {
-            System.out.println("1)URI: " + uri);
-            System.out.println("2)File Text: " + new String(text));
-            Document document = new DocumentImpl(uri, new String(text));
-            addAllMetaData(document, metaData);
-            documentStore.put(uri, document);
-        } else if (format == null) throw new IllegalArgumentException();
+            Document document = new DocumentImpl(uri, new String(contents));
+            this.documentStore.put(uri, document);
+        }
         return (docExists) ? previousHashCode : 0;
     }
 
-    private void addAllMetaData(Document document, BasicFileAttributes metaData) {
-        Path path = Paths.get(document.getKey());
-        document.setMetadataValue("File Name", path.getFileName().toString());
-        document.setMetadataValue("File Size", String.valueOf(metaData.size()));
-        document.setMetadataValue("Creation Time", metaData.creationTime().toString());
-        document.setMetadataValue("Is Directory", String.valueOf(metaData.isDirectory()));
-        document.setMetadataValue("Is Other", String.valueOf(metaData.isOther()));
-        document.setMetadataValue("Is Regular File", String.valueOf(metaData.isRegularFile()));
-        document.setMetadataValue("Is Symbolic Link", String.valueOf(metaData.isSymbolicLink()));
-        document.setMetadataValue("Last Access Time", metaData.lastAccessTime().toString());
-        document.setMetadataValue("Last Modified Time", metaData.lastModifiedTime().toString());
-    }
+
+
 
 
     /**
@@ -112,7 +104,7 @@ public class DocumentStoreImpl implements DocumentStore{
      */
     @Override
     public Document get(URI url) {
-        return documentStore.get(url);
+        return this.documentStore.get(url);
     }
 
     /**
@@ -121,10 +113,10 @@ public class DocumentStoreImpl implements DocumentStore{
      */
     @Override
     public boolean delete(URI url) {
-        if(documentStore.get(url) == null) {
+        if(this.documentStore.get(url) == null) {
             return false;
         }else{
-            documentStore.remove(url);
+            this.documentStore.remove(url);
             return true;
         }
     }
