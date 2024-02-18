@@ -83,7 +83,6 @@ public class DocumentStoreImpl implements DocumentStore {
 
         byte[] contents = input.readAllBytes();
         input.close();
-        BasicFileAttributes metaData = Files.readAttributes(Paths.get(uri), BasicFileAttributes.class);
         if (format == DocumentFormat.BINARY) {
             Document document = new DocumentImpl(uri, contents);
             this.documentStore.put(uri, document);
@@ -93,9 +92,6 @@ public class DocumentStoreImpl implements DocumentStore {
         }
         return (docExists) ? previousHashCode : 0;
     }
-
-
-
 
 
     /**

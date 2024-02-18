@@ -19,17 +19,14 @@ public class DocumentImpl implements Document {
         this.uri = uri;
         this.binaryData = binaryData;
         this.metadata = new HashMap<>();
-        // test
     }
 
     public DocumentImpl(URI uri, String txt){
-        if(uri == null || txt.isEmpty()) throw new IllegalArgumentException("txt = " + txt + "uri = " + uri);
+        if(uri == null || txt.isEmpty()) throw new IllegalArgumentException();
         this.uri = uri;
         this.text = txt;
         this.metadata = new HashMap<>();
     }
-
-
 
     @Override
     public int hashCode() {
@@ -38,8 +35,6 @@ public class DocumentImpl implements Document {
         result = 31 * result + Arrays.hashCode(binaryData);
         return result;
     }
-
-
 
     /**
      * @param key   key of document metadata to store a value for
