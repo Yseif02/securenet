@@ -18,8 +18,8 @@ class DocumentStoreImplTest {
     @Test
     void set_MetadataValidInputReturningNull() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
@@ -32,8 +32,8 @@ class DocumentStoreImplTest {
     @Test
     void set_MetadataValidInputReturningOldValue() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         String key = "Key";
@@ -47,13 +47,13 @@ class DocumentStoreImplTest {
     @Test
     void set_MetaDataInvalidInputThrowingException() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
-        File file2 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\anotherfile.txt");
+        File file2 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\anotherfile.txt");
         URI file2URI = file2.toURI();
         String key = "";
         String originalValue = "OGValue";
@@ -64,8 +64,8 @@ class DocumentStoreImplTest {
     @Test
     void get_MetadataNullReturn() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
@@ -75,8 +75,8 @@ class DocumentStoreImplTest {
     @Test
     void get_MetadataGoodReturn() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
@@ -86,8 +86,8 @@ class DocumentStoreImplTest {
     @Test
     void put_NewTXTDoc() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         assertEquals(0, documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT));
@@ -95,11 +95,11 @@ class DocumentStoreImplTest {
     @Test
     void put_ReplaceTXTDoc() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
-        FileInputStream fis1 = new FileInputStream(file);
-        FileInputStream fis2 = new FileInputStream(file);
-        URI file1URI = file.toURI();
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
+        FileInputStream fis1 = new FileInputStream(file1);
+        FileInputStream fis2 = new FileInputStream(file1);
+        URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
         assertEquals(documentStore.get(file1URI).hashCode(), documentStore.put(fis2, file1URI, DocumentStore.DocumentFormat.TXT));
     }
@@ -107,10 +107,10 @@ class DocumentStoreImplTest {
     @Test
     void put_nullStream() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
-        FileInputStream fis1 = new FileInputStream(file);
-        URI file1URI = file.toURI();
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
+        FileInputStream fis1 = new FileInputStream(file1);
+        URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
         assertEquals(documentStore.get(file1URI).hashCode(), documentStore.put(null, file1URI, DocumentStore.DocumentFormat.TXT));
     }
@@ -118,8 +118,8 @@ class DocumentStoreImplTest {
     @Test
     void get_GoodURI() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
@@ -130,8 +130,8 @@ class DocumentStoreImplTest {
     @Test
     void get_BadURI() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         URI file1URI = file1.toURI();
         assertNull(documentStore.get(file1URI));
     }
@@ -139,8 +139,8 @@ class DocumentStoreImplTest {
     @Test
     void delete_GoodURI() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         FileInputStream fis1 = new FileInputStream(file1);
         URI file1URI = file1.toURI();
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
@@ -150,8 +150,8 @@ class DocumentStoreImplTest {
     @Test
     void delete_InvalidURI() throws IOException {
         DocumentStore documentStore = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\My Repository\\DataStructures" +
-                "\\project\\stage1\\src\\main\\java\\edu\\yu\\cs\\com1320\\project\\stage1\\test.txt");
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
         URI file1URI = file1.toURI();
         assertFalse(documentStore.delete(file1URI));
     }

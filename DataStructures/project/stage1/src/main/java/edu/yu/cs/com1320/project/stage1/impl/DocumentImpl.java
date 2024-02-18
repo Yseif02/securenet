@@ -1,6 +1,7 @@
 package edu.yu.cs.com1320.project.stage1.impl;
 
 import edu.yu.cs.com1320.project.stage1.Document;
+import edu.yu.cs.com1320.project.stage1.DocumentStore;
 
 import java.net.URI;
 import java.util.Arrays;
@@ -105,6 +106,8 @@ public class DocumentImpl implements Document {
 
     @Override
     public boolean equals(Object object) {
-        return getClass() == object.getClass() && object.hashCode() == this.hashCode();
+        if(this == object) return true;
+        if(object == null || getClass() != object.getClass()) return false;
+        return this.hashCode() == object.hashCode();
     }
 }
