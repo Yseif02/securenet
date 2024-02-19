@@ -74,10 +74,10 @@ class DocumentImplTestWithSetUp {
     @Test
     void getDocumentBinaryData() throws IOException {
         DocumentStore store = new DocumentStoreImpl();
-        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054" +
-                "\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
-        URI file1URI = file1.toURI();
-        FileInputStream fis1 = new FileInputStream(file1);
+        File biaryFile = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054" +
+                "\\DataStructures\\project\\stage1\\src\\main\\resources\\binaryDocTest.docx");
+        URI file1URI = biaryFile.toURI();
+        FileInputStream fis1 = new FileInputStream(biaryFile);
         store.put(fis1, file1URI, DocumentStore.DocumentFormat.BINARY);
         assertNotNull(store.get(file1URI).getDocumentBinaryData());
     }
