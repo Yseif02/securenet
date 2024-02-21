@@ -13,7 +13,7 @@ public class DocumentStoreImpl implements DocumentStore {
 
     public DocumentStoreImpl(){
         this.documentStore = new HashTableImpl<>();
-    }
+    } 
 
 
     /**
