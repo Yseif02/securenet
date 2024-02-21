@@ -19,7 +19,6 @@ public class HashTableImpl<Key, Value> implements HashTable {
         private Key key;
         private Value value;
         private Entry<?, ?> next;
-        private int numberOfEntries;
 
         private Entry(Key k, Value v){
             if(k == null){
@@ -27,7 +26,6 @@ public class HashTableImpl<Key, Value> implements HashTable {
             }
             this.key = k;
             this.value = v;
-            this.numberOfEntries = 0;
         }
         private Key getKey(){
             return this.key;
@@ -145,9 +143,9 @@ public class HashTableImpl<Key, Value> implements HashTable {
 
     @Override
     public boolean containsKey(Object object) {
+        if(object == null) throw new NullPointerException();
         int hashCodeForObject = hashFunction(object);
         Entry<?,?> entryToSearch = this.table[hashCodeForObject];
-        boolean found = false;
         while(entryToSearch.next != null){
             if(entryToSearch.getKey().equals(object)) return true;
             entryToSearch = entryToSearch.next;
@@ -158,16 +156,16 @@ public class HashTableImpl<Key, Value> implements HashTable {
     @Override
     public Set keySet() {
         HashSet<Key> keySet = new HashSet<>();
-        for(int i = 0; i < this.table.length; i++){
-            if(this.table[i] == null){
+        for (Entry<?, ?> entry : this.table) {
+            if (entry == null) {
                 continue;
             }
-            Entry<?,?> currentEntry = this.table[i];
-            if(currentEntry != null && currentEntry.next == null){
+            Entry<?, ?> currentEntry = entry;
+            if (currentEntry.next == null) {
                 Key keyToAdd = currentEntry.getKey();
                 keySet.add(keyToAdd);
             }
-            while (currentEntry.next != null){
+            while (currentEntry.next != null) {
                 Key keyToAdd = currentEntry.getKey();
                 keySet.add(keyToAdd);
                 currentEntry = currentEntry.next;
@@ -181,16 +179,16 @@ public class HashTableImpl<Key, Value> implements HashTable {
     @Override
     public Collection values() {
         HashSet<Value> values = new HashSet<>();
-        for(int i = 0; i < this.table.length; i++){
-            if(this.table[i] == null){
+        for (Entry<?, ?> entry : this.table) {
+            if (entry == null) {
                 continue;
             }
-            Entry<?,?> currentEntry = this.table[i];
-            if(currentEntry != null && currentEntry.next == null){
+            Entry<?, ?> currentEntry = entry;
+            if (currentEntry.next == null) {
                 Value valueToAdd = currentEntry.getValue();
                 values.add(valueToAdd);
             }
-            while (currentEntry.next != null){
+            while (currentEntry.next != null) {
                 Value valueToAdd = currentEntry.getValue();
                 values.add(valueToAdd);
                 currentEntry = currentEntry.next;
