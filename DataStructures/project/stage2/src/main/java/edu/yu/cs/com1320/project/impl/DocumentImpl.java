@@ -44,7 +44,7 @@ public class DocumentImpl implements Document {
     @Override
     public String setMetadataValue(String key, String value) {
         if(key == null || key.isEmpty()) throw new IllegalArgumentException();
-        String oldValue = (String) this.metadata.get(key);
+        String oldValue = this.metadata.get(key);
         this.metadata.put(key, value);
         return oldValue;
     }
@@ -56,7 +56,7 @@ public class DocumentImpl implements Document {
     @Override
     public String getMetadataValue(String key) {
         if(key == null || key.isEmpty()) throw new IllegalArgumentException();
-        return (String) metadata.get(key);
+        return metadata.get(key);
     }
 
     /**
@@ -65,9 +65,9 @@ public class DocumentImpl implements Document {
     @Override
     public HashTable<String, String> getMetadata() {
         HashTable<String, String> tableToReturn = new HashTableImpl<>();
-        for(Object key:this.metadata.keySet()) {
-            String valueToAddToTable = getMetadataValue((String) key);
-            tableToReturn.put((String) key, valueToAddToTable);
+        for(String key:this.metadata.keySet()) {
+            String valueToAddToTable = getMetadataValue(key);
+            tableToReturn.put(key, valueToAddToTable);
         }
         return tableToReturn;
     }
