@@ -1,4 +1,4 @@
-package edu.yu.cs.com1320.project.impl;
+package edu.yu.cs.com1320.project.stage2.impl;
 
 import edu.yu.cs.com1320.project.Document;
 import edu.yu.cs.com1320.project.DocumentStore;
@@ -13,7 +13,7 @@ public class DocumentStoreImpl implements DocumentStore {
 
     public DocumentStoreImpl(){
         this.documentStore = new HashTableImpl<>();
-    } 
+    }
 
 
     /**

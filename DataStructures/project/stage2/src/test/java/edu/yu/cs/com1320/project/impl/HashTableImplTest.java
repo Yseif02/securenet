@@ -1,5 +1,6 @@
 package edu.yu.cs.com1320.project.impl;
 
+import edu.yu.cs.com1320.project.stage2.impl.HashTableImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -71,7 +72,7 @@ class HashTableImplTest {
     void keySet() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
         HashSet<Integer> setToCompare = new HashSet<>();
-        for(int i = 0; i < 10; i++){
+        for(int i = 0; i < 1000; i++){
             setToCompare.add(i);
             integerHashTable.put(i, i);
         }
