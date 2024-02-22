@@ -56,7 +56,7 @@ public class DocumentImpl implements Document {
     @Override
     public String getMetadataValue(String key) {
         if(key == null || key.isEmpty()) throw new IllegalArgumentException();
-        return metadata.get(key);
+        return this.metadata.get(key);
     }
 
     /**

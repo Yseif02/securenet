@@ -7,11 +7,18 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
+/**
+ * Instances of HashTable should be constructed with two type parameters, one for the type of the keys in the table and one for the type of the values
+ *
+ * @param <Key>
+ * @param <Value>
+ */
+
+public class HashTableImplOld<Key, Value> implements HashTable {
     private class Entry<K, V>{
-        private final Key key;
+        private Key key;
         private Value value;
-        private Entry<?,?> next;
+        private Entry<?, ?> next;
 
         private Entry(Key k, Value v){
             if(k == null){
@@ -28,7 +35,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         }
     }
     private final Entry<?,?>[] table;
-    public HashTableImpl(){
+    public HashTableImplOld(){
         this.table = new Entry[5];
     }
 
@@ -41,15 +48,15 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
      * @return the value that is stored in the HashTable for k, or null if there is no such key in the table
      */
     @Override
-    public Value get(Key k) {
+    public Object get(Object k) {
         int hashCodeForObject = hashFunction(k);
         Entry<?, ?> entryToSearch = this.table[hashCodeForObject];
         if(entryToSearch == null) return null;
-        while (entryToSearch.next != null){
-            if (entryToSearch.getKey().equals(k)) return entryToSearch.getValue();
+        while(entryToSearch.next != null){
+            if(entryToSearch.getKey().equals(k)) return entryToSearch.getValue();
             entryToSearch = entryToSearch.next;
         }
-        if(entryToSearch.getKey().equals(k)) return entryToSearch.getValue();
+        if(entryToSearch.getValue().equals(k)) return entryToSearch.getValue();
         return null;
     }
 
@@ -60,18 +67,18 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
      * @return if the key was already present in the HashTable, return the previous value stored for the key. If the key was not already present, return null.
      */
     @Override
-    public Value put(Key k, Value v) {
+    public Object put(Object k, Object v) {
         if(v == null) return delete(k);
         int hashCodeForObject = hashFunction(k);
         Entry<?, ?> old = this.table[hashCodeForObject];
         if(old == null){
-            this.table[hashCodeForObject] = new Entry<>(k,v);
+            this.table[hashCodeForObject] = new Entry<>((Key) k,(Value) v);
             return null;
         }
         while (old.next != null){
             if(old.getKey().equals(k)){
-                Value valueToReturn = old.getValue();
-                old.value = v;
+                Object valueToReturn = old.getValue();
+                old.value = (Value) v;
                 return valueToReturn;
             }
             if (old.next == null) {
@@ -80,66 +87,74 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
             old = old.next;
         }
         if(old.getKey() == k){
-            Value valueToReturn = old.getValue();
-            old.value = v;
+            Object valueToReturn = old.getValue();
+            old.value = (Value) v;
             return valueToReturn;
         }
-        old.next = new Entry<>(k,v);
+        old.next = new Entry<Object, Object>((Key) k,(Value) v);
         return null;
     }
 
-    private Value delete(Key key){
+    private Object delete(Object key){
         if(get(key) == null) return null;
         int hashCodeForObject = hashFunction(key);
         Entry<?, ?> entryToSearch = this.table[hashCodeForObject];
-        Entry<?,?> entryToReturn;
+        Entry<?,?> entryToReturn = null;
         if(entryToSearch.getKey().equals(key)){
             if(entryToSearch.next == null){
                 entryToReturn = entryToSearch;
                 table[hashCodeForObject] = null;
-                return entryToReturn.getValue();
+                return entryToReturn;
             }
             entryToReturn = entryToSearch;
             table[hashCodeForObject] = entryToSearch.next;
             entryToSearch.next = null;
-            return entryToReturn.getValue();
+            return entryToReturn;
         }
         Entry<?,?> previous = entryToSearch;
         Entry<?,?> current = entryToSearch.next;
-        while (current != null){
-            if(current.getKey().equals(key)){
-                previous.next = current.next;
-                current.next = null;
-                return current.getValue();
+            while (current != null){
+                if(current.getKey().equals(key)){
+                    previous.next = current.next;
+                    current.next = null;
+                    return current;
+                }
+                previous = current;
+                current = current.next;
             }
-            previous = current;
-            current = current.next;
-        }
         return null;
     }
-    /**
-     * @param key the key whose presence in the hashtable we are inquiring about
-     * @return true if the given key is present in the hashtable as a key, false if not
-     * @throws NullPointerException if the specified key is null
-     */
-    @Override
-    public boolean containsKey(Key key) {
-        if(key == null) throw new NullPointerException();
+
+    private int listSize(Object key){
         int hashCodeForObject = hashFunction(key);
-        Entry<?,?> entryToSearch = this.table[hashCodeForObject];
-        while(entryToSearch.next != null){
-            if(entryToSearch.getKey().equals(key)) return true;
+        Entry<?, ?> entryToSearch = this.table[hashCodeForObject];
+        int counter = 0;
+        if(entryToSearch == null) return counter;
+        if(entryToSearch.next == null) return 1;
+        counter++;
+        while (entryToSearch.next != null){
             entryToSearch = entryToSearch.next;
+            counter++;
         }
-        return entryToSearch.getKey().equals(key);
+
+        System.out.println(hashCodeForObject + " " + counter);
+        return counter;
     }
 
-    /**
-     * @return an unmodifiable set of all the keys in this HashTable
-     * @see Collections#unmodifiableSet(Set)
-     */
     @Override
-    public Set<Key> keySet() {
+    public boolean containsKey(Object object) {
+        if(object == null) throw new NullPointerException();
+        int hashCodeForObject = hashFunction(object);
+        Entry<?,?> entryToSearch = this.table[hashCodeForObject];
+        while(entryToSearch.next != null){
+            if(entryToSearch.getKey().equals(object)) return true;
+            entryToSearch = entryToSearch.next;
+        }
+        return entryToSearch.getKey().equals(object);
+    }
+
+    @Override
+    public Set keySet() {
         HashSet<Key> keySet = new HashSet<>();
         for (Entry<?, ?> entry : this.table) {
             if (entry == null) {
@@ -161,12 +176,8 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         return Collections.unmodifiableSet(keySet);
     }
 
-    /**
-     * @return an unmodifiable collection of all the values in this HashTable
-     * @see Collections#unmodifiableCollection(Collection)
-     */
     @Override
-    public Collection<Value> values() {
+    public Collection values() {
         HashSet<Value> values = new HashSet<>();
         for (Entry<?, ?> entry : this.table) {
             if (entry == null) {
@@ -188,9 +199,6 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         return Collections.unmodifiableSet(values);
     }
 
-    /**
-     * @return how many entries there currently are in the HashTable
-     */
     @Override
     public int size() {
         return keySet().size();
