@@ -69,6 +69,8 @@ public class Main {
         System.out.println((documentStore.put(fis10, URITen, DocumentStore.DocumentFormat.TXT)));
         System.out.println((documentStore.put(fis11, URIEleven, DocumentStore.DocumentFormat.TXT)));
         System.out.println((documentStore.put(fis12, URITwelve, DocumentStore.DocumentFormat.TXT)));
+
+        documentStore.setMetadata(URIOne, "key", "value");
         System.out.println("Done");
     }
 }

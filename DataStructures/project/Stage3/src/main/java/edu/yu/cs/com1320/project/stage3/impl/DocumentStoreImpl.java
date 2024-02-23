@@ -1,21 +1,13 @@
-package edu.yu.cs.com1320.project.stage2.impl;
+package edu.yu.cs.com1320.project.stage3.impl;
 
-import edu.yu.cs.com1320.project.Document;
-import edu.yu.cs.com1320.project.DocumentStore;
+import edu.yu.cs.com1320.project.stage3.Document;
+import edu.yu.cs.com1320.project.stage3.DocumentStore;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 
-
 public class DocumentStoreImpl implements DocumentStore {
-    protected HashTableImpl<URI, Document> documentStore;
-
-    public DocumentStoreImpl(){
-        this.documentStore = new HashTableImpl<>();
-    }
-
-
     /**
      * set the given key-value metadata pair for the document at the given uri
      *
@@ -27,13 +19,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public String setMetadata(URI uri, String key, String value) {
-        if(uri == null || uri.toString().isEmpty() || get(uri) == null || key == null || key.isEmpty()){
-            throw new IllegalArgumentException();
-        }
-        Document doc = get(uri);
-        String oldValue = doc.getMetadataValue(key);
-        doc.setMetadataValue(key, value);
-        return oldValue;
+        return null;
     }
 
     /**
@@ -46,8 +32,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public String getMetadata(URI uri, String key) {
-        if(uri == null || key == null || key.isEmpty() || get(uri) == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
-        return get(uri).getMetadataValue(key);
+        return null;
     }
 
     /**
@@ -60,31 +45,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public int put(InputStream input, URI url, DocumentFormat format) throws IOException {
-        if (format == null || url == null || url.toString().isEmpty()) throw new IllegalArgumentException();
-        boolean docExists = false;
-        int previousHashCode = 0;
-        if(get(url) != null){
-            docExists = true;
-            previousHashCode = get(url).hashCode();
-        }
-        if (input == null) {
-            if (docExists) {
-                delete(url);
-                return previousHashCode;
-            }
-            return 0;
-        }
-
-        byte[] contents = input.readAllBytes();
-        input.close();
-        if (format == DocumentFormat.BINARY) {
-            Document document = new DocumentImpl(url, contents);
-            this.documentStore.put(url, document);
-        } else if (format == DocumentFormat.TXT) {
-            Document document = new DocumentImpl(url, new String(contents));
-            this.documentStore.put(url, document);
-        }
-        return (docExists) ? previousHashCode : 0;
+        return 0;
     }
 
     /**
@@ -93,7 +54,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Document get(URI url) {
-        return this.documentStore.get(url);
+        return null;
     }
 
     /**
@@ -102,11 +63,27 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
-        if(this.documentStore.get(url) == null) {
-            return false;
-        }else{
-            this.documentStore.put(url, null);
-            return true;
-        }
+        return false;
+    }
+
+    /**
+     * undo the last put or delete command
+     *
+     * @throws IllegalStateException if there are no actions to be undone, i.e. the command stack is empty
+     */
+    @Override
+    public void undo() throws IllegalStateException {
+
+    }
+
+    /**
+     * undo the last put or delete that was done with the given URI as its key
+     *
+     * @param url
+     * @throws IllegalStateException if there are no actions on the command stack for the given URI
+     */
+    @Override
+    public void undo(URI url) throws IllegalStateException {
+
     }
 }
