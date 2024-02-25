@@ -1,10 +1,12 @@
 package edu.yu.cs.com1320.project.impl;
 
-import edu.yu.cs.com1320.project.stage2.impl.HashTableImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -82,22 +84,24 @@ class HashTableImplTest {
     @Test
     void values() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
-        HashSet<Integer> setToCompare = new HashSet<>();
+        List<Integer> listToCompare = new LinkedList<>();
         for(int i = 0; i < 10; i++){
-            setToCompare.add(i);
+            listToCompare.add(i);
+            listToCompare.add(i);
             integerHashTable.put(i, i);
+            integerHashTable.put(i + 10, i);
         }
-        assertEquals(setToCompare, integerHashTable.values());
+        assertEquals(listToCompare, integerHashTable.values());
     }
 
     @Test
     void size() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
-        HashSet<Integer> setToCompare = new HashSet<>();
+        List<Integer> listToCompare = new ArrayList<>();
         for(int i = 0; i < 10; i++){
-            setToCompare.add(i);
+            listToCompare.add(i);
             integerHashTable.put(i, i);
         }
-        assertEquals(setToCompare.size(), integerHashTable.size());
+        assertEquals(listToCompare.size(), integerHashTable.size());
     }
 }

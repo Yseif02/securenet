@@ -1,11 +1,8 @@
-package edu.yu.cs.com1320.project.stage2.impl;
+package edu.yu.cs.com1320.project.impl;
 
 import edu.yu.cs.com1320.project.HashTable;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
     private class Entry<K, V>{
@@ -167,7 +164,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
      */
     @Override
     public Collection<Value> values() {
-        HashSet<Value> values = new HashSet<>();
+        List<Value> values = new ArrayList<>();
         for (Entry<?, ?> entry : this.table) {
             if (entry == null) {
                 continue;
@@ -176,6 +173,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
             if (currentEntry.next == null) {
                 Value valueToAdd = currentEntry.getValue();
                 values.add(valueToAdd);
+                continue;
             }
             while (currentEntry.next != null) {
                 Value valueToAdd = currentEntry.getValue();
@@ -185,7 +183,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
             Value valueToAdd = currentEntry.getValue();
             values.add(valueToAdd);
         }
-        return Collections.unmodifiableSet(values);
+        return Collections.unmodifiableList(values);
     }
 
     /**
