@@ -1,6 +1,6 @@
 package edu.yu.cs.com1320.project.impl;
 
-import edu.yu.cs.com1320.project.DocumentStore;
+import edu.yu.cs.com1320.project.stage2.DocumentStore;
 import edu.yu.cs.com1320.project.stage2.impl.DocumentStoreImpl;
 
 import java.io.*;
