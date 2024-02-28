@@ -7,7 +7,7 @@ import java.util.Iterator;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class StackImpl<T> implements Stack<T>, Iterable<T> {
+public class StackImpl<T> implements Stack<T>{
     private T[] stack;
     private int size;
 
@@ -78,30 +78,4 @@ public class StackImpl<T> implements Stack<T>, Iterable<T> {
         return counter;
     }
 
-    /**
-     * Returns an iterator over the elements in the stack.
-     *
-     * @return an iterator
-     */
-    @Override
-    public Iterator<T> iterator() {
-        return new StackIterator();
-    }
-
-    private class StackIterator implements Iterator<T> {
-        private int index;
-
-        @Override
-        public boolean hasNext() {
-            return index < size;
-        }
-
-        @Override
-        public T next() {
-            if (!hasNext()) {
-                throw new IllegalStateException("No more elements in the stack");
-            }
-            return stack[index++];
-        }
-    }
 }
