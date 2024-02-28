@@ -102,16 +102,33 @@ public class DocumentStoreImpl implements DocumentStore {
             previousContentsInBytes = null;
             docExists = false;
         }
-        if (input == null) {
-            if (docExists) {
-                delete(url);
-                return previousHashCode;
-            }
-            return 0;
-        }
+        if (input == null) return handleNullInput(url, docExists, previousHashCode);
         boolean documentInBytes;
         Document document;
         byte[] contents = input.readAllBytes();
+        documentInBytes = createAndAddDocument(url, format, contents);
+        Consumer<URI> undo = getUndoConsumer(url, docExists, documentInBytes, previousContentsInBytes, previousContentsInString);
+        this.commandStack.push(new Command(url, undo));
+        return (docExists) ? previousHashCode : 0;
+    }
+
+    private Consumer<URI> getUndoConsumer(URI url, boolean docExists, boolean documentInBytes, byte[] previousContentsInBytes, String previousContentsInString) {
+        return HashTableImpl -> {
+    if(docExists && documentInBytes){
+        this.documentStore.put(url, new DocumentImpl(url, previousContentsInBytes));
+        this.commandStack.pop();
+    }else if(docExists){
+        this.documentStore.put(url, new DocumentImpl(url, previousContentsInString));
+        this.commandStack.pop();
+    }else{
+        this.documentStore.put(url, null);
+    }
+};
+    }
+
+    private boolean createAndAddDocument(URI url, DocumentFormat format, byte[] contents) {
+        boolean documentInBytes;
+        Document document;
         if (format == DocumentFormat.BINARY) {
             documentInBytes = true;
             document = new DocumentImpl(url, contents);
@@ -121,20 +138,15 @@ public class DocumentStoreImpl implements DocumentStore {
             document = new DocumentImpl(url, new String(contents));
             this.documentStore.put(url, document);
         }
-        Consumer<URI> undo =
-                HashTableImpl -> {
-            if(docExists && documentInBytes){
-                this.documentStore.put(url, new DocumentImpl(url, previousContentsInBytes));
-                this.commandStack.pop();
-            }else if(docExists){
-                this.documentStore.put(url, new DocumentImpl(url, previousContentsInString));
-                this.commandStack.pop();
-            }else{
-                this.documentStore.put(url, null);
-            }
-        };
-        this.commandStack.push(new Command(url, undo));
-        return (docExists) ? previousHashCode : 0;
+        return documentInBytes;
+    }
+
+    private int handleNullInput(URI url, boolean docExists, int previousHashCode) {
+        if (docExists) {
+            delete(url);
+            return previousHashCode;
+        }
+        return 0;
     }
 
     /**
