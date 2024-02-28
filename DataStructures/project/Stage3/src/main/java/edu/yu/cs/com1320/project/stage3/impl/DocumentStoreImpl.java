@@ -1,13 +1,27 @@
 package edu.yu.cs.com1320.project.stage3.impl;
 
+
+
+import edu.yu.cs.com1320.project.HashTable;
+import edu.yu.cs.com1320.project.Stack;
 import edu.yu.cs.com1320.project.stage3.Document;
 import edu.yu.cs.com1320.project.stage3.DocumentStore;
+import edu.yu.cs.com1320.project.undo.Command;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.function.Consumer;
 
 public class DocumentStoreImpl implements DocumentStore {
+    private StackImpl<Command> commandStack;
+    protected HashTableImpl<URI, Document> documentStore;
+
+
+    public DocumentStoreImpl(){
+        this.commandStack = new StackImpl<>();
+        this.documentStore = new HashTableImpl<>();
+    }
     /**
      * set the given key-value metadata pair for the document at the given uri
      *
@@ -19,7 +33,29 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public String setMetadata(URI uri, String key, String value) {
-        return null;
+        if(uri == null || uri.toString().isEmpty() || get(uri) == null || key == null || key.isEmpty()){
+            throw new IllegalArgumentException();
+        }
+        String oldKey;
+        String oldValue;
+        if(getMetadata(uri, key) == null){
+            oldKey = null;
+        } else {
+            oldKey = key;
+        }
+        Document doc = get(uri);
+        oldValue = doc.getMetadataValue(key);
+        doc.setMetadataValue(key, value);
+        Consumer<URI> undo =
+                HashTableImpl -> {
+            if(oldKey == null){
+                doc.setMetadataValue(key, null);
+            }else{
+                doc.setMetadataValue(key, oldValue);
+            }
+                };
+        this.commandStack.push(new Command(uri, undo));
+        return oldValue;
     }
 
     /**
@@ -32,7 +68,8 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public String getMetadata(URI uri, String key) {
-        return null;
+        if(uri == null || key == null || key.isEmpty() || get(uri) == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
+        return get(uri).getMetadataValue(key);
     }
 
     /**
@@ -45,7 +82,59 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public int put(InputStream input, URI url, DocumentFormat format) throws IOException {
-        return 0;
+        if (format == null || url == null || url.toString().isEmpty()) throw new IllegalArgumentException();
+        boolean docExists;
+        int previousHashCode = 0;
+        byte[] previousContentsInBytes;
+        String previousContentsInString;
+        if(get(url) != null){
+            docExists = true;
+            previousHashCode = get(url).hashCode();
+            if(get(url).getDocumentTxt() == null){
+                previousContentsInString = null;
+                previousContentsInBytes = get(url).getDocumentBinaryData();
+            }else {
+                previousContentsInBytes = null;
+                previousContentsInString = get(url).getDocumentTxt();
+            }
+        } else {
+            previousContentsInString = null;
+            previousContentsInBytes = null;
+            docExists = false;
+        }
+        if (input == null) {
+            if (docExists) {
+                delete(url);
+                return previousHashCode;
+            }
+            return 0;
+        }
+        boolean documentInBytes;
+        Document document;
+        byte[] contents = input.readAllBytes();
+        if (format == DocumentFormat.BINARY) {
+            documentInBytes = true;
+            document = new DocumentImpl(url, contents);
+            this.documentStore.put(url, document);
+        } else {
+            documentInBytes = false;
+            document = new DocumentImpl(url, new String(contents));
+            this.documentStore.put(url, document);
+        }
+        Consumer<URI> undo =
+                HashTableImpl -> {
+            if(docExists && documentInBytes){
+                this.documentStore.put(url, new DocumentImpl(url, previousContentsInBytes));
+                this.commandStack.pop();
+            }else if(docExists){
+                this.documentStore.put(url, new DocumentImpl(url, previousContentsInString));
+                this.commandStack.pop();
+            }else{
+                this.documentStore.put(url, null);
+            }
+        };
+        this.commandStack.push(new Command(url, undo));
+        return (docExists) ? previousHashCode : 0;
     }
 
     /**
@@ -54,7 +143,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Document get(URI url) {
-        return null;
+        return this.documentStore.get(url);
     }
 
     /**
@@ -63,7 +152,31 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
-        return false;
+        if(this.documentStore.get(url) == null) {
+            return false;
+        }else{
+            Document deletedDocument = this.documentStore.get(url);
+            this.documentStore.put(url, null);
+            Consumer<URI> undo =
+                    HashTableImpl -> {
+                    if(deletedDocument.getDocumentTxt() == null){
+                        this.documentStore.put(url ,new DocumentImpl(url, deletedDocument.getDocumentBinaryData()));
+                        HashTable<String, String> deletedMetaData = deletedDocument.getMetadata();
+                        for (String key : deletedMetaData.keySet()){
+                            documentStore.get(url).setMetadataValue(key, deletedDocument.getMetadataValue(key));
+                        }
+                    }else{
+                        this.documentStore.put(url ,new DocumentImpl(url, deletedDocument.getDocumentTxt()));
+                        HashTable<String, String> deletedMetaData = deletedDocument.getMetadata();
+                        for (String key : deletedMetaData.keySet()){
+                            documentStore.get(url).setMetadataValue(key, deletedDocument.getMetadataValue(key));
+                        }
+                    }
+                    this.commandStack.pop();
+                    };
+            this.commandStack.push(new Command(url, undo));
+            return true;
+        }
     }
 
     /**
@@ -73,7 +186,9 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo() throws IllegalStateException {
-
+        if(this.commandStack.size() == 0) throw new IllegalStateException("Stack is empty");
+        Command commandToUndo = this.commandStack.pop();
+        commandToUndo.undo();
     }
 
     /**
@@ -84,6 +199,19 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo(URI url) throws IllegalStateException {
-
+        if(this.commandStack.size() == 0) throw new IllegalStateException("Stack is empty");
+        Stack<Command> tempStack = new StackImpl<>();
+        while (commandStack.size() > 0){
+            Command commandToCheck = this.commandStack.peek();
+            if(commandToCheck.getUri().equals(url)){
+                this.commandStack.pop().undo();
+                break;
+            } else {
+                tempStack.push(this.commandStack.pop());
+            }
+        }
+        while (tempStack.size() > 0){
+            this.commandStack.push(tempStack.pop());
+        }
     }
 }

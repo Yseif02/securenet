@@ -3,30 +3,36 @@ package edu.yu.cs.com1320.project.stage3.impl;
 import edu.yu.cs.com1320.project.Stack;
 
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
-public class StackImpl<T> implements Stack<T> {
+public class StackImpl<T> implements Stack<T>, Iterable<T> {
     private T[] stack;
     private int size;
 
-    public StackImpl(){
+    public StackImpl() {
         this.stack = (T[]) new Object[5];
-        this.size = size();
+        this.size = 0;
     }
+
     /**
      * @param element object to add to the Stack
      */
     @Override
     public void push(T element) {
-        if(size() == this.stack.length) doubleArray();
+        if (size() == this.stack.length) doubleArray();
         for (int i = 0; i < this.stack.length; i++) {
-            if(this.stack[i] == null) this.stack[i] = element;
-            size++;
+            if (this.stack[i] == null) {
+                this.stack[i] = element;
+                size++;
+                return;
+            }
         }
     }
 
     private void doubleArray() {
-        T[] newStack = Arrays.copyOf(this.stack, this.size * 2);
-        this.stack = newStack;
+        this.stack = Arrays.copyOf(this.stack, this.size * 2);
     }
 
     /**
@@ -36,8 +42,8 @@ public class StackImpl<T> implements Stack<T> {
      */
     @Override
     public T pop() {
-        for (int i = this.stack.length -1; i >= 0; i--) {
-            if(this.stack[i] != null){
+        for (int i = this.stack.length - 1; i >= 0; i--) {
+            if (this.stack[i] != null) {
                 T valueToReturn = this.stack[i];
                 this.stack[i] = null;
                 size--;
@@ -52,8 +58,8 @@ public class StackImpl<T> implements Stack<T> {
      */
     @Override
     public T peek() {
-        for (int i = this.stack.length -1; i >= 0; i--) {
-            if(this.stack[i] != null){
+        for (int i = this.stack.length - 1; i >= 0; i--) {
+            if (this.stack[i] != null) {
                 return this.stack[i];
             }
         }
@@ -66,9 +72,36 @@ public class StackImpl<T> implements Stack<T> {
     @Override
     public int size() {
         int counter = 0;
-        for (T element : this.stack){
-            if(element != null) counter++;
+        for (T element : this.stack) {
+            if (element != null) counter++;
         }
         return counter;
+    }
+
+    /**
+     * Returns an iterator over the elements in the stack.
+     *
+     * @return an iterator
+     */
+    @Override
+    public Iterator<T> iterator() {
+        return new StackIterator();
+    }
+
+    private class StackIterator implements Iterator<T> {
+        private int index;
+
+        @Override
+        public boolean hasNext() {
+            return index < size;
+        }
+
+        @Override
+        public T next() {
+            if (!hasNext()) {
+                throw new IllegalStateException("No more elements in the stack");
+            }
+            return stack[index++];
+        }
     }
 }

@@ -4,23 +4,25 @@ import edu.yu.cs.com1320.project.HashTable;
 
 import java.util.*;
 
-public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
-    private class Entry<K, V>{
+public class HashTableImpl<Key, Value> implements HashTable<Key, Value>{
+    private class Entry<K, V> {
         private final Key key;
         private Value value;
-        private Entry<?,?> next;
+        private Entry<?, ?> next;
 
-        private Entry(Key k, Value v){
-            if(k == null){
+        private Entry(Key k, Value v) {
+            if (k == null) {
                 throw new IllegalArgumentException();
             }
             this.key = k;
             this.value = v;
         }
-        private Key getKey(){
+
+        private Key getKey() {
             return this.key;
         }
-        private Value getValue(){
+
+        private Value getValue() {
             return this.value;
         }
     }
@@ -56,11 +58,14 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
      *          To delete an entry, put a null value.
      * @return if the key was already present in the HashTable, return the previous value stored for the key. If the key was not already present, return null.
      */
+
     @Override
     public Value put(Key k, Value v) {
         if(v == null) return delete(k);
         int hashCodeForObject = hashFunction(k);
+
         Entry<?, ?> old = this.table[hashCodeForObject];
+
         if(old == null){
             this.table[hashCodeForObject] = new Entry<>(k,v);
             return null;
@@ -193,4 +198,5 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
     public int size() {
         return keySet().size();
     }
+
 }

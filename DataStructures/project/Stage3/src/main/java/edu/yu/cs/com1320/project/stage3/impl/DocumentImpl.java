@@ -1,11 +1,43 @@
 package edu.yu.cs.com1320.project.stage3.impl;
 
-import edu.yu.cs.com1320.project.HashTable;
 import edu.yu.cs.com1320.project.stage3.Document;
+import edu.yu.cs.com1320.project.HashTable;
+import edu.yu.cs.com1320.project.undo.Command;
+
 
 import java.net.URI;
+import java.util.Arrays;
+
 
 public class DocumentImpl implements Document {
+    private final URI uri;
+    private String text;
+    private byte[] binaryData;
+    private HashTableImpl<String,String> metadata;
+
+    public DocumentImpl(URI uri, byte[] binaryData){
+        if(uri == null || binaryData == null) throw new IllegalArgumentException();
+        this.uri = uri;
+        this.binaryData = binaryData;
+        this.metadata = new HashTableImpl<>();
+    }
+
+    public DocumentImpl(URI uri, String txt){
+        if(uri == null || txt.isEmpty()) throw new IllegalArgumentException();
+        this.uri = uri;
+        this.text = txt;
+        this.metadata = new HashTableImpl<>();
+    }
+
+    @Override
+    public int hashCode() {
+        int result = uri.hashCode();
+        result = 31 * result + (text != null ? text.hashCode() : 0);
+        result = 31 * result + Arrays.hashCode(binaryData);
+        return Math.abs(result);
+    }
+
+
     /**
      * @param key   key of document metadata to store a value for
      * @param value value to store
@@ -13,7 +45,10 @@ public class DocumentImpl implements Document {
      */
     @Override
     public String setMetadataValue(String key, String value) {
-        return null;
+        if(key == null || key.isEmpty()) throw new IllegalArgumentException();
+        String oldValue = this.metadata.get(key);
+        this.metadata.put(key, value);
+        return oldValue;
     }
 
     /**
@@ -22,7 +57,8 @@ public class DocumentImpl implements Document {
      */
     @Override
     public String getMetadataValue(String key) {
-        return null;
+        if(key == null || key.isEmpty()) throw new IllegalArgumentException();
+        return this.metadata.get(key);
     }
 
     /**
@@ -30,7 +66,12 @@ public class DocumentImpl implements Document {
      */
     @Override
     public HashTable<String, String> getMetadata() {
-        return null;
+        HashTable<String, String> tableToReturn = new HashTableImpl<>();
+        for(String key:this.metadata.keySet()) {
+            String valueToAddToTable = getMetadataValue(key);
+            tableToReturn.put(key, valueToAddToTable);
+        }
+        return tableToReturn;
     }
 
     /**
@@ -38,7 +79,7 @@ public class DocumentImpl implements Document {
      */
     @Override
     public String getDocumentTxt() {
-        return null;
+        return this.text;
     }
 
     /**
@@ -46,7 +87,7 @@ public class DocumentImpl implements Document {
      */
     @Override
     public byte[] getDocumentBinaryData() {
-        return new byte[0];
+        return this.binaryData;
     }
 
     /**
@@ -54,6 +95,13 @@ public class DocumentImpl implements Document {
      */
     @Override
     public URI getKey() {
-        return null;
+        return this.uri;
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        if(this == object) return true;
+        if(object == null || getClass() != object.getClass()) return false;
+        return this.hashCode() == object.hashCode();
     }
 }

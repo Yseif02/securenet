@@ -11,7 +11,12 @@ import java.net.URI;
 
 public class Main {
     public static void main(String[] args) throws IOException{
-        DocumentStore documentStore = new DocumentStoreImpl();
+        test2();
+
+        System.out.println("Done");
+    }
+    private static final DocumentStore documentStore = new DocumentStoreImpl();
+    static void test1() throws IOException {
         File one = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage2\\src\\main\\resources\\one");
         File two = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage2\\src\\main\\resources\\two");
         File three = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage2\\src\\main\\resources\\three");
@@ -71,6 +76,12 @@ public class Main {
         System.out.println((documentStore.put(fis12, URITwelve, DocumentStore.DocumentFormat.TXT)));
 
         documentStore.setMetadata(URIOne, "key", "value");
-        System.out.println("Done");
+    }
+    static void test2(){
+        HashTableImpl<Integer, Integer> table = new HashTableImpl<>();
+        table.put(1,1);
+        table.put(2,2);
+        table.put(3,3);
+        table.put(4,4);
     }
 }
