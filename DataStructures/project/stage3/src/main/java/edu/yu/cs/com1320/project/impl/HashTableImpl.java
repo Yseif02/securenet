@@ -1,4 +1,4 @@
-package edu.yu.cs.com1320.project.stage3.impl;
+package edu.yu.cs.com1320.project.impl;
 
 import edu.yu.cs.com1320.project.HashTable;
 
@@ -9,6 +9,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         private final Key key;
         private Value value;
         private Entry<?,?> next;
+
 
         private Entry(Key k, Value v){
             if(k == null){
@@ -28,8 +29,10 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         }
     }
     private Entry<?,?>[] table;
+    private final double LOAD_FACTOR;
     public HashTableImpl(){
         this.table = new Entry[5];
+        this.LOAD_FACTOR = 0.75;
     }
 
     private int hashFunction(Key key, int tableLength){
@@ -37,33 +40,36 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
     }
 
     private boolean isFull(){
-        for (int i = 0; i < this.table.length; i++) {
-            if(this.table[i] == null) return false;
-        }
-        return true;
+        return ((double) size()/table.length > this.LOAD_FACTOR);
     }
 
     private Entry<?, ?>[] doubleTable(){
         Entry<?,?>[] newTable = new Entry[this.table.length * 2];
-        for(Entry<?,?> entry:this.table){
+        for(Entry<?,?> entry : this.table){
+            if(entry == null) continue;
             if(entry.hasNext()){
                 rehashCollisions(entry, newTable);
                 continue;
             }
-            int hashCodeForObject = hashFunction(entry.getKey(), newTable.length);
-            Entry<?, ?> entryToCheck = newTable[hashCodeForObject];
-            if(entryToCheck == null){
-                newTable[hashCodeForObject] = new Entry<>(entry.getKey(), entry.getValue());
-                continue;
-            }
-            do {
-                if(entryToCheck.next != null) entryToCheck = entryToCheck.next;
-            }
-            while (entryToCheck.next != null);
-            entryToCheck.next = new Entry<>(entry.getKey(), entry.getValue());
+            addEntryToNewTable(entry, newTable);
         }
         this.table = newTable;
         return newTable;
+    }
+
+    private void addEntryToNewTable(Entry<?, ?> entry, Entry<?, ?>[] newTable) {
+        int hashCodeForObject = hashFunction(entry.getKey(), newTable.length);
+        //This
+        Entry<?, ?> entryToCheck = newTable[hashCodeForObject];
+        if(entryToCheck == null){
+            newTable[hashCodeForObject] = new Entry<>(entry.getKey(), entry.getValue());
+            return;
+        }
+        do {
+            if(entryToCheck.next != null) entryToCheck = entryToCheck.next;
+        }
+        while (entryToCheck.next != null);
+        entryToCheck.next = new Entry<>(entry.getKey(), entry.getValue());
     }
 
     private void rehashCollisions(Entry<?,?> entry, Entry<?,?>[] table){
@@ -164,7 +170,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
     }
 
     /**
-     * @param key the key whose presence in the hashtabe we are inquiring about
+     * @param key the key whose presence in the hashtable we are inquiring about
      * @return true if the given key is present in the hashtable as a key, false if not
      * @throws NullPointerException if the specified key is null
      */

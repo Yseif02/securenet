@@ -1,11 +1,9 @@
-package edu.yu.cs.com1320.project.stage3.impl;
+package edu.yu.cs.com1320.project.impl;
 
 import edu.yu.cs.com1320.project.Stack;
 
 import java.util.Arrays;
-import java.util.Iterator;
-import java.util.function.Consumer;
-import java.util.function.Function;
+
 
 public class StackImpl<T> implements Stack<T>{
     private T[] stack;
@@ -21,7 +19,7 @@ public class StackImpl<T> implements Stack<T>{
      */
     @Override
     public void push(T element) {
-        if (size() == this.stack.length) doubleArray();
+        if (size() == this.stack.length) this.stack = Arrays.copyOf(this.stack, this.size * 2);;
         for (int i = 0; i < this.stack.length; i++) {
             if (this.stack[i] == null) {
                 this.stack[i] = element;
@@ -31,9 +29,6 @@ public class StackImpl<T> implements Stack<T>{
         }
     }
 
-    private void doubleArray() {
-        this.stack = Arrays.copyOf(this.stack, this.size * 2);
-    }
 
     /**
      * removes and returns element at the top of the stack

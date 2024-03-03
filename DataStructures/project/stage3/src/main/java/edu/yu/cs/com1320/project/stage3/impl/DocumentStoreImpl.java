@@ -1,9 +1,8 @@
 package edu.yu.cs.com1320.project.stage3.impl;
 
-
-
-import edu.yu.cs.com1320.project.HashTable;
 import edu.yu.cs.com1320.project.Stack;
+import edu.yu.cs.com1320.project.impl.HashTableImpl;
+import edu.yu.cs.com1320.project.impl.StackImpl;
 import edu.yu.cs.com1320.project.stage3.Document;
 import edu.yu.cs.com1320.project.stage3.DocumentStore;
 import edu.yu.cs.com1320.project.undo.Command;
@@ -14,7 +13,7 @@ import java.net.URI;
 import java.util.function.Consumer;
 
 public class DocumentStoreImpl implements DocumentStore {
-    private StackImpl<Command> commandStack;
+    private final StackImpl<Command> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
 
 
@@ -25,9 +24,9 @@ public class DocumentStoreImpl implements DocumentStore {
     /**
      * set the given key-value metadata pair for the document at the given uri
      *
-     * @param uri
-     * @param key
-     * @param value
+     * @param uri - uri of the document to set metadata
+     * @param key - metadata key
+     * @param value - metadata value
      * @return the old value, or null if there was no previous value
      * @throws IllegalArgumentException if the uri is null or blank, if there is no document stored at that uri, or if the key is null or blank
      */
@@ -61,8 +60,8 @@ public class DocumentStoreImpl implements DocumentStore {
     /**
      * get the value corresponding to the given metadata key for the document at the given uri
      *
-     * @param uri
-     * @param key
+     * @param uri - uri of the document
+     * @param key - key of the metadata to return
      * @return the value, or null if there was no value
      * @throws IllegalArgumentException if the uri is null or blank, if there is no document stored at that uri, or if the key is null or blank
      */
@@ -76,7 +75,8 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param input  the document being put
      * @param url    unique identifier for the document
      * @param format indicates which type of document format is being passed
-     * @return if there is no previous doc at the given URI, return 0. If there is a previous doc, return the hashCode of the previous doc. If InputStream is null, this is a delete, and thus return either the hashCode of the deleted doc or 0 if there is no doc to delete.
+     * @return if there is no previous doc at the given URI, return 0. If there is a previous doc, return the hashCode of the previous doc.
+     * If InputStream is null, this is a delete, and thus return either the hashCode of the deleted doc or 0 if there is no doc to delete.
      * @throws IOException              if there is an issue reading input
      * @throws IllegalArgumentException if url or format are null
      */
@@ -85,60 +85,42 @@ public class DocumentStoreImpl implements DocumentStore {
         if (format == null || url == null || url.toString().isEmpty()) throw new IllegalArgumentException();
         boolean docExists;
         int previousHashCode = 0;
-        byte[] previousContentsInBytes;
-        String previousContentsInString;
+        Document previousDocument = null;
         if(get(url) != null){
             docExists = true;
             previousHashCode = get(url).hashCode();
-            if(get(url).getDocumentTxt() == null){
-                previousContentsInString = null;
-                previousContentsInBytes = get(url).getDocumentBinaryData();
-            }else {
-                previousContentsInBytes = null;
-                previousContentsInString = get(url).getDocumentTxt();
-            }
+            previousDocument = this.documentStore.get(url);
         } else {
-            previousContentsInString = null;
-            previousContentsInBytes = null;
             docExists = false;
         }
         if (input == null) return handleNullInput(url, docExists, previousHashCode);
-        boolean documentInBytes;
-        Document document;
         byte[] contents = input.readAllBytes();
-        documentInBytes = createAndAddDocument(url, format, contents);
-        Consumer<URI> undo = getUndoConsumer(url, docExists, documentInBytes, previousContentsInBytes, previousContentsInString);
+        createAndAddDocument(url, format, contents);
+        Consumer<URI> undo = getUndoConsumerForPut(url, docExists, previousDocument);
         this.commandStack.push(new Command(url, undo));
         return (docExists) ? previousHashCode : 0;
     }
 
-    private Consumer<URI> getUndoConsumer(URI url, boolean docExists, boolean documentInBytes, byte[] previousContentsInBytes, String previousContentsInString) {
+    private Consumer<URI> getUndoConsumerForPut(URI url, boolean docExists, Document previousDocument) {
         return HashTableImpl -> {
-    if(docExists && documentInBytes){
-        this.documentStore.put(url, new DocumentImpl(url, previousContentsInBytes));
-        this.commandStack.pop();
-    }else if(docExists){
-        this.documentStore.put(url, new DocumentImpl(url, previousContentsInString));
-        this.commandStack.pop();
-    }else{
-        this.documentStore.put(url, null);
-    }
-};
+            if(docExists){
+                this.documentStore.put(url, previousDocument);
+            }else{
+                this.documentStore.put(url, null);
+            }
+    };
     }
 
-    private boolean createAndAddDocument(URI url, DocumentFormat format, byte[] contents) {
-        boolean documentInBytes;
+
+    private void createAndAddDocument(URI url, DocumentFormat format, byte[] contents) {
         Document document;
         if (format == DocumentFormat.BINARY) {
-            documentInBytes = true;
             document = new DocumentImpl(url, contents);
             this.documentStore.put(url, document);
         } else {
-            documentInBytes = false;
             document = new DocumentImpl(url, new String(contents));
             this.documentStore.put(url, document);
         }
-        return documentInBytes;
     }
 
     private int handleNullInput(URI url, boolean docExists, int previousHashCode) {
@@ -164,29 +146,13 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
+        Document deletedDocument = this.documentStore.get(url);
         if(this.documentStore.get(url) == null) {
             return false;
         }else{
-            Document deletedDocument = this.documentStore.get(url);
             this.documentStore.put(url, null);
-            Consumer<URI> undo =
-                    HashTableImpl -> {
-                    if(deletedDocument.getDocumentTxt() == null){
-                        this.documentStore.put(url ,new DocumentImpl(url, deletedDocument.getDocumentBinaryData()));
-                        HashTable<String, String> deletedMetaData = deletedDocument.getMetadata();
-                        for (String key : deletedMetaData.keySet()){
-                            documentStore.get(url).setMetadataValue(key, deletedDocument.getMetadataValue(key));
-                        }
-                    }else{
-                        this.documentStore.put(url ,new DocumentImpl(url, deletedDocument.getDocumentTxt()));
-                        HashTable<String, String> deletedMetaData = deletedDocument.getMetadata();
-                        for (String key : deletedMetaData.keySet()){
-                            documentStore.get(url).setMetadataValue(key, deletedDocument.getMetadataValue(key));
-                        }
-                    }
-                    this.commandStack.pop();
-                    };
-            this.commandStack.push(new Command(url, undo));
+            Consumer<URI> undoDelete = HashTableImpl -> this.documentStore.put(url, deletedDocument);
+            this.commandStack.push(new Command(url, undoDelete));
             return true;
         }
     }
@@ -206,7 +172,7 @@ public class DocumentStoreImpl implements DocumentStore {
     /**
      * undo the last put or delete that was done with the given URI as its key
      *
-     * @param url
+     * @param url - uri
      * @throws IllegalStateException if there are no actions on the command stack for the given URI
      */
     @Override

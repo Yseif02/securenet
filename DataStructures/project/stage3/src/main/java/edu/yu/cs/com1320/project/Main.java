@@ -2,8 +2,8 @@ package edu.yu.cs.com1320.project;
 
 import edu.yu.cs.com1320.project.stage3.DocumentStore;
 import edu.yu.cs.com1320.project.stage3.impl.DocumentStoreImpl;
-import edu.yu.cs.com1320.project.stage3.impl.HashTableImpl;
-import edu.yu.cs.com1320.project.stage3.impl.StackImpl;
+import edu.yu.cs.com1320.project.impl.HashTableImpl;
+import edu.yu.cs.com1320.project.impl.StackImpl;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -60,7 +60,8 @@ public class Main {
         FileInputStream fis1 = new FileInputStream(file1);
         System.out.println((documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT)));
         documentStore.setMetadata(file1URI, "key", "value");
+        System.out.println();
         documentStore.undo();
-
+        System.out.println();
     }
 }

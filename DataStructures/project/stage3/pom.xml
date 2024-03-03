@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0  http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.junit.jupiter</groupId>
-    <artifactId>Stage3</artifactId>
+    <artifactId>stage3</artifactId>
     <version>5.10.2</version>
     <name>JUnit Jupiter (Aggregator)</name>
     <description>Module "junit-jupiter" of JUnit 5.</description>

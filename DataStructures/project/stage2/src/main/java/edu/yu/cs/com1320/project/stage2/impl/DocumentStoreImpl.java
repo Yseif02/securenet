@@ -7,6 +7,7 @@ import edu.yu.cs.com1320.project.impl.HashTableImpl;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.Iterator;
 
 
 public class DocumentStoreImpl implements DocumentStore {
@@ -87,6 +88,7 @@ public class DocumentStoreImpl implements DocumentStore {
         }
         return (docExists) ? previousHashCode : 0;
     }
+
 
     /**
      * @param url the unique identifier of the document to get

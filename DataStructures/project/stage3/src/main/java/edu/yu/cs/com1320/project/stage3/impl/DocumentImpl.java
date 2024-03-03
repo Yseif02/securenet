@@ -1,8 +1,8 @@
 package edu.yu.cs.com1320.project.stage3.impl;
 
+import edu.yu.cs.com1320.project.impl.HashTableImpl;
 import edu.yu.cs.com1320.project.stage3.Document;
 import edu.yu.cs.com1320.project.HashTable;
-import edu.yu.cs.com1320.project.undo.Command;
 
 
 import java.net.URI;
