@@ -13,7 +13,7 @@ import java.net.URI;
 import java.util.function.Consumer;
 
 public class DocumentStoreImpl implements DocumentStore {
-    private final StackImpl<Command> commandStack;
+    private StackImpl<Command> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
 
 

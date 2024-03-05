@@ -3,17 +3,22 @@ package edu.yu.cs.com1320.project.stage3.impl;
 import edu.yu.cs.com1320.project.impl.HashTableImpl;
 import edu.yu.cs.com1320.project.stage3.Document;
 import edu.yu.cs.com1320.project.HashTable;
+import edu.yu.cs.com1320.project.stage3.DocumentStore;
 
 
 import java.net.URI;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 
 public class DocumentImpl implements Document {
     private final URI uri;
     private String text;
     private byte[] binaryData;
-    private HashTableImpl<String,String> metadata;
+    private final HashTableImpl<String,String> metadata;
+
 
     public DocumentImpl(URI uri, byte[] binaryData){
         if(uri == null || binaryData == null) throw new IllegalArgumentException();

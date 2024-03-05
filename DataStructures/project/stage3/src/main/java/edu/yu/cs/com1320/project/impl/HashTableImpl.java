@@ -29,10 +29,8 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
         }
     }
     private Entry<?,?>[] table;
-    private final double LOAD_FACTOR;
     public HashTableImpl(){
         this.table = new Entry[5];
-        this.LOAD_FACTOR = 0.75;
     }
 
     private int hashFunction(Key key, int tableLength){
@@ -40,7 +38,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value> {
     }
 
     private boolean isFull(){
-        return ((double) size()/table.length > this.LOAD_FACTOR);
+        return ((double) size()/table.length > 0.75);
     }
 
     private Entry<?, ?>[] doubleTable(){

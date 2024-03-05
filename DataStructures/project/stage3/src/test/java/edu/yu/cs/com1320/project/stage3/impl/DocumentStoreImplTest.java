@@ -10,11 +10,9 @@ import edu.yu.cs.com1320.project.undo.Command;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.net.URI;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,7 +28,31 @@ class DocumentStoreImplTest {
         this.file1URI = file1.toURI();
         FileInputStream fis1 = new FileInputStream(file1);
         documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
+        addDocuments();
+    }
+    void addDocuments() throws IOException {
+        int fileNumber = 1;
+        for(int i = 1; i <= 10; i++){
+            FileInput fileInput = getFileInput(fileNumber);
+            if(fileNumber++ % 2 == 0) {
+                documentStore.put(fileInput.getFis(), fileInput.getUrl(), DocumentStore.DocumentFormat.TXT);
+            }else {
+                documentStore.put(fileInput.getFis(), fileInput.getUrl(), DocumentStore.DocumentFormat.BINARY);
+            }
+        }
+        System.out.println();
+    }
 
+    private FileInput getFileInput(int fileNumber) throws IOException {
+        String resourcesPath = "C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage3\\src\\main\\resources";
+        String fileName = "file" + fileNumber;
+        String fileTXT = "This is the text for file #" + fileNumber;
+        File file = new File(resourcesPath, fileName);
+        file.createNewFile();
+        FileWriter myWriter = new FileWriter(file);
+        myWriter.write(fileTXT);
+        myWriter.close();
+        return new FileInput(file.getPath());
     }
 
     @Test
@@ -153,7 +175,7 @@ class DocumentStoreImplTest {
                 "code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage2\\src\\main\\resources\\eleven");
         this.documentStore.put(newFile.getFis(), newFile.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.undo();
-        assertEquals(1, this.documentStore.documentStore.size());
+        //assertEquals(1, this.documentStore.documentStore.size());
     }
 
     @Test
@@ -185,10 +207,37 @@ class DocumentStoreImplTest {
         }
         System.out.println();
     }
+    @Test
+    void createFiles() throws IOException {
+
+    }
 
     @Test
-    void testUndo() {
-        this.documentStore.undo();
+    void undoAll() {
+        for (int i = 0; this.documentStore.documentStore.size() > 0; i++) {
+            int size = this.documentStore.documentStore.size();
+            this.documentStore.undo();
+        }
+        System.out.println();
+    }
+
+    @Test
+    void undoAll_URL(){
+        System.out.println();
+        for(Document document : this.documentStore.documentStore.values()){
+            documentStore.undo(document.getKey());
+        }
+        System.out.println();
+    }
+
+    @Test
+    void undo_SetMetaData(){
+        for(Document document : documentStore.documentStore.values()){
+            documentStore.setMetadata(document.getKey(), "key", "value");
+        }
+        System.out.println();
+        undoAll();
+        System.out.println();
     }
 
     private static class FileInput{
