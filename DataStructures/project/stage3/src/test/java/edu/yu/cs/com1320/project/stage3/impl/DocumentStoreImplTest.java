@@ -198,6 +198,17 @@ class DocumentStoreImplTest {
     }
 
     @Test
+    void getMetaDataValues(){
+        Document document = documentStore.get(this.file1URI);
+        document.setMetadataValue("key1", "value1");
+        document.setMetadataValue("key2", "value2");
+        document.setMetadataValue("key3", "value3");
+        document.getMetadata();
+        document.getDocumentTxt();
+        document.getDocumentBinaryData();
+    }
+
+    @Test
     void undo1() throws IOException {
         File resources = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\stage2\\src\\main\\resources");
         File[] resourceFiles = resources.listFiles();

@@ -44,6 +44,25 @@ class HashTableImplTest {
     }
 
     @Test
+    void put(){
+        HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
+        integerHashTable.put(0,0);
+        integerHashTable.put(5,5);
+        integerHashTable.put(10,10);
+        integerHashTable.put(10,1010);
+        integerHashTable.put(10,null);
+        integerHashTable.put(15,15);
+        integerHashTable.put(20,20);
+        integerHashTable.put(25,25);
+        integerHashTable.put(30,30);
+        integerHashTable.put(35,35);
+        integerHashTable.put(40,40);
+        integerHashTable.put(45,45);
+        integerHashTable.values();
+    }
+
+
+    @Test
     void delete_nonExistingKey() {
         String key = "key";
         assertNull(this.hashTable.put(key, null));
@@ -85,11 +104,11 @@ class HashTableImplTest {
     @Test
     void values() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
-        List<Integer> listToCompare = new LinkedList<>();
+        List<Integer> listToCompare = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             listToCompare.add(i);
-            listToCompare.add(i);
             integerHashTable.put(i, i);
+            listToCompare.add(i);
             integerHashTable.put(i + 10, i);
         }
         assertEquals(listToCompare, integerHashTable.values());

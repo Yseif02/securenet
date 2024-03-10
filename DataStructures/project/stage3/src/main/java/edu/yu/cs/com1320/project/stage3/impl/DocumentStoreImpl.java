@@ -16,7 +16,6 @@ public class DocumentStoreImpl implements DocumentStore {
     private StackImpl<Command> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
 
-
     public DocumentStoreImpl(){
         this.commandStack = new StackImpl<>();
         this.documentStore = new HashTableImpl<>();
@@ -151,7 +150,7 @@ public class DocumentStoreImpl implements DocumentStore {
             return false;
         }else{
             this.documentStore.put(url, null);
-            Consumer<URI> undoDelete = HashTableImpl -> this.documentStore.put(url, deletedDocument);
+            Consumer<URI> undoDelete = HashTableImpl -> this.documentStore.put(url, deletedDocument );
             this.commandStack.push(new Command(url, undoDelete));
             return true;
         }
