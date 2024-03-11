@@ -49,6 +49,11 @@ class StackImplTest {
     }
 
     @Test
+    void peek_nullReturn() {
+        assertNull(this.integerStack.peek());
+    }
+
+    @Test
     void size() {
         int i;
         for (i = 0; i < 25; i++) {
