@@ -5,16 +5,23 @@ import edu.yu.cs.com1320.project.Trie;
 import java.util.*;
 
 public class TrieImpl<Value> implements Trie<Value> {
-    private static final int alphabetSize = 256; // extended ASCII
-    private Node<Value> root; // root of trie
+    private final int alphabetSize = 256; // extended ASCII
+    private final Node<Value> root; // root of trie
     private int wordsInTrie;
 
-    public static class Node<Value> {
+    private class Node<Value> {
         private String valueString;
         protected Set<Value> documents = new HashSet<>();
         protected Node[] links = new Node[alphabetSize];
-        private int amountOfLinks = 0;
+        private boolean shouldDelete = false;
         private boolean isWord = false;
+
+        private boolean hasLinks(){
+            for (Node link : links){
+                if(link != null) return true;
+            }
+            return false;
+        }
     }
 
     public TrieImpl(){
@@ -30,7 +37,7 @@ public class TrieImpl<Value> implements Trie<Value> {
      */
     @Override
     public void put(String key, Value val) {
-        if(key == null || key.isEmpty()) throw new IllegalArgumentException();
+        if(key == null || key.isEmpty() || val == null) throw new IllegalArgumentException();
         put(this.root, key, 0, val);
         wordsInTrie++;
     }
@@ -47,7 +54,6 @@ public class TrieImpl<Value> implements Trie<Value> {
         }
         char c = key.charAt(d);
         node.links[c] = this.put(node.links[c], key, d+1, value);
-        //node.amountOfLinks++;
         return node;
     }
 
@@ -142,7 +148,26 @@ public class TrieImpl<Value> implements Trie<Value> {
      */
     @Override
     public Set<Value> deleteAllWithPrefix(String prefix) {
-        return null;
+        Set<Value> deletedDocs = new HashSet<>();
+        Node subTrie = getNode(this.root, prefix, 0);
+        if(subTrie != null) {
+            deleteRootWithPrefix(subTrie, deletedDocs);
+        }
+        //deleteAllEmptyLeafs(this.root);
+        return deletedDocs;
+    }
+
+    private Set<Value> deleteRootWithPrefix(Node node, Set<Value> deletedDocs){
+        if (node == null) return deletedDocs;
+        deletedDocs.addAll(node.documents);
+        for (Node childNode : node.links){
+            if(childNode != null) {
+                deleteRootWithPrefix(childNode, deletedDocs);
+                this.wordsInTrie--;
+            }
+        }
+        Arrays.fill(node.links, null);
+        return deletedDocs;
     }
 
     /**
@@ -153,8 +178,50 @@ public class TrieImpl<Value> implements Trie<Value> {
      */
     @Override
     public Set<Value> deleteAll(String key) {
+        Set<Value> setToReturn = new HashSet<>();
+        deleteAll(this.root, key, 0, setToReturn);
+        //deleteAllEmptyLeafs(this.root);
+        return setToReturn;
+    }
+
+    private Node deleteAll(Node node, String endKey, int depth, Set<Value> setToReturn) {
+       if(node == null) return null;
+       if(depth == endKey.length()){
+           setToReturn.addAll(node.documents);
+           node.documents.clear();
+           if(!node.hasLinks()) node.documents = null;
+           wordsInTrie--;
+       } else {
+           char currentChar = endKey.charAt(depth);
+           node.links[currentChar] = this.deleteAll(node.links[currentChar], endKey, depth+1, setToReturn);
+       }
+        if(node.documents != null && !node.documents.isEmpty()) return node;
+        for (Node childNode : node.links) {
+            if (childNode != null) {
+                return node;
+            }
+        }
         return null;
     }
+
+    private void deleteAllEmptyLeafs(Node node){
+        if(!node.hasLinks() && node.documents.isEmpty()) {
+            node.shouldDelete = true;
+            return;
+        }
+        if(node.hasLinks()){
+            for (Node childNode : node.links){
+                if (childNode != null && childNode.hasLinks()){
+                    deleteAllEmptyLeafs(childNode);
+                    if(childNode.shouldDelete) {
+                        childNode = null;
+                    }
+                }
+            }
+        }
+    }
+
+
 
     /**
      * Remove the given value from the node of the given key (do not remove the value from other nodes in the Trie)
@@ -165,6 +232,35 @@ public class TrieImpl<Value> implements Trie<Value> {
      */
     @Override
     public Value delete(String key, Value val) {
-        return null;
+        return deleteValue(this.root, key, val, 0);
+    }
+
+    private Value deleteValue(Node<Value> node, String key, Value val, int depth) {
+        if (node == null) {
+            return null;
+        }
+        if (depth == key.length()) {
+            if (node.documents.remove(val)) {
+                // if there are no more documents in the documentSet of this node decrease wordsInTrie
+                if (node.documents.isEmpty()) {
+                    wordsInTrie--;
+                    //return val;
+                }
+                return val;
+            }
+            return null;
+        }
+
+        char currentChar = key.charAt(depth);
+        if (node.links[currentChar] == null) return null;
+
+        Value valueToReturn = (Value) deleteValue(node.links[currentChar], key, val, depth + 1);
+
+        //extract the deleted value and if no links or docs set link to null
+        if (valueToReturn != null && node.links[currentChar].documents.isEmpty() && !node.links[currentChar].hasLinks()) {
+            node.links[currentChar] = null;
+        }
+
+        return valueToReturn;
     }
 }

@@ -5,19 +5,19 @@ import edu.yu.cs.com1320.project.impl.StackImpl;
 import edu.yu.cs.com1320.project.impl.TrieImpl;
 import edu.yu.cs.com1320.project.stage4.Document;
 import edu.yu.cs.com1320.project.stage4.DocumentStore;
-import edu.yu.cs.com1320.project.undo.Command;
+import edu.yu.cs.com1320.project.undo.CommandSet;
+import edu.yu.cs.com1320.project.undo.GenericCommand;
+import edu.yu.cs.com1320.project.undo.Undoable;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class DocumentStoreImpl implements DocumentStore {
-    private StackImpl<Command> commandStack;
+    private StackImpl<Undoable> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
     protected TrieImpl<Document> documentWordsTrie;
 
@@ -58,7 +58,7 @@ public class DocumentStoreImpl implements DocumentStore {
                         doc.setMetadataValue(key, oldValue);
                     }
                 };
-        this.commandStack.push(new Command(uri, undo));
+        this.commandStack.push(new GenericCommand<>(uri, undo));
         return oldValue;
     }
 
@@ -101,8 +101,9 @@ public class DocumentStoreImpl implements DocumentStore {
         if (input == null) return handleNullInput(url, docExists, previousHashCode);
         byte[] contents = input.readAllBytes();
         createAndAddDocument(url, format, contents);
+
         Consumer<URI> undo = getUndoConsumerForPut(url, docExists, previousDocument);
-        this.commandStack.push(new Command(url, undo));
+        this.commandStack.push(new GenericCommand<>(url, undo));
         return (docExists) ? previousHashCode : 0;
     }
 
@@ -118,9 +119,10 @@ public class DocumentStoreImpl implements DocumentStore {
         }
     }
 
-    private void addDocumentWordsToTrie(DocumentImpl document){
+    private void addDocumentWordsToTrie(Document document){
         for (String word : document.getWordCountMap()){
-            documentWordsTrie.put(word, document);
+            String newWord = word.replaceAll("'", "");
+            documentWordsTrie.put(newWord, document);
         }
     }
 
@@ -128,8 +130,13 @@ public class DocumentStoreImpl implements DocumentStore {
         return HashTableImpl -> {
             if(docExists){
                 this.documentStore.put(url, previousDocument);
+                this.addDocumentWordsToTrie(previousDocument);
             }else{
+                Document documentToDelete = get(url);
                 this.documentStore.put(url, null);
+                for (String word : documentToDelete.getWordCountMap()){
+                    this.documentWordsTrie.delete(word, previousDocument);
+                }
             }
         };
     }
@@ -158,7 +165,26 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
-        return false;
+        Document deletedDocument = this.documentStore.get(url);
+        if(this.documentStore.get(url) == null) {
+            return false;
+        }else{
+            for (String word : deletedDocument.getWordCountMap()){
+                documentWordsTrie.delete(word, deletedDocument);
+                //return true;
+            }
+            this.documentStore.put(url, null);
+            Consumer<URI> undoDelete = getUndoForDeleteURI(deletedDocument, url);
+            this.commandStack.push(new GenericCommand<>(url, undoDelete));
+            return true;
+        }
+    }
+
+    private Consumer<URI> getUndoForDeleteURI(Document deletedDocument, URI documentURI) {
+        return HashTableImpl -> {
+            this.documentStore.put(documentURI, deletedDocument);
+            this.addDocumentWordsToTrie(deletedDocument);
+        };
     }
 
     /**
@@ -168,7 +194,13 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo() throws IllegalStateException {
-
+        if(commandStack.size() == 0) throw new IllegalStateException("Command Stack is empty");
+        Undoable command = this.commandStack.pop();
+        if(command instanceof CommandSet<?>){
+            ((CommandSet<?>) command).undoAll();
+        } else{
+            command.undo();
+        }
     }
 
     /**
@@ -179,8 +211,36 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo(URI url) throws IllegalStateException {
-
+        if(commandStack.size() == 0) throw new IllegalStateException("Command Stack is empty");
+        StackImpl<Undoable> tempStack = new StackImpl<>();
+        while (this.commandStack.size() > 0) {
+            Undoable commandToCheck = this.commandStack.peek();
+            if(commandToCheck instanceof CommandSet<?>){
+                if (checkCommandSet(url, (CommandSet<?>) commandToCheck)) return;
+                tempStack.push(this.commandStack.pop());
+            }
+            assert commandToCheck instanceof GenericCommand<?>;
+            if(((GenericCommand<?>) commandToCheck).getTarget().equals(url)){
+                commandToCheck.undo();
+                this.commandStack.pop();
+                while (tempStack.size() > 0) this.commandStack.push(tempStack.pop());
+                return;
+            }
+            tempStack.push(this.commandStack.pop());
+        }
     }
+
+    private boolean checkCommandSet(URI url, CommandSet<?> commandSet) {
+        for (GenericCommand command : commandSet){
+            if(command.getTarget().equals(url)) {
+                command.undo();
+                commandSet.remove(command);
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     /**
      * Retrieve all documents whose text contains the given keyword.
@@ -192,7 +252,16 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> search(String keyword) {
-        return this.documentWordsTrie.getSorted(keyword, new DocumentComparatorForSearch(keyword));
+        Comparator<Document> comparator = (o1, o2) -> {
+            //this will search for they're
+            //if there is a way to remove the document from the list if document.getWordCount == 0
+            int documentOneWordCount = o1.wordCount(keyword);
+            int documentTwoWordCount = o2.wordCount(keyword);
+            return Integer.compare(documentTwoWordCount ,documentOneWordCount);
+        };
+        String newKeyword = keyword.replaceAll("'", "");
+        //this will search for theyre
+        return this.documentWordsTrie.getSorted(newKeyword, comparator);
     }
 
     /**
@@ -205,7 +274,23 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefix(String keywordPrefix) {
-        return this.documentWordsTrie.getAllWithPrefixSorted(keywordPrefix, new DocumentComparatorForPrefix(keywordPrefix));
+        Comparator<Document> comparator = new Comparator<Document>() {
+            @Override
+            public int compare(Document o1, Document o2) {
+                return Integer.compare(getPrefixCount(o2), getPrefixCount(o1));
+            }
+
+            private int getPrefixCount(Document document) {
+                int counter = 0;
+                Set<String> words = document.getWordCountMap();
+                for (String word : words) {
+                    String prefixSubstring = word.substring(0, keywordPrefix.length());
+                    if (prefixSubstring.equals(keywordPrefix)) counter++;
+                }
+                return counter;
+            }
+        };
+        return this.documentWordsTrie.getAllWithPrefixSorted(keywordPrefix, comparator);
     }
 
     /**
@@ -217,7 +302,17 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAll(String keyword) {
-        return null;
+        CommandSet<URI> commandSet = new CommandSet<>();
+        Set<Document> documents = this.documentWordsTrie.deleteAll(keyword);
+        Set<URI> urisToReturn = documents.stream()
+                .map(Document::getKey)
+                .collect(Collectors.toSet());
+        for (Document document : documents){
+            Consumer<URI> deleteConsumer = deleteReturningConsumer(document.getKey());
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), deleteConsumer));
+        }
+        this.commandStack.push(commandSet);
+        return urisToReturn;
     }
 
     /**
@@ -229,7 +324,16 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithPrefix(String keywordPrefix) {
-        return null;
+        CommandSet<URI> commandSet = new CommandSet<>();
+        Set<Document> documents = this.documentWordsTrie.deleteAllWithPrefix(keywordPrefix);
+        Set<URI> urisToReturn = documents.stream()
+                .map(Document::getKey)
+                .collect(Collectors.toSet());
+        for (Document document : documents){
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), getUndoForDeleteURI(document, document.getKey())));
+        }
+        this.commandStack.push(commandSet);
+        return urisToReturn;
     }
 
     /**
@@ -238,7 +342,30 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByMetadata(Map<String, String> keysValues) {
-        return null;
+        List<Document> documentList = (List<Document>) this.documentStore.values();
+        Set<String> keys = keysValues.keySet();
+        List<Document> documentsListToReturn = new ArrayList<>();
+        for (Document document : documentList){
+            if(document.getMetadata().keySet().isEmpty()) continue;
+            if(compareKeys(document.getMetadata().keySet(), keys, document.getKey(), keysValues)) {
+                documentsListToReturn.add(document);
+            }
+        }
+        return documentsListToReturn;
+    }
+
+    private boolean compareKeys(Set<String> metaDataKeys, Set<String> keysToSearch, URI uri, Map<String, String> keysValues) {
+        boolean containsAll = true;
+        for (String key : keysToSearch){
+            if(metaDataKeys.contains(key)){
+                if(!this.get(uri).getMetadataValue(key).equals(keysValues.get(key))){
+                    containsAll = false;
+                }
+            } else {
+                return false;
+            }
+        }
+        return containsAll;
     }
 
     /**
@@ -252,7 +379,10 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByKeywordAndMetadata(String keyword, Map<String, String> keysValues) {
-        return null;
+        List<Document> listToReturn = search(keyword).stream()
+                        .filter(searchByMetadata(keysValues)::contains)
+                        .toList();
+        return listToReturn;
     }
 
     /**
@@ -266,7 +396,10 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
-        return null;
+        List<Document> listToReturn = searchByPrefix(keywordPrefix).stream()
+                .filter(searchByMetadata(keysValues)::contains)
+                .toList();
+        return listToReturn;
     }
 
     /**
@@ -278,7 +411,16 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithMetadata(Map<String, String> keysValues) {
-        return null;
+        CommandSet<URI> commandSet = new CommandSet<>();
+        List<Document> documentsToDelete = searchByMetadata(keysValues);
+        Set<URI> urisToReturn = new HashSet<>();
+        for (Document document : documentsToDelete){
+            urisToReturn.add(document.getKey());
+            Consumer<URI> deleteConsumer = this.deleteReturningConsumer(document.getKey());
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), deleteConsumer));
+        }
+        this.commandStack.push(commandSet);
+        return urisToReturn;
     }
 
     /**
@@ -291,7 +433,21 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithKeywordAndMetadata(String keyword, Map<String, String> keysValues) {
-        return null;
+        CommandSet<URI> commandSet = new CommandSet<>();
+        List<Document> keywordDocuments = search(keyword);
+        List<Document> metadataDocuments = searchByMetadata(keysValues);
+        List<Document> documentsToDelete = new ArrayList<>();
+        for (Document document : keywordDocuments){
+            if (metadataDocuments.contains(document)) documentsToDelete.add(document);
+        }
+        Set<URI> urisToReturn = new HashSet<>();
+        for (Document document : documentsToDelete){
+            urisToReturn.add(document.getKey());
+            Consumer<URI> deleteConsumer = this.deleteReturningConsumer(document.getKey());
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), deleteConsumer));
+        }
+        this.commandStack.push(commandSet);
+        return urisToReturn;
     }
 
     /**
@@ -304,32 +460,32 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
-        return null;
+        CommandSet<URI> commandSet = new CommandSet<>();
+        List<Document> prefixDocuments = searchByPrefix(keywordPrefix);
+        List<Document> metadataDocuments = searchByMetadata(keysValues);
+        List<Document> documentsToDelete = new ArrayList<>();
+        for (Document document : prefixDocuments){
+            if (metadataDocuments.contains(document)) documentsToDelete.add(document);
+        }
+        Set<URI> urisToReturn = new HashSet<>();
+        for (Document document : documentsToDelete){
+            urisToReturn.add(document.getKey());
+            Consumer<URI> deleteConsumer = this.deleteReturningConsumer(document.getKey());
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), deleteConsumer));
+        }
+        this.commandStack.push(commandSet);
+        return urisToReturn;
     }
 
-
-    private record DocumentComparatorForPrefix(String prefix) implements Comparator<Document> {
-        @Override
-        public int compare(Document o1, Document o2) {
-            return Integer.compare(getPrefixCount(o2), getPrefixCount(o1));
-        }
-        private int getPrefixCount(Document document) {
-            int counter = 0;
-            Set<String> words = document.getWordCountMap();
-            for (String word : words) {
-                String prefixSubstring = word.substring(0, prefix.length());
-                if (prefixSubstring.equals(prefix)) counter++;
+    private Consumer<URI> deleteReturningConsumer(URI url){
+        Document deletedDocument = this.documentStore.get(url);
+        if(this.documentStore.get(url) == null) {
+            return null;
+        }else{
+            for (String word : deletedDocument.getWordCountMap()){
+                documentWordsTrie.delete(word, deletedDocument);
             }
-            return counter;
-        }
-        }
-
-    private record DocumentComparatorForSearch(String wordToSearch) implements Comparator<Document> {
-        @Override
-        public int compare(Document o1, Document o2) {
-            int documentOneWordCount = o1.wordCount(wordToSearch);
-            int documentTwoWordCount = o2.wordCount(wordToSearch);
-            return Integer.compare(documentTwoWordCount ,documentOneWordCount);
-        }
+            this.documentStore.put(url, null);
+            return getUndoForDeleteURI(deletedDocument, url);}
     }
 }

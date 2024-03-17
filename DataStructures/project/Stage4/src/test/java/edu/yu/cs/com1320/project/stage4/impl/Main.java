@@ -8,24 +8,38 @@ import edu.yu.cs.com1320.project.stage4.DocumentStore;
 
 import java.io.*;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class Main {
     public static void main(String[] args) throws IOException {
         DocumentStoreImpl documentStore = new DocumentStoreImpl();
-        addDocumentToStore(documentStore, createNewFile("Test File 1", "to"));
-        addDocumentToStore(documentStore, createNewFile("Test File 6", "tow toggle"));
-        addDocumentToStore(documentStore, createNewFile("Test File 3", "toe"));
-        addDocumentToStore(documentStore, createNewFile("Test File 4", "tool tool tool tough tore"));
-        addDocumentToStore(documentStore, createNewFile("Test File 2", "ton"));
-        addDocumentToStore(documentStore, createNewFile("Test File 5", "tooth together"));
-        addDocumentToStore(documentStore, createNewFile("Test File 7", "ton ton ton too top topple tomorrow"));
-        addDocumentToStore(documentStore, createNewFile("Test File 8", "top top top top topple"));
-        List<Document> documents = documentStore.search("ton");
+        URI url1 = addDocumentToStore(documentStore, createNewFile("Test File 1", "they're there, \"hello\""));
+        URI url2 = addDocumentToStore(documentStore, createNewFile("Test File 6", "tow toggle"));
+        URI url3 = addDocumentToStore(documentStore, createNewFile("Test File 3", "toe"));
+        URI url4 = addDocumentToStore(documentStore, createNewFile("Test File 4", "tool tool tool tough tore"));
+        URI url5 = addDocumentToStore(documentStore, createNewFile("Test File 2", "ton"));
+        URI url6 = addDocumentToStore(documentStore, createNewFile("Test File 5", "tooth together"));
+        URI url7 = addDocumentToStore(documentStore, createNewFile("Test File 7", "ton ton ton too top topple tomorrow"));
+        URI url8 = addDocumentToStore(documentStore, createNewFile("Test File 8", "top top top top topple"));
+        documentStore.setMetadata(url1, "Key1", "Value 1");
+        documentStore.setMetadata(url1, "Key2", "Value 2");
+        documentStore.setMetadata(url1, "Key3", "Value 3");
+        documentStore.setMetadata(url2, "Key4", "Value 4");
+        documentStore.setMetadata(url2, "Key5", "Value 5");
+        documentStore.setMetadata(url2, "Key6", "Value 6");
+        Map<String, String> testPairs = new HashMap<>();
+        testPairs.put("Key1", "Value 1");
+        testPairs.put("Key2", "Value 2");
+        testPairs.put("Key3", "Value 3");
+        //List<Document> documents = documentStore.searchByMetadata(testPairs);
         //List<Document> documents = documentStore.searchByPrefix("to");
-        for (Document document : documents)
+        List<Document> documents = documentStore.search("there");
+        for (Document document : documents) {
             System.out.println(document.getDocumentTxt());
+        }
     }
 
     private void test1(){
@@ -49,8 +63,9 @@ public class Main {
 
     }
 
-    private static void addDocumentToStore(DocumentStoreImpl documentStore, FileInput fileInput) throws IOException {
+    private static URI addDocumentToStore(DocumentStoreImpl documentStore, FileInput fileInput) throws IOException {
         documentStore.put(fileInput.fis, fileInput.url, DocumentStore.DocumentFormat.TXT);
+        return fileInput.url;
     }
 
     private static FileInput createNewFile(String fileName, String fileTXT) throws IOException {

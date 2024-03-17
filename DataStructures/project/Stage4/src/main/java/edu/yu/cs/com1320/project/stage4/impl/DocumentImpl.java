@@ -55,7 +55,7 @@ public class DocumentImpl implements Document {
     }
 
     private String[] getDocumentWords() {
-        return Pattern.compile("[^a-zA-Z0-9]+")
+        return Pattern.compile("[^a-zA-Z0-9']+")
                 .splitAsStream(this.text)
                 .filter(word -> !word.isEmpty())
                 .toArray(String[]::new);
