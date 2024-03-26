@@ -40,7 +40,7 @@ public class DocumentImpl implements Document {
         this.wordCountMap = new HashMap<>();
         this.documentWordSet = new HashSet<>();
         String[] documentWords = getDocumentWords();
-        addWordsToHashMapAndSet(documentWords);
+        if(documentWords != null) addWordsToHashMapAndSet(documentWords);
     }
 
     private void addWordsToHashMapAndSet(String[] documentWords) {
@@ -55,8 +55,10 @@ public class DocumentImpl implements Document {
     }
 
     private String[] getDocumentWords() {
+        if(documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return null;
+        String newText = this.text.replaceAll("[^a-zA-Z0-9'\\s]", "");;
         return Pattern.compile("[^a-zA-Z0-9']+")
-                .splitAsStream(this.text)
+                .splitAsStream(newText)
                 .filter(word -> !word.isEmpty())
                 .toArray(String[]::new);
     }

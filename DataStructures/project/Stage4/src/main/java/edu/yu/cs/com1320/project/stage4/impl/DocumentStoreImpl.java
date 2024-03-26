@@ -134,8 +134,10 @@ public class DocumentStoreImpl implements DocumentStore {
             }else{
                 Document documentToDelete = get(url);
                 this.documentStore.put(url, null);
-                for (String word : documentToDelete.getWordCountMap()){
-                    this.documentWordsTrie.delete(word, previousDocument);
+                if(documentToDelete.getWordCountMap() != null) {
+                    for (String word : documentToDelete.getWordCountMap()) {
+                        this.documentWordsTrie.delete(word, previousDocument);
+                    }
                 }
             }
         };
@@ -168,22 +170,23 @@ public class DocumentStoreImpl implements DocumentStore {
         Document deletedDocument = this.documentStore.get(url);
         if(this.documentStore.get(url) == null) {
             return false;
-        }else{
-            for (String word : deletedDocument.getWordCountMap()){
-                documentWordsTrie.delete(word, deletedDocument);
-                //return true;
-            }
-            this.documentStore.put(url, null);
-            Consumer<URI> undoDelete = getUndoForDeleteURI(deletedDocument, url);
-            this.commandStack.push(new GenericCommand<>(url, undoDelete));
-            return true;
         }
+        if(deletedDocument.getWordCountMap() != null) {
+            for (String word : deletedDocument.getWordCountMap()) {
+                documentWordsTrie.delete(word, deletedDocument);
+            }
+        }
+        this.documentStore.put(url, null);
+        Consumer<URI> undoDelete = getUndoForDeleteURI(deletedDocument, url);
+        this.commandStack.push(new GenericCommand<>(url, undoDelete));
+        return true;
+
     }
 
     private Consumer<URI> getUndoForDeleteURI(Document deletedDocument, URI documentURI) {
         return HashTableImpl -> {
             this.documentStore.put(documentURI, deletedDocument);
-            this.addDocumentWordsToTrie(deletedDocument);
+            if(deletedDocument.getWordCountMap() != null) this.addDocumentWordsToTrie(deletedDocument);
         };
     }
 
@@ -215,12 +218,13 @@ public class DocumentStoreImpl implements DocumentStore {
         StackImpl<Undoable> tempStack = new StackImpl<>();
         while (this.commandStack.size() > 0) {
             Undoable commandToCheck = this.commandStack.peek();
-            if(commandToCheck instanceof CommandSet<?>){
+            if (commandToCheck instanceof CommandSet<?>) {
                 if (checkCommandSet(url, (CommandSet<?>) commandToCheck)) return;
                 tempStack.push(this.commandStack.pop());
+                continue;
             }
             assert commandToCheck instanceof GenericCommand<?>;
-            if(((GenericCommand<?>) commandToCheck).getTarget().equals(url)){
+            if (((GenericCommand<?>) commandToCheck).getTarget().equals(url)) {
                 commandToCheck.undo();
                 this.commandStack.pop();
                 while (tempStack.size() > 0) this.commandStack.push(tempStack.pop());
@@ -260,7 +264,6 @@ public class DocumentStoreImpl implements DocumentStore {
             return Integer.compare(documentTwoWordCount ,documentOneWordCount);
         };
         String newKeyword = keyword.replaceAll("'", "");
-        //this will search for theyre
         return this.documentWordsTrie.getSorted(newKeyword, comparator);
     }
 
@@ -284,8 +287,9 @@ public class DocumentStoreImpl implements DocumentStore {
                 int counter = 0;
                 Set<String> words = document.getWordCountMap();
                 for (String word : words) {
+                    int wordCount = document.wordCount(word);
                     String prefixSubstring = word.substring(0, keywordPrefix.length());
-                    if (prefixSubstring.equals(keywordPrefix)) counter++;
+                    if (prefixSubstring.equals(keywordPrefix)) counter += wordCount;
                 }
                 return counter;
             }
@@ -325,11 +329,13 @@ public class DocumentStoreImpl implements DocumentStore {
     @Override
     public Set<URI> deleteAllWithPrefix(String keywordPrefix) {
         CommandSet<URI> commandSet = new CommandSet<>();
+        // this line is still not deleting the empty nodes
         Set<Document> documents = this.documentWordsTrie.deleteAllWithPrefix(keywordPrefix);
         Set<URI> urisToReturn = documents.stream()
                 .map(Document::getKey)
                 .collect(Collectors.toSet());
         for (Document document : documents){
+            this.documentStore.put(document.getKey(), null);
             commandSet.addCommand(new GenericCommand<>(document.getKey(), getUndoForDeleteURI(document, document.getKey())));
         }
         this.commandStack.push(commandSet);
@@ -379,10 +385,9 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByKeywordAndMetadata(String keyword, Map<String, String> keysValues) {
-        List<Document> listToReturn = search(keyword).stream()
+        return search(keyword).stream()
                         .filter(searchByMetadata(keysValues)::contains)
                         .toList();
-        return listToReturn;
     }
 
     /**
@@ -396,10 +401,9 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
-        List<Document> listToReturn = searchByPrefix(keywordPrefix).stream()
+        return searchByPrefix(keywordPrefix).stream()
                 .filter(searchByMetadata(keysValues)::contains)
                 .toList();
-        return listToReturn;
     }
 
     /**
@@ -481,11 +485,14 @@ public class DocumentStoreImpl implements DocumentStore {
         Document deletedDocument = this.documentStore.get(url);
         if(this.documentStore.get(url) == null) {
             return null;
-        }else{
+        }
+        // If the document has text ie is a TXT document
+        if(deletedDocument.getWordCountMap() != null){
             for (String word : deletedDocument.getWordCountMap()){
                 documentWordsTrie.delete(word, deletedDocument);
             }
-            this.documentStore.put(url, null);
-            return getUndoForDeleteURI(deletedDocument, url);}
+        }
+        this.documentStore.put(url, null);
+        return getUndoForDeleteURI(deletedDocument, url);
     }
 }

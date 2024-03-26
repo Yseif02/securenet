@@ -47,11 +47,22 @@ class TrieImplTest {
             add("value3");
         }};
         this.trie.put("key1", "value1");
-        Queue<String> queue = new LinkedList<>();
         this.trie.put("key1", "value2");
         this.trie.put("key1", "value3");
         Set<String> key1Values = this.trie.get("key1");
         assertEquals(key1Values, setToTest);
+    }
+
+    @Test
+    void get_nonExistentKey() {
+        Set<String> setToTest = new HashSet<>();
+        assertEquals(setToTest, this.trie.get("key"));
+    }
+    @Test
+    void get_nullKey() {
+        Set<String> setToTest = new HashSet<>();
+        assertThrows(IllegalArgumentException.class,
+                () -> this.trie.get(null));
     }
 
     @Test
@@ -74,6 +85,24 @@ class TrieImplTest {
     }
 
     @Test
+    void getSorted_emptyKey() {
+        Comparator<String> stringComparator = (String1, String2) ->
+                String2.toLowerCase().compareTo(String1.toLowerCase());
+        List<String> keys = this.trie.getSorted("", stringComparator);
+        assertTrue(keys.isEmpty());
+    }
+
+    @Test
+    void getSorted_nullKey() {
+        Comparator<String> stringComparator = (String1, String2) ->
+                String2.toLowerCase().compareTo(String1.toLowerCase());
+        assertThrows(IllegalArgumentException.class, () ->
+                this.trie.getSorted(null, stringComparator));
+    }
+
+
+
+    @Test
     void getAllWithPrefixSorted() {
         Comparator<String> stringComparator = Comparator.comparing(String::toLowerCase);
         this.trie.put("the","the");
@@ -91,6 +120,30 @@ class TrieImplTest {
         listToTest.add("they");
         listToTest.add("they're");
         assertEquals(key1Sorted, listToTest);
+    }
+
+    @Test
+    void getAllWithPrefixSorted_nullKey() {
+        assertThrows(IllegalArgumentException.class,
+            () -> this.trie.getAllWithPrefixSorted(null, new Comparator<String>() {
+                @Override
+                public int compare(String o1, String o2) {
+                    return o1.compareTo(o2);
+                }
+            }));
+    }
+
+    @Test
+    void getAllWithPrefixSorted_nonExistingKey() {
+        Comparator<String> stringComparator = Comparator.comparing(String::toLowerCase);
+        this.trie.put("the","the");
+        this.trie.put("then","then");
+        this.trie.put("there","there");
+        this.trie.put("their","their");
+        this.trie.put("they","they");
+        this.trie.put("they","they're");
+        List<String> emptyList = new ArrayList<>();
+        assertEquals(emptyList, this.trie.getAllWithPrefixSorted("to", stringComparator));
     }
 
     @Test
