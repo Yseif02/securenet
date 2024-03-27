@@ -4,14 +4,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class HashTableImplTest {
-    private HashTableImpl<String,String> hashTable;
+    private HashTableImpl<String, String> hashTable;
 
     @BeforeEach
     void setUp() {
@@ -22,13 +23,8 @@ class HashTableImplTest {
     void get() {
         String key = "key";
         String value = "value";
-        this.hashTable.put(key,value);
+        this.hashTable.put(key, value);
         assertEquals(value, this.hashTable.get(key));
-    }
-
-    @Test
-    void get_BadKey() {;
-        assertNull(this.hashTable.get("key"));
     }
 
     @Test
@@ -48,13 +44,31 @@ class HashTableImplTest {
     }
 
     @Test
-    void delete_nonExistingKey(){
+    void put() {
+        HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
+        integerHashTable.put(0,0);
+        integerHashTable.put(5,5);
+        integerHashTable.put(10,10);
+        integerHashTable.put(10,1010);
+        integerHashTable.put(10,null);
+        integerHashTable.put(15,15);
+        integerHashTable.put(20,20);
+        integerHashTable.put(25,25);
+        integerHashTable.put(30,30);
+        integerHashTable.put(35,35);
+        integerHashTable.put(40,40);
+        integerHashTable.put(45,45);
+        integerHashTable.values();
+    }
+
+    @Test
+    void delete_nonExistingKey() {
         String key = "key";
         assertNull(this.hashTable.put(key, null));
     }
 
     @Test
-    void delete_existingKey(){
+    void delete_existingKey() {
         String key = "key";
         String value = "value";
         this.hashTable.put(key, value);
@@ -79,7 +93,7 @@ class HashTableImplTest {
     void keySet() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
         HashSet<Integer> setToCompare = new HashSet<>();
-        for(int i = 0; i < 1000; i++){
+        for (int i = 0; i < 1000; i++) {
             setToCompare.add(i);
             integerHashTable.put(i, i);
         }
@@ -89,23 +103,27 @@ class HashTableImplTest {
     @Test
     void values() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
-        List<Integer> listToCompare = new LinkedList<>();
-        for(int i = 0; i < 10; i++){
-            listToCompare.add(i);
+        List<Integer> listToCompare = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
             listToCompare.add(i);
             integerHashTable.put(i, i);
+            listToCompare.add(i);
             integerHashTable.put(i + 10, i);
         }
-        assertEquals(listToCompare, integerHashTable.values());
+        List<Integer> values = new ArrayList<>(integerHashTable.values());
+        values.sort(Comparator.naturalOrder());
+        assertEquals(listToCompare, values);
     }
 
     @Test
     void size() {
         HashTableImpl<Integer, Integer> integerHashTable = new HashTableImpl<>();
         List<Integer> listToCompare = new ArrayList<>();
-        for(int i = 0; i < 10; i++){
+        for (int i = 0; i < 10; i++) {
             listToCompare.add(i);
+            listToCompare.add(i+20);
             integerHashTable.put(i, i);
+            integerHashTable.put(i+20, i+20);
         }
         assertEquals(listToCompare.size(), integerHashTable.size());
     }

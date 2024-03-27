@@ -48,8 +48,7 @@ public class HashTableImpl<Key, Value> implements HashTable<Key, Value>{
             if (entryToSearch.getKey().equals(k)) return entryToSearch.getValue();
             entryToSearch = entryToSearch.next;
         }
-        if(entryToSearch.getKey().equals(k)) return entryToSearch.getValue();
-        return null;
+        return (entryToSearch.getKey().equals(k)) ? entryToSearch.getValue() : null;
     }
 
     /**

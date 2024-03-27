@@ -150,7 +150,7 @@ public class DocumentStoreImpl implements DocumentStore {
             return false;
         }else{
             this.documentStore.put(url, null);
-            Consumer<URI> undoDelete = HashTableImpl -> this.documentStore.put(url, deletedDocument );
+            Consumer<URI> undoDelete = HashTableImpl -> this.documentStore.put(url, deletedDocument);
             this.commandStack.push(new Command(url, undoDelete));
             return true;
         }
