@@ -244,28 +244,20 @@ public class DocumentStoreImpl implements DocumentStore {
 
     private boolean checkCommandSet(URI url, CommandSet<URI> commandSet) {
         return commandSet.undo(url);
-
-        /*for (GenericCommand command : commandSet){
-            if(command.getTarget().equals(url)) {
-                command.undo();
-                commandSet.remove(command);
-                return true;
-            }
-        }
-        return false;*/
     }
-
 
     /**
      * Retrieve all documents whose text contains the given keyword.
      * Documents are returned in sorted, descending order, sorted by the number of times the keyword appears in the document.
      * Search is CASE SENSITIVE.
      *
-     * @param keyword
+     * @param keyword - keyword
      * @return a List of the matches. If there are no matches, return an empty list.
      */
     @Override
     public List<Document> search(String keyword) {
+        if(keyword == null) throw new IllegalArgumentException();
+        if(keyword.isEmpty()) return new ArrayList<>();
         String newKeyword = keyword.replaceAll("[^a-zA-Z0-9\\s]", "");
         Comparator<Document> comparator = (o1, o2) -> {
             //this will search for they're
@@ -282,12 +274,14 @@ public class DocumentStoreImpl implements DocumentStore {
      * Documents are returned in sorted, descending order, sorted by the number of times the prefix appears in the document.
      * Search is CASE SENSITIVE.
      *
-     * @param keywordPrefix
+     * @param keywordPrefix - keywordPrefix
      * @return a List of the matches. If there are no matches, return an empty list.
      */
     @Override
     public List<Document> searchByPrefix(String keywordPrefix) {
+        if(keywordPrefix == null) throw new IllegalArgumentException();
         String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
+        if(newKey.isEmpty()) return new ArrayList<>();
         Comparator<Document> comparator = new Comparator<Document>() {
             @Override
             public int compare(Document o1, Document o2) {
@@ -312,13 +306,16 @@ public class DocumentStoreImpl implements DocumentStore {
      * Completely remove any trace of any document which contains the given keyword
      * Search is CASE SENSITIVE.
      *
-     * @param keyword
+     * @param keyword - keyword
      * @return a Set of URIs of the documents that were deleted.
      */
     @Override
     public Set<URI> deleteAll(String keyword) {
+        if(keyword == null) throw new IllegalArgumentException();
+        if(keyword.isEmpty()) return new HashSet<>();
+        String newKey = keyword.replaceAll("[^a-zA-Z1-9\\s]", "");
         CommandSet<URI> commandSet = new CommandSet<>();
-        Set<Document> documents = this.documentWordsTrie.deleteAll(keyword);
+        Set<Document> documents = this.documentWordsTrie.deleteAll(newKey);
         Set<URI> urisToReturn = documents.stream()
                 .map(Document::getKey)
                 .collect(Collectors.toSet());
@@ -339,9 +336,12 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithPrefix(String keywordPrefix) {
+        if(keywordPrefix == null) throw new IllegalArgumentException();
+        String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
+        if(newKey.isEmpty()) return new HashSet<>();
         CommandSet<URI> commandSet = new CommandSet<>();
         // this line is still not deleting the empty nodes
-        Set<Document> documents = this.documentWordsTrie.deleteAllWithPrefix(keywordPrefix);
+        Set<Document> documents = this.documentWordsTrie.deleteAllWithPrefix(newKey);
         Set<URI> urisToReturn = documents.stream()
                 .map(Document::getKey)
                 .collect(Collectors.toSet());
@@ -397,7 +397,10 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByKeywordAndMetadata(String keyword, Map<String, String> keysValues) {
-        return search(keyword).stream()
+        if(keyword == null) throw new IllegalArgumentException();
+        if(keyword.isEmpty()) return new ArrayList<>();
+        String newKey = keyword.replaceAll("[^a-zA-Z1-9\\s]", "");
+        return search(newKey).stream()
                         .filter(searchByMetadata(keysValues)::contains)
                         .toList();
     }
@@ -413,7 +416,10 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
-        return searchByPrefix(keywordPrefix).stream()
+        if(keywordPrefix == null) throw new IllegalArgumentException();
+        if(keywordPrefix.isEmpty()) return new ArrayList<>();
+        String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
+        return searchByPrefix(newKey).stream()
                 .filter(searchByMetadata(keysValues)::contains)
                 .toList();
     }
@@ -449,8 +455,11 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithKeywordAndMetadata(String keyword, Map<String, String> keysValues) {
+        if(keyword == null) throw new IllegalArgumentException();
+        if(keyword.isEmpty()) return new HashSet<>();
+        String newKey = keyword.replaceAll("[^a-zA-Z1-9\\s]", "");
         CommandSet<URI> commandSet = new CommandSet<>();
-        List<Document> keywordDocuments = search(keyword);
+        List<Document> keywordDocuments = search(newKey);
         List<Document> metadataDocuments = searchByMetadata(keysValues);
         List<Document> documentsToDelete = new ArrayList<>();
         for (Document document : keywordDocuments){
@@ -476,8 +485,11 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public Set<URI> deleteAllWithPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
+        if(keywordPrefix == null) throw new IllegalArgumentException();
+        if(keywordPrefix.isEmpty()) return new HashSet<>();
+        String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
         CommandSet<URI> commandSet = new CommandSet<>();
-        List<Document> prefixDocuments = searchByPrefix(keywordPrefix);
+        List<Document> prefixDocuments = searchByPrefix(newKey);
         List<Document> metadataDocuments = searchByMetadata(keysValues);
         List<Document> documentsToDelete = new ArrayList<>();
         for (Document document : prefixDocuments){

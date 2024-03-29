@@ -123,7 +123,23 @@ class DocumentStoreImplTest {
     }
 
     @Test
-    void delete() {
+    void delete_GoodURI() throws IOException {
+        DocumentStore documentStore = new DocumentStoreImpl();
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\test.txt");
+        FileInputStream fis1 = new FileInputStream(file1);
+        URI file1URI = file1.toURI();
+        documentStore.put(fis1, file1URI, DocumentStore.DocumentFormat.TXT);
+        assertTrue(documentStore.delete(file1URI));
+
+    }
+
+    @Test
+    void delete_InvalidURI() throws IOException {
+        File file1 = new File("C:\\Users\\heich\\Desktop\\code\\MyRepo" +
+                "\\Seif_Avraham_800699054\\DataStructures\\project\\stage1\\src\\main\\resources\\three");
+        URI file1URI = file1.toURI();
+        assertFalse(documentStore.delete(file1URI));
     }
 
     @Test
@@ -240,6 +256,25 @@ class DocumentStoreImplTest {
     }
 
     @Test
+    void search_nullKey() throws IOException {
+        URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertThrows(IllegalArgumentException.class, ()
+        -> this.documentStore.search(null));
+    }
+
+    @Test
+    void search_emptyKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        List<Document> documents1 = documentStore.search("");
+        List<Document> documents2 = documentStore.search("?");
+        assertEquals(0, documents1.size());
+        assertEquals(0, documents2.size());
+    }
+
+
+    @Test
     void searchByPrefix() throws IOException {
         URI to = addTXTDocumentToStore(documentStore, createNewFile("to", "to too"));
         URI too = addTXTDocumentToStore(documentStore, createNewFile("too", "too top too top"));
@@ -260,13 +295,61 @@ class DocumentStoreImplTest {
     }
 
     @Test
+    void searchByPrefix_nullKey() throws IOException {
+        URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertThrows(IllegalArgumentException.class, ()
+                -> this.documentStore.searchByPrefix(null));
+    }
+
+    @Test
+    void searchByPrefix_emptyKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        List<Document> documents1 = documentStore.searchByPrefix("");
+        List<Document> documents2 = documentStore.searchByPrefix("?");
+        List<Document> documents3 = documentStore.searchByPrefix("it'");
+        assertEquals(0, documents1.size());
+        assertEquals(0, documents2.size());
+        assertEquals(1, documents3.size());
+        for (Document document : documents3) {
+            System.out.println(document.getDocumentTxt());
+        }
+    }
+
+    @Test
     void deleteAll() throws IOException {
         URI topple = addTXTDocumentToStore(documentStore, createNewFile("topple", "topple"));
         Set<URI> uris = documentStore.deleteAll("topple");
         for (URI uri:uris){
             System.out.println(uri.toString());
         }
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        URI testSentence2 = addTXTDocumentToStore(documentStore, createNewFile("testSentence2",
+                "This sentence also has the word 'Good'"));
+        Set<URI> deleted = documentStore.deleteAll("Good");
+        assertEquals(2, deleted.size());
+        assertEquals(0, this.documentStore.search("Does").size());
     }
+
+    @Test
+    void deleteAll_nullKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertThrows(IllegalArgumentException.class, ()
+        -> this.documentStore.deleteAll(null));
+    }
+
+    @Test
+    void deleteAll_emptyKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertEquals(0, this.documentStore.deleteAll("").size());
+        assertEquals(0, this.documentStore.deleteAll("$").size());
+    }
+
+
 
     @Test
     void deleteAllWithPrefix() throws IOException {
@@ -282,8 +365,22 @@ class DocumentStoreImplTest {
         for (Document document : documents) {
             System.out.println(document.getDocumentTxt());
         }*/
-
     }
+
+    @Test
+    void deleteAllWithPrefix_nullKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertThrows(IllegalArgumentException.class, ()
+                -> this.documentStore.deleteAllWithPrefix(null));
+    }
+
+    @Test
+    void deleteAllWithPrefix_emptyKey() throws IOException {
+        URI testSentence = addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+            "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        assertEquals(0, this.documentStore.deleteAllWithPrefix("").size());
+        assertEquals(0, this.documentStore.deleteAllWithPrefix("$").size());}
 
     @Test
     void searchByMetadata() {
@@ -305,6 +402,7 @@ class DocumentStoreImplTest {
         for (Document document : documents){
             System.out.println(document.getDocumentTxt());
         }
+        assertEquals(0, documents.size());
     }
 
     @Test
