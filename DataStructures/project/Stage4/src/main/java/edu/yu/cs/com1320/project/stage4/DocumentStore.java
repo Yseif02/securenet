@@ -15,7 +15,7 @@ public interface DocumentStore
      */
     enum DocumentFormat{
         TXT,BINARY
-    };
+    }
 
     /**
      * set the given key-value metadata pair for the document at the given uri

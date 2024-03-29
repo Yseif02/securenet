@@ -36,10 +36,6 @@ class DocumentImplTest {
         document2 = new DocumentImpl(file2URI, file2Contents);
     }
 
-    @Test
-    void testHashCode() {
-
-    }
 
     @Test
     void setMetadataValue() {

@@ -8,16 +8,18 @@ import edu.yu.cs.com1320.project.stage4.DocumentStore;
 import edu.yu.cs.com1320.project.undo.CommandSet;
 import edu.yu.cs.com1320.project.undo.GenericCommand;
 import edu.yu.cs.com1320.project.undo.Undoable;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.annotation.Target;
 import java.net.URI;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class DocumentStoreImpl implements DocumentStore {
-    private StackImpl<Undoable> commandStack;
+    private final StackImpl<Undoable> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
     protected TrieImpl<Document> documentWordsTrie;
 
@@ -100,20 +102,24 @@ public class DocumentStoreImpl implements DocumentStore {
         }
         if (input == null) return handleNullInput(url, docExists, previousHashCode);
         byte[] contents = input.readAllBytes();
-        createAndAddDocument(url, format, contents);
-
-        Consumer<URI> undo = getUndoConsumerForPut(url, docExists, previousDocument);
-        this.commandStack.push(new GenericCommand<>(url, undo));
+        createAndAddDocument(url, format, contents, docExists, previousDocument);
+        //Consumer<URI> undo = getUndoConsumerForPut(url, docExists, previousDocument);
+        this.commandStack.push(new GenericCommand<>(url, getUndoConsumerForPut(url, docExists, previousDocument)));
         return (docExists) ? previousHashCode : 0;
     }
 
-    private void createAndAddDocument(URI url, DocumentFormat format, byte[] contents) {
+    private void createAndAddDocument(URI url, DocumentFormat format, byte[] contents, boolean docExists, Document previousDoc) {
         DocumentImpl document;
         if (format == DocumentFormat.BINARY) {
             document = new DocumentImpl(url, contents);
             this.documentStore.put(url, document);
         } else {
             document = new DocumentImpl(url, new String(contents));
+            if(docExists && previousDoc.getWordCountMap() != null) {
+                for (String word : previousDoc.getWordCountMap()){
+                    this.documentWordsTrie.delete(word, previousDoc);
+                }
+            }
             this.documentStore.put(url, document);
             addDocumentWordsToTrie(document);
         }
@@ -128,17 +134,19 @@ public class DocumentStoreImpl implements DocumentStore {
 
     private Consumer<URI> getUndoConsumerForPut(URI url, boolean docExists, Document previousDocument) {
         return HashTableImpl -> {
-            if(docExists){
-                this.documentStore.put(url, previousDocument);
-                this.addDocumentWordsToTrie(previousDocument);
-            }else{
-                Document documentToDelete = get(url);
-                this.documentStore.put(url, null);
-                if(documentToDelete.getWordCountMap() != null) {
-                    for (String word : documentToDelete.getWordCountMap()) {
-                        this.documentWordsTrie.delete(word, previousDocument);
-                    }
+            Document currentDoc = get(url);
+            //If document has words, delete them and the document from the Trie
+            if(currentDoc.getWordCountMap() != null){
+                for (String word : currentDoc.getWordCountMap()){
+                    this.documentWordsTrie.delete(word, currentDoc);
                 }
+            }
+            if(docExists){
+                //If put replaced a document, restore that document
+                this.addDocumentWordsToTrie(previousDocument);
+                this.documentStore.put(url, previousDocument);
+            }else{
+                this.documentStore.put(url, null);
             }
         };
     }
@@ -218,12 +226,12 @@ public class DocumentStoreImpl implements DocumentStore {
         StackImpl<Undoable> tempStack = new StackImpl<>();
         while (this.commandStack.size() > 0) {
             Undoable commandToCheck = this.commandStack.peek();
-            if (commandToCheck instanceof CommandSet<?>) {
-                if (checkCommandSet(url, (CommandSet<?>) commandToCheck)) return;
+            if (commandToCheck instanceof CommandSet commandSet) {
+                if (checkCommandSet(url, (CommandSet) commandToCheck)) return;
                 tempStack.push(this.commandStack.pop());
                 continue;
             }
-            assert commandToCheck instanceof GenericCommand<?>;
+            //assert commandToCheck instanceof GenericCommand<?>;
             if (((GenericCommand<?>) commandToCheck).getTarget().equals(url)) {
                 commandToCheck.undo();
                 this.commandStack.pop();
@@ -234,15 +242,17 @@ public class DocumentStoreImpl implements DocumentStore {
         }
     }
 
-    private boolean checkCommandSet(URI url, CommandSet<?> commandSet) {
-        for (GenericCommand command : commandSet){
+    private boolean checkCommandSet(URI url, CommandSet<URI> commandSet) {
+        return commandSet.undo(url);
+
+        /*for (GenericCommand command : commandSet){
             if(command.getTarget().equals(url)) {
                 command.undo();
                 commandSet.remove(command);
                 return true;
             }
         }
-        return false;
+        return false;*/
     }
 
 
@@ -261,9 +271,9 @@ public class DocumentStoreImpl implements DocumentStore {
             //if there is a way to remove the document from the list if document.getWordCount == 0
             int documentOneWordCount = o1.wordCount(keyword);
             int documentTwoWordCount = o2.wordCount(keyword);
-            return Integer.compare(documentTwoWordCount ,documentOneWordCount);
+            return Integer.compare(documentTwoWordCount, documentOneWordCount);
         };
-        String newKeyword = keyword.replaceAll("'", "");
+        String newKeyword = keyword.replaceAll("[^a-zA-Z0-9\\s]", "");
         return this.documentWordsTrie.getSorted(newKeyword, comparator);
     }
 
@@ -346,6 +356,7 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param keysValues metadata key-value pairs to search for
      * @return a List of all documents whose metadata contains ALL OF the given values for the given keys. If no documents contain all the given key-value pairs, return an empty list.
      */
+
     @Override
     public List<Document> searchByMetadata(Map<String, String> keysValues) {
         List<Document> documentList = (List<Document>) this.documentStore.values();
@@ -480,6 +491,7 @@ public class DocumentStoreImpl implements DocumentStore {
         this.commandStack.push(commandSet);
         return urisToReturn;
     }
+
 
     private Consumer<URI> deleteReturningConsumer(URI url){
         Document deletedDocument = this.documentStore.get(url);

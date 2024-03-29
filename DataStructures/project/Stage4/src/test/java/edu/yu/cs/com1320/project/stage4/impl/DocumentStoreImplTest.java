@@ -138,7 +138,6 @@ class DocumentStoreImplTest {
         this.url1 = addBinaryDocumentToStore(documentStore, createNewFile("Test File 6", "tooth together"));
         URI url4 = addTXTDocumentToStore(documentStore, createNewFile("Test File 4", "tool tool tool tough tore"));
         URI url6 = addTXTDocumentToStore(documentStore, createNewFile("Test File 6", "tooth together"));
-        this.documentStore.deleteAllWithPrefix("too");
         this.documentStore.setMetadata(url4, "Key1", "Value 1");
         this.documentStore.setMetadata(url4, "Key2", "Value 2");
         this.documentStore.setMetadata(url4, "Key3", "Value 3");
@@ -172,8 +171,8 @@ class DocumentStoreImplTest {
         URI to = addTXTDocumentToStore(documentStore, createNewFile("to", "to"));
         URI t = addTXTDocumentToStore(documentStore, createNewFile("t", "t"));
         URI tool = addTXTDocumentToStore(documentStore, createNewFile("tool", "tool"));
-        documentStore.deleteAllWithPrefix("to");
         documentStore.deleteAllWithPrefix("ex");
+        documentStore.deleteAllWithPrefix("to");
         documentStore.undo(excel);
         assertNotNull(documentStore.get(excel));
         assertNull(documentStore.get(expect));
@@ -227,11 +226,17 @@ class DocumentStoreImplTest {
     }
 
     @Test
-    void search() {
-        List<Document> documents = documentStore.search("there");
+    void search() throws IOException {
+        URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+
+        List<Document> documents = documentStore.search("it's");
+        List<Document> documents2 = documentStore.search("3");
         for (Document document : documents) {
             System.out.println(document.getDocumentTxt());
         }
+        assertEquals(1, documents.size());
+        assertEquals(1, documents2.size());
     }
 
     @Test
@@ -278,6 +283,18 @@ class DocumentStoreImplTest {
         List<Document> documents = documentStore.searchByMetadata(metaDataTestPairs);
         for (Document document : documents) {
             System.out.println(document.getKey().toString());
+            System.out.println(document.getDocumentTxt());
+        }
+    }
+
+    @Test
+    void searchByMetadata_emptyMap() throws IOException {
+        URI one = addTXTDocumentToStore(documentStore, createNewFile("one", "one"));
+        URI two = addTXTDocumentToStore(documentStore, createNewFile("two", "two"));
+        URI three = addTXTDocumentToStore(documentStore, createNewFile("three", "three"));
+        this.metaDataTestPairs = new HashMap<>();
+        List<Document> documents = documentStore.searchByMetadata(this.metaDataTestPairs);
+        for (Document document : documents){
             System.out.println(document.getDocumentTxt());
         }
     }

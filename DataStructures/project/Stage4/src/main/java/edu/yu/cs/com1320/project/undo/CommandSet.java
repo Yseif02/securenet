@@ -4,7 +4,7 @@ import java.util.*;
 
 public class CommandSet<Target> extends AbstractSet<GenericCommand<Target>> implements Undoable {
 
-    private HashSet<GenericCommand<Target>> genericCommands;
+    private final HashSet<GenericCommand<Target>> genericCommands;
 
     public CommandSet(){
         this.genericCommands = new HashSet<GenericCommand<Target>>();
@@ -48,7 +48,6 @@ public class CommandSet<Target> extends AbstractSet<GenericCommand<Target>> impl
             if(todo != null){
                 this.genericCommands.remove(todo);
                 return todo.undo();
-
             }
         }
         return false;

@@ -1,7 +1,6 @@
 package edu.yu.cs.com1320.project.stage4.impl;
 
 import edu.yu.cs.com1320.project.Trie;
-import edu.yu.cs.com1320.project.impl.TooSimpleTrie;
 import edu.yu.cs.com1320.project.impl.TrieImpl;
 import edu.yu.cs.com1320.project.stage4.Document;
 import edu.yu.cs.com1320.project.stage4.DocumentStore;
@@ -42,26 +41,7 @@ public class Main {
         }
     }
 
-    private void test1(){
-        TooSimpleTrie<String> trie = new TooSimpleTrie<String>() {};
-        trie.put("The", "The");
-        trie.put("Thin", "Thin");
-        trie.put("Thinner", "Thinner");
-        trie.put("This", "This");
 
-        trie.deleteAll("The");
-        trie.put("The", "The");
-
-        trie.deleteAll("Thin");
-        trie.put("Thin", "Thin");
-
-        trie.deleteAll("Thinner");
-        trie.put("Thinner", "Thinner");
-
-        trie.deleteAll("This");
-        trie.put("This", "This");
-
-    }
 
     private static URI addDocumentToStore(DocumentStoreImpl documentStore, FileInput fileInput) throws IOException {
         documentStore.put(fileInput.fis, fileInput.url, DocumentStore.DocumentFormat.TXT);

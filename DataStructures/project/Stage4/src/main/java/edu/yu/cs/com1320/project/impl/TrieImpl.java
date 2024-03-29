@@ -13,7 +13,7 @@ public class TrieImpl<Value> implements Trie<Value> {
         private String valueString;
         protected Set<Value> values = new HashSet<>();
         protected Node[] links = new Node[alphabetSize];
-        private boolean shouldDelete = false;
+        private final boolean shouldDelete = false;
         private boolean isWord = false;
 
         private boolean hasLinks(){

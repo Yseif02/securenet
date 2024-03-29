@@ -56,7 +56,7 @@ public class DocumentImpl implements Document {
 
     private String[] getDocumentWords() {
         if(documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return null;
-        String newText = this.text.replaceAll("[^a-zA-Z0-9'\\s]", "");;
+        String newText = this.text.replaceAll("[^a-zA-Z0-9\\s]", "");
         return Pattern.compile("[^a-zA-Z0-9']+")
                 .splitAsStream(newText)
                 .filter(word -> !word.isEmpty())
@@ -139,6 +139,7 @@ public class DocumentImpl implements Document {
      */
     @Override
     public int wordCount(String word) {
+        if(this.wordCountMap.entrySet().isEmpty()) return 0;
         return (this.documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.wordCountMap.get(word) : 0;
     }
 

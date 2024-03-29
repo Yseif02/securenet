@@ -10,8 +10,8 @@ import java.util.function.Consumer;
 public class GenericCommand<Target> implements Undoable
 {
     /**the Target this command was executed on*/
-    private Target target;
-    private Consumer<Target> undoFunction;
+    private final Target target;
+    private final Consumer<Target> undoFunction;
     private boolean undone;
     public GenericCommand(Target target, Consumer<Target> undoFunction){
         this.target = target;
@@ -44,10 +44,9 @@ public class GenericCommand<Target> implements Undoable
         if (this == o){
             return true;
         }
-        if (!(o instanceof GenericCommand)){
+        if (!(o instanceof GenericCommand<?> genericCommand)){
             return false;
         }
-        GenericCommand<?> genericCommand = (GenericCommand<?>) o;
         return this.target.equals(genericCommand.target);
     }
 

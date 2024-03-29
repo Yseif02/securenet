@@ -19,7 +19,7 @@ public class StackImpl<T> implements Stack<T>{
      */
     @Override
     public void push(T element) {
-        if (size() == this.stack.length) this.stack = Arrays.copyOf(this.stack, this.size * 2);;
+        if (size() == this.stack.length) this.stack = Arrays.copyOf(this.stack, this.size * 2);
         for (int i = 0; i < this.stack.length; i++) {
             if (this.stack[i] == null) {
                 this.stack[i] = element;
