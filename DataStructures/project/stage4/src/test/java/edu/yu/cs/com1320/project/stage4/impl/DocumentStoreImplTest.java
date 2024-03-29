@@ -249,6 +249,14 @@ class DocumentStoreImplTest {
         for (Document document : documents) {
             System.out.println(document.getDocumentTxt());
         }
+        URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+
+        List<Document> documents2 = documentStore.searchByPrefix("it's");
+        assertEquals(1, documents2.size());
+        for (Document document : documents2) {
+            System.out.println(document.getDocumentTxt());
+        }
     }
 
     @Test

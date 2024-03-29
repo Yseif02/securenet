@@ -266,14 +266,14 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> search(String keyword) {
+        String newKeyword = keyword.replaceAll("[^a-zA-Z0-9\\s]", "");
         Comparator<Document> comparator = (o1, o2) -> {
             //this will search for they're
             //if there is a way to remove the document from the list if document.getWordCount == 0
-            int documentOneWordCount = o1.wordCount(keyword);
-            int documentTwoWordCount = o2.wordCount(keyword);
+            int documentOneWordCount = o1.wordCount(newKeyword);
+            int documentTwoWordCount = o2.wordCount(newKeyword);
             return Integer.compare(documentTwoWordCount, documentOneWordCount);
         };
-        String newKeyword = keyword.replaceAll("[^a-zA-Z0-9\\s]", "");
         return this.documentWordsTrie.getSorted(newKeyword, comparator);
     }
 
@@ -287,6 +287,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefix(String keywordPrefix) {
+        String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
         Comparator<Document> comparator = new Comparator<Document>() {
             @Override
             public int compare(Document o1, Document o2) {
@@ -298,13 +299,13 @@ public class DocumentStoreImpl implements DocumentStore {
                 Set<String> words = document.getWordCountMap();
                 for (String word : words) {
                     int wordCount = document.wordCount(word);
-                    String prefixSubstring = word.substring(0, keywordPrefix.length());
-                    if (prefixSubstring.equals(keywordPrefix)) counter += wordCount;
+                    String prefixSubstring = word.substring(0, newKey.length());
+                    if (prefixSubstring.equals(newKey)) counter += wordCount;
                 }
                 return counter;
             }
         };
-        return this.documentWordsTrie.getAllWithPrefixSorted(keywordPrefix, comparator);
+        return this.documentWordsTrie.getAllWithPrefixSorted(newKey, comparator);
     }
 
     /**
