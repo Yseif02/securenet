@@ -125,12 +125,7 @@ class TrieImplTest {
     @Test
     void getAllWithPrefixSorted_nullKey() {
         assertThrows(IllegalArgumentException.class,
-            () -> this.trie.getAllWithPrefixSorted(null, new Comparator<String>() {
-                @Override
-                public int compare(String o1, String o2) {
-                    return o1.compareTo(o2);
-                }
-            }));
+            () -> this.trie.getAllWithPrefixSorted(null, String::compareTo));
     }
 
     @Test
@@ -191,5 +186,6 @@ class TrieImplTest {
         this.trie.put("key1","Dog");
         this.trie.put("key1","end");
         assertEquals("banana", this.trie.delete("key1", "banana"));
+        assertEquals(4, this.trie.get("key1").size());
     }
 }

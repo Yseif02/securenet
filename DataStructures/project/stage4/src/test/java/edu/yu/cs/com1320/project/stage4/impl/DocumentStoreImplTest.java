@@ -226,8 +226,10 @@ class DocumentStoreImplTest {
     }
 
     @Test
-    void test(){
-
+    void test() throws IOException {
+        URI binary = addBinaryDocumentToStore(this.documentStore, createNewFile("binary", "txt"));
+        Document binaryDoc = documentStore.get(binary);
+        int words = binaryDoc.wordCount("word");
     }
 
 

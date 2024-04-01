@@ -1,10 +1,11 @@
-package edu.yu.cs.com1320.project.stage4.impl;
+package edu.yu.cs.com1320.project.stage5.impl;
 
 import edu.yu.cs.com1320.project.impl.HashTableImpl;
+import edu.yu.cs.com1320.project.impl.MinHeapImpl;
 import edu.yu.cs.com1320.project.impl.StackImpl;
 import edu.yu.cs.com1320.project.impl.TrieImpl;
-import edu.yu.cs.com1320.project.stage4.Document;
-import edu.yu.cs.com1320.project.stage4.DocumentStore;
+import edu.yu.cs.com1320.project.stage5.Document;
+import edu.yu.cs.com1320.project.stage5.DocumentStore;
 import edu.yu.cs.com1320.project.undo.CommandSet;
 import edu.yu.cs.com1320.project.undo.GenericCommand;
 import edu.yu.cs.com1320.project.undo.Undoable;
@@ -20,18 +21,25 @@ public class DocumentStoreImpl implements DocumentStore {
     private final StackImpl<Undoable> commandStack;
     protected HashTableImpl<URI, Document> documentStore;
     private TrieImpl<Document> documentWordsTrie;
+    private long totalMemoryInBytes;
+    private int maxDocs;
+    private MinHeapImpl<Document> storage;
 
     public DocumentStoreImpl(){
         this.commandStack = new StackImpl<>();
         this.documentStore = new HashTableImpl<>();
         this.documentWordsTrie = new TrieImpl<>();
+        this.totalMemoryInBytes = 0;
+        this.maxDocs = -1;
+        this.storage = new MinHeapImpl<>();
     }
+
     /**
      * set the given key-value metadata pair for the document at the given uri
      *
-     * @param uri - uri of the document to set metadata
-     * @param key - metadata key
-     * @param value - metadata value
+     * @param uri
+     * @param key
+     * @param value
      * @return the old value, or null if there was no previous value
      * @throws IllegalArgumentException if the uri is null or blank, if there is no document stored at that uri, or if the key is null or blank
      */
@@ -59,20 +67,22 @@ public class DocumentStoreImpl implements DocumentStore {
                     }
                 };
         this.commandStack.push(new GenericCommand<>(uri, undo));
+        doc.setLastUseTime(System.nanoTime());
         return oldValue;
     }
 
     /**
      * get the value corresponding to the given metadata key for the document at the given uri
      *
-     * @param uri - uri of the document
-     * @param key - key of the metadata to return
+     * @param uri
+     * @param key
      * @return the value, or null if there was no value
      * @throws IllegalArgumentException if the uri is null or blank, if there is no document stored at that uri, or if the key is null or blank
      */
     @Override
     public String getMetadata(URI uri, String key) {
         if(uri == null || key == null || key.isEmpty() || get(uri) == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
+        get(uri).setLastUseTime(System.nanoTime());
         return get(uri).getMetadataValue(key);
     }
 
@@ -80,10 +90,9 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param input  the document being put
      * @param url    unique identifier for the document
      * @param format indicates which type of document format is being passed
-     * @return if there is no previous doc at the given URI, return 0. If there is a previous doc, return the hashCode of the previous doc.
-     * If InputStream is null, this is a delete, and thus return either the hashCode of the deleted doc or 0 if there is no doc to delete.
+     * @return if there is no previous doc at the given URI, return 0. If there is a previous doc, return the hashCode of the previous doc. If InputStream is null, this is a delete, and thus return either the hashCode of the deleted doc or 0 if there is no doc to delete.
      * @throws IOException              if there is an issue reading input
-     * @throws IllegalArgumentException if url or format are null
+     * @throws IllegalArgumentException if url or format are null, OR IF THE MEMORY FOOTPRINT OF THE DOCUMENT IS > MAX DOCUMENT BYTES
      */
     @Override
     public int put(InputStream input, URI url, DocumentFormat format) throws IOException {
@@ -103,6 +112,7 @@ public class DocumentStoreImpl implements DocumentStore {
         createAndAddDocument(url, format, contents, docExists, previousDocument);
         //Consumer<URI> undo = getUndoConsumerForPut(url, docExists, previousDocument);
         this.commandStack.push(new GenericCommand<>(url, getUndoConsumerForPut(url, docExists, previousDocument)));
+        this.get(url).setLastUseTime(System.nanoTime());
         return (docExists) ? previousHashCode : 0;
     }
 
@@ -113,8 +123,8 @@ public class DocumentStoreImpl implements DocumentStore {
             this.documentStore.put(url, document);
         } else {
             document = new DocumentImpl(url, new String(contents));
-            if(docExists && previousDoc.getWords() != null) {
-                for (String word : previousDoc.getWords()){
+            if(docExists && previousDoc.getWordCountMap() != null) {
+                for (String word : previousDoc.getWordCountMap()){
                     this.documentWordsTrie.delete(word, previousDoc);
                 }
             }
@@ -124,7 +134,7 @@ public class DocumentStoreImpl implements DocumentStore {
     }
 
     private void addDocumentWordsToTrie(Document document){
-        for (String word : document.getWords()){
+        for (String word : document.getWordCountMap()){
             String newWord = word.replaceAll("'", "");
             documentWordsTrie.put(newWord, document);
         }
@@ -134,8 +144,8 @@ public class DocumentStoreImpl implements DocumentStore {
         return HashTableImpl -> {
             Document currentDoc = get(url);
             //If document has words, delete them and the document from the Trie
-            if(currentDoc.getWords() != null){
-                for (String word : currentDoc.getWords()){
+            if(currentDoc.getWordCountMap() != null){
+                for (String word : currentDoc.getWordCountMap()){
                     this.documentWordsTrie.delete(word, currentDoc);
                 }
             }
@@ -149,7 +159,6 @@ public class DocumentStoreImpl implements DocumentStore {
         };
     }
 
-
     private int handleNullInput(URI url, boolean docExists, int previousHashCode) {
         if (docExists) {
             delete(url);
@@ -158,12 +167,14 @@ public class DocumentStoreImpl implements DocumentStore {
         return 0;
     }
 
+
     /**
      * @param url the unique identifier of the document to get
      * @return the given document
      */
     @Override
     public Document get(URI url) {
+        get(url).setLastUseTime(System.nanoTime());
         return this.documentStore.get(url);
     }
 
@@ -177,8 +188,8 @@ public class DocumentStoreImpl implements DocumentStore {
         if(this.documentStore.get(url) == null) {
             return false;
         }
-        if(deletedDocument.getWords() != null) {
-            for (String word : deletedDocument.getWords()) {
+        if(deletedDocument.getWordCountMap() != null) {
+            for (String word : deletedDocument.getWordCountMap()) {
                 documentWordsTrie.delete(word, deletedDocument);
             }
         }
@@ -186,13 +197,13 @@ public class DocumentStoreImpl implements DocumentStore {
         Consumer<URI> undoDelete = getUndoForDeleteURI(deletedDocument, url);
         this.commandStack.push(new GenericCommand<>(url, undoDelete));
         return true;
-
     }
 
     private Consumer<URI> getUndoForDeleteURI(Document deletedDocument, URI documentURI) {
         return HashTableImpl -> {
             this.documentStore.put(documentURI, deletedDocument);
-            if(deletedDocument.getWords() != null) this.addDocumentWordsToTrie(deletedDocument);
+            get(documentURI).setLastUseTime(System.nanoTime());
+            if(deletedDocument.getWordCountMap() != null) this.addDocumentWordsToTrie(deletedDocument);
         };
     }
 
@@ -249,7 +260,7 @@ public class DocumentStoreImpl implements DocumentStore {
      * Documents are returned in sorted, descending order, sorted by the number of times the keyword appears in the document.
      * Search is CASE SENSITIVE.
      *
-     * @param keyword - keyword
+     * @param keyword
      * @return a List of the matches. If there are no matches, return an empty list.
      */
     @Override
@@ -264,22 +275,25 @@ public class DocumentStoreImpl implements DocumentStore {
             int documentTwoWordCount = o2.wordCount(newKeyword);
             return Integer.compare(documentTwoWordCount, documentOneWordCount);
         };
-        return this.documentWordsTrie.getSorted(newKeyword, comparator);
+        return this.documentWordsTrie.getSorted(newKeyword, comparator)
+                .stream()
+                .peek(document -> document.setLastUseTime(System.nanoTime()))
+                .toList();
     }
 
     /**
-     * Retrieve all documents that contain text which starts with the given prefix
+     * Retrieve all documents containing a word that starts with the given prefix
      * Documents are returned in sorted, descending order, sorted by the number of times the prefix appears in the document.
      * Search is CASE SENSITIVE.
      *
-     * @param keywordPrefix - keywordPrefix
+     * @param keywordPrefix
      * @return a List of the matches. If there are no matches, return an empty list.
      */
     @Override
     public List<Document> searchByPrefix(String keywordPrefix) {
-        if(keywordPrefix == null) throw new IllegalArgumentException();
+        if (keywordPrefix == null) throw new IllegalArgumentException();
         String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
-        if(newKey.isEmpty()) return new ArrayList<>();
+        if (newKey.isEmpty()) return new ArrayList<>();
         Comparator<Document> comparator = new Comparator<Document>() {
             @Override
             public int compare(Document o1, Document o2) {
@@ -288,7 +302,7 @@ public class DocumentStoreImpl implements DocumentStore {
 
             private int getPrefixCount(Document document) {
                 int counter = 0;
-                Set<String> words = document.getWords();
+                Set<String> words = document.getWordCountMap();
                 for (String word : words) {
                     int wordCount = document.wordCount(word);
                     String prefixSubstring = word.substring(0, newKey.length());
@@ -297,14 +311,16 @@ public class DocumentStoreImpl implements DocumentStore {
                 return counter;
             }
         };
-        return this.documentWordsTrie.getAllWithPrefixSorted(newKey, comparator);
+        return this.documentWordsTrie.getAllWithPrefixSorted(newKey, comparator)
+                .stream()
+                .peek(document -> document.setLastUseTime(System.nanoTime()))
+                .toList();
     }
-
     /**
      * Completely remove any trace of any document which contains the given keyword
      * Search is CASE SENSITIVE.
      *
-     * @param keyword - keyword
+     * @param keyword
      * @return a Set of URIs of the documents that were deleted.
      */
     @Override
@@ -355,7 +371,6 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param keysValues metadata key-value pairs to search for
      * @return a List of all documents whose metadata contains ALL OF the given values for the given keys. If no documents contain all the given key-value pairs, return an empty list.
      */
-
     @Override
     public List<Document> searchByMetadata(Map<String, String> keysValues) {
         List<Document> documentList = (List<Document>) this.documentStore.values();
@@ -384,6 +399,7 @@ public class DocumentStoreImpl implements DocumentStore {
         return containsAll;
     }
 
+
     /**
      * Retrieve all documents whose text contains the given keyword AND which has the given key-value pairs in its metadata
      * Documents are returned in sorted, descending order, sorted by the number of times the keyword appears in the document.
@@ -399,8 +415,11 @@ public class DocumentStoreImpl implements DocumentStore {
         if(keyword.isEmpty()) return new ArrayList<>();
         String newKey = keyword.replaceAll("[^a-zA-Z1-9\\s]", "");
         return search(newKey).stream()
-                        .filter(searchByMetadata(keysValues)::contains)
-                        .toList();
+                .filter(searchByMetadata(keysValues)::contains)
+                .toList()
+                .stream()
+                .peek(document -> document.setLastUseTime(System.nanoTime()))
+                .toList();
     }
 
     /**
@@ -419,6 +438,9 @@ public class DocumentStoreImpl implements DocumentStore {
         String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
         return searchByPrefix(newKey).stream()
                 .filter(searchByMetadata(keysValues)::contains)
+                .toList()
+                .stream()
+                .peek(document -> document.setLastUseTime(System.nanoTime()))
                 .toList();
     }
 
@@ -509,12 +531,46 @@ public class DocumentStoreImpl implements DocumentStore {
             return null;
         }
         // If the document has text ie is a TXT document
-        if(deletedDocument.getWords() != null){
-            for (String word : deletedDocument.getWords()){
+        if(deletedDocument.getWordCountMap() != null){
+            for (String word : deletedDocument.getWordCountMap()){
                 documentWordsTrie.delete(word, deletedDocument);
             }
         }
         this.documentStore.put(url, null);
         return getUndoForDeleteURI(deletedDocument, url);
+    }
+
+    /**
+     * set maximum number of documents that may be stored
+     *
+     * @param limit
+     * @throws IllegalArgumentException if limit < 1
+     */
+    @Override
+    public void setMaxDocumentCount(int limit) {
+        if(limit < 1) throw new IllegalArgumentException();
+        this.maxDocs = limit;
+        while (documentStore.keySet().size() > this.maxDocs){
+            Document deletedDocument = this.storage.remove();
+
+        }
+    }
+
+    private boolean removeDocumentFromStore(Document documentToDelete){
+        //remove doc from document store
+        //remove document from Trie
+        //remove
+    }
+
+
+    /**
+     * set maximum number of bytes of memory that may be used by all the documents in memory combined
+     *
+     * @param limit
+     * @throws IllegalArgumentException if limit < 1
+     */
+    @Override
+    public void setMaxDocumentBytes(int limit) {
+
     }
 }

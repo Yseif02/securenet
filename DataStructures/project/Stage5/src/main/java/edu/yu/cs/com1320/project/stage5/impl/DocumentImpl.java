@@ -1,9 +1,10 @@
-package edu.yu.cs.com1320.project.stage4.impl;
+package edu.yu.cs.com1320.project.stage5.impl;
 
 import edu.yu.cs.com1320.project.HashTable;
 import edu.yu.cs.com1320.project.impl.HashTableImpl;
-import edu.yu.cs.com1320.project.stage4.Document;
-import edu.yu.cs.com1320.project.stage4.DocumentStore;
+import edu.yu.cs.com1320.project.stage5.Document;
+import edu.yu.cs.com1320.project.stage5.DocumentStore;
+import org.jetbrains.annotations.NotNull;
 
 import java.net.URI;
 import java.util.Arrays;
@@ -20,6 +21,7 @@ public class DocumentImpl implements Document {
     private final DocumentStore.DocumentFormat documentFormat;
     private final HashMap<String, Integer> wordCountMap;
     private final Set<String> documentWordSet;
+    private long timeLastUsed;
 
     public DocumentImpl(URI uri, byte[] binaryData){
         if(uri == null || binaryData == null) throw new IllegalArgumentException();
@@ -29,6 +31,7 @@ public class DocumentImpl implements Document {
         this.documentFormat = DocumentStore.DocumentFormat.BINARY;
         this.wordCountMap = null;
         this.documentWordSet = null;
+        setLastUseTime(System.nanoTime());
     }
 
     public DocumentImpl(URI uri, String txt){
@@ -41,6 +44,7 @@ public class DocumentImpl implements Document {
         this.documentWordSet = new HashSet<>();
         String[] documentWords = getDocumentWords();
         if(documentWords != null) addWordsToHashMapAndSet(documentWords);
+        setLastUseTime(System.nanoTime());
     }
 
     private void addWordsToHashMapAndSet(String[] documentWords) {
@@ -75,6 +79,7 @@ public class DocumentImpl implements Document {
      * @param key   key of document metadata to store a value for
      * @param value value to store
      * @return old value, or null if there was no old value
+     * @throws IllegalArgumentException if the key is null or blank
      */
     @Override
     public String setMetadataValue(String key, String value) {
@@ -87,6 +92,7 @@ public class DocumentImpl implements Document {
     /**
      * @param key metadata key whose value we want to retrieve
      * @return corresponding value, or null if there is no such key
+     * @throws IllegalArgumentException if the key is null or blank
      */
     @Override
     public String getMetadataValue(String key) {
@@ -137,10 +143,10 @@ public class DocumentImpl implements Document {
      * @param word
      * @return the number of times the given words appears in the document. If it's a binary document, return 0.
      */
-    //there is a bug here
     @Override
     public int wordCount(String word) {
-        if(this.documentFormat.equals(DocumentStore.DocumentFormat.TXT) && this.wordCountMap.entrySet().isEmpty()) return 0;
+        if(this.documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return 0;
+        if(this.wordCountMap.entrySet().isEmpty()) return 0;
         return (this.documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.wordCountMap.get(word) : 0;
     }
 
@@ -150,5 +156,61 @@ public class DocumentImpl implements Document {
     @Override
     public Set<String> getWords() {
         return (this.documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.documentWordSet : null;
+
+    }
+
+    /**
+     * return the last time this document was used, via put/get or via a search result
+     * (for stage 4 of project)
+     */
+    @Override
+    public long getLastUseTime() {
+        return this.timeLastUsed;
+    }
+
+    /**
+     * @param timeInNanoseconds
+     */
+    @Override
+    public void setLastUseTime(long timeInNanoseconds) {
+        this.timeLastUsed = timeInNanoseconds;
+    }
+
+
+    /**
+     * Compares this object with the specified object for order.  Returns a
+     * negative integer, zero, or a positive integer as this object is less
+     * than, equal to, or greater than the specified object.
+     *
+     * <p>The implementor must ensure {@link Integer#signum
+     * signum}{@code (x.compareTo(y)) == -signum(y.compareTo(x))} for
+     * all {@code x} and {@code y}.  (This implies that {@code
+     * x.compareTo(y)} must throw an exception if and only if {@code
+     * y.compareTo(x)} throws an exception.)
+     *
+     * <p>The implementor must also ensure that the relation is transitive:
+     * {@code (x.compareTo(y) > 0 && y.compareTo(z) > 0)} implies
+     * {@code x.compareTo(z) > 0}.
+     *
+     * <p>Finally, the implementor must ensure that {@code
+     * x.compareTo(y)==0} implies that {@code signum(x.compareTo(z))
+     * == signum(y.compareTo(z))}, for all {@code z}.
+     *
+     * @param o the object to be compared.
+     * @return a negative integer, zero, or a positive integer as this object
+     * is less than, equal to, or greater than the specified object.
+     * @throws NullPointerException if the specified object is null
+     * @throws ClassCastException   if the specified object's type prevents it
+     *                              from being compared to this object.
+     * @apiNote It is strongly recommended, but <i>not</i> strictly required that
+     * {@code (x.compareTo(y)==0) == (x.equals(y))}.  Generally speaking, any
+     * class that implements the {@code Comparable} interface and violates
+     * this condition should clearly indicate this fact.  The recommended
+     * language is "Note: this class has a natural ordering that is
+     * inconsistent with equals."
+     */
+    @Override
+    public int compareTo(@NotNull Document o) {
+        return Long.compare(this.getLastUseTime(), o.getLastUseTime());
     }
 }
