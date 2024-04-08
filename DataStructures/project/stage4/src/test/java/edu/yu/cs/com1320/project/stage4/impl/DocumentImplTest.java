@@ -126,6 +126,7 @@ class DocumentImplTest {
         assertEquals(1, this.document.wordCount("Does"));
         assertEquals(1, this.document.wordCount("this"));
         assertEquals(1, this.document.wordCount("work"));
+        assertEquals(0, this.document.wordCount("the"));
 
 
     }

@@ -140,8 +140,10 @@ public class DocumentImpl implements Document {
     //there is a bug here
     @Override
     public int wordCount(String word) {
-        if(this.documentFormat.equals(DocumentStore.DocumentFormat.TXT) && this.wordCountMap.entrySet().isEmpty()) return 0;
-        return (this.documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.wordCountMap.get(word) : 0;
+        if(this.documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return 0;
+        if(this.wordCountMap.entrySet().isEmpty()) return 0;
+        if(this.wordCountMap.get(word) == null) return 0;
+        return this.wordCountMap.get(word);
     }
 
     /**

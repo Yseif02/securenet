@@ -287,6 +287,7 @@ public class DocumentStoreImpl implements DocumentStore {
             }
 
             private int getPrefixCount(Document document) {
+                if(document.getDocumentBinaryData() != null) return 0;
                 int counter = 0;
                 Set<String> words = document.getWords();
                 for (String word : words) {
@@ -412,6 +413,8 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param keysValues
      * @return a List of the matches. If there are no matches, return an empty list.
      */
+
+    //bug here somewhere
     @Override
     public List<Document> searchByPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
         if(keywordPrefix == null) throw new IllegalArgumentException();
@@ -481,6 +484,8 @@ public class DocumentStoreImpl implements DocumentStore {
      * @param keysValues
      * @return a Set of URIs of the documents that were deleted.
      */
+
+    //nug here somewhere, maybe from search prefix metatdta
     @Override
     public Set<URI> deleteAllWithPrefixAndMetadata(String keywordPrefix, Map<String, String> keysValues) {
         if(keywordPrefix == null) throw new IllegalArgumentException();

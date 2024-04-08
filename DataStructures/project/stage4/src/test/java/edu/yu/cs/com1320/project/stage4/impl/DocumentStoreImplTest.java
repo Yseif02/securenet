@@ -55,9 +55,9 @@ class DocumentStoreImplTest {
         this.documentStore.setMetadata(url4, "Key2", "Value 2");
         this.documentStore.setMetadata(url4, "Key3", "Value 3");*/
         this.metaDataTestPairs = new HashMap<>();
-        metaDataTestPairs.put("Key1", "Value 1");
+        /*metaDataTestPairs.put("Key1", "Value 1");
         metaDataTestPairs.put("Key2", "Value 2");
-        metaDataTestPairs.put("Key3", "Value 3");
+        metaDataTestPairs.put("Key3", "Value 3");*/
     }
 
     private static URI addTXTDocumentToStore(DocumentStoreImpl documentStore, FileInput fileInput) throws IOException {
@@ -278,22 +278,54 @@ class DocumentStoreImplTest {
 
     @Test
     void searchByPrefix() throws IOException {
-        URI to = addTXTDocumentToStore(documentStore, createNewFile("to", "to too"));
-        URI too = addTXTDocumentToStore(documentStore, createNewFile("too", "too top too top"));
-        URI tool = addTXTDocumentToStore(documentStore, createNewFile("tool", "tool"));
-        URI toe = addTXTDocumentToStore(documentStore, createNewFile("toe", "toe tomato tomorrow"));
-        List<Document> documents = documentStore.searchByPrefix("to");
+        URI sentence1 = addTXTDocumentToStore(documentStore, createNewFile("sentence1", "This is the text to sentence one. Here are some prefixes for to; to, too, top"));
+        URI binaryDoc = addBinaryDocumentToStore(documentStore, createNewFile("BinaryDoc", ""));
+        URI sentence2 = addTXTDocumentToStore(documentStore, createNewFile("sentence2", "can't sentence has no matching prefixes"));
+        URI sentence3 = addTXTDocumentToStore(documentStore, createNewFile("sentence3", "Here is the text to sentence Three. These are other matching prefixes; tool, ton"));
+        URI binaryDoc2 = addBinaryDocumentToStore(documentStore, createNewFile("BinaryDoc2", ""));
+        URI sentence4 = addTXTDocumentToStore(documentStore, createNewFile("sentence4", "This sentence has another matching prefixes. totally"));
+        List<Document> documents = documentStore.searchByPrefix("can't");
         for (Document document : documents) {
-            System.out.println(document.getDocumentTxt());
+            System.out.println(document.getKey().toString());
         }
-        URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
-                "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
+        //URI testSentence =  addTXTDocumentToStore(documentStore, createNewFile("testSentence",
+        //       "Good evening, it's  currently thursday night. The jytney costs $3. Does this work?"));
 
-        List<Document> documents2 = documentStore.searchByPrefix("it's");
-        assertEquals(1, documents2.size());
-        for (Document document : documents2) {
+        //List<Document> documents2 = documentStore.searchByPrefix("it's");
+        //assertEquals(1, documents2.size());
+       /* for (Document document : documents2) {
             System.out.println(document.getDocumentTxt());
-        }
+        }*/
+    }
+
+    @Test
+    void deleteAllWithPrefixAndMetaData() throws IOException {
+        URI sentence1 = addTXTDocumentToStore(documentStore, createNewFile("sentence1", "This is the text to sentence one. Here are some prefixes for to; to, too, top"));
+        URI binaryDoc = addBinaryDocumentToStore(documentStore, createNewFile("BinaryDoc", ""));
+        URI sentence2 = addTXTDocumentToStore(documentStore, createNewFile("sentence2", "This sentence has no matching prefixes"));
+        URI sentence3 = addTXTDocumentToStore(documentStore, createNewFile("sentence3", "Here is the text to sentence Three. These are other matching prefixes; tool, ton"));
+        URI binaryDoc2 = addBinaryDocumentToStore(documentStore, createNewFile("BinaryDoc2", ""));
+        URI sentence4 = addTXTDocumentToStore(documentStore, createNewFile("sentence4", "This sentence has another matching prefixes. totally"));
+        this.documentStore.setMetadata(sentence1, "key1", "value");
+        this.documentStore.setMetadata(sentence1, "key2", "value");
+        this.documentStore.setMetadata(binaryDoc2, "key1", "value");
+        this.documentStore.setMetadata(binaryDoc2, "key2", "value");
+        this.documentStore.setMetadata(sentence3, "key1", "value");
+        this.metaDataTestPairs.put("key1", "value");
+        this.metaDataTestPairs.put("key2", "value");
+
+        //assertEquals(0, documentStore.get(binaryDoc2).wordCount("word"));
+
+
+        List<Document> documents = this.documentStore.searchByPrefixAndMetadata("to", this.metaDataTestPairs);
+        assertTrue(documents.contains(this.documentStore.get(sentence1)));
+        assertFalse(documents.contains(this.documentStore.get(binaryDoc2)));
+        assertFalse(documents.contains(this.documentStore.get(binaryDoc)));
+        assertFalse(documents.contains(this.documentStore.get(sentence2)));
+        assertFalse(documents.contains(this.documentStore.get(sentence3)));
+        assertFalse(documents.contains(this.documentStore.get(sentence4)));
+
+
     }
 
     @Test

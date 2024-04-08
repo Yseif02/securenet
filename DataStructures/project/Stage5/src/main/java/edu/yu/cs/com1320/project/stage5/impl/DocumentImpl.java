@@ -22,6 +22,7 @@ public class DocumentImpl implements Document {
     private final HashMap<String, Integer> wordCountMap;
     private final Set<String> documentWordSet;
     private long timeLastUsed;
+    private int byteSize;
 
     public DocumentImpl(URI uri, byte[] binaryData){
         if(uri == null || binaryData == null) throw new IllegalArgumentException();
@@ -29,9 +30,9 @@ public class DocumentImpl implements Document {
         this.binaryData = binaryData;
         this.metadata = new HashTableImpl<>();
         this.documentFormat = DocumentStore.DocumentFormat.BINARY;
+        this.byteSize = binaryData.length;
         this.wordCountMap = null;
         this.documentWordSet = null;
-        setLastUseTime(System.nanoTime());
     }
 
     public DocumentImpl(URI uri, String txt){
@@ -42,9 +43,9 @@ public class DocumentImpl implements Document {
         this.documentFormat = DocumentStore.DocumentFormat.TXT;
         this.wordCountMap = new HashMap<>();
         this.documentWordSet = new HashSet<>();
+        this.byteSize = txt.getBytes().length;
         String[] documentWords = getDocumentWords();
         if(documentWords != null) addWordsToHashMapAndSet(documentWords);
-        setLastUseTime(System.nanoTime());
     }
 
     private void addWordsToHashMapAndSet(String[] documentWords) {
@@ -147,7 +148,8 @@ public class DocumentImpl implements Document {
     public int wordCount(String word) {
         if(this.documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return 0;
         if(this.wordCountMap.entrySet().isEmpty()) return 0;
-        return (this.documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.wordCountMap.get(word) : 0;
+        if(this.wordCountMap.get(word) == null) return 0;
+        return this.wordCountMap.get(word);
     }
 
     /**
@@ -212,5 +214,12 @@ public class DocumentImpl implements Document {
     @Override
     public int compareTo(@NotNull Document o) {
         return Long.compare(this.getLastUseTime(), o.getLastUseTime());
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        if(this == object) return true;
+        if(object == null || getClass() != object.getClass()) return false;
+        return this.hashCode() == object.hashCode();
     }
 }
