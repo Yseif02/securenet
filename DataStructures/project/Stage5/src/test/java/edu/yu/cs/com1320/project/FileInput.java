@@ -20,6 +20,10 @@ public class FileInput {
         return fis;
     }
 
+    public FileInputStream getNewFis() throws FileNotFoundException {
+        return new FileInputStream(this.file);
+    }
+
     public URI getUrl() {
         return url;
     }
