@@ -320,7 +320,7 @@ public class DocumentStoreImpl implements DocumentStore {
         List<Document> documents = this.documentWordsTrie.getSorted(newKeyword, comparator);
         long currentTime = System.nanoTime();
         for(Document document : documents){
-            document.setLastUseTime(System.nanoTime());
+            document.setLastUseTime(currentTime);
             this.storage.reHeapify(document);
         }
         return documents;
@@ -360,7 +360,7 @@ public class DocumentStoreImpl implements DocumentStore {
         List<Document> documents = this.documentWordsTrie.getAllWithPrefixSorted(newKey, comparator);
         long currentTime = System.nanoTime();
         for(Document document : documents){
-            document.setLastUseTime(System.nanoTime());
+            document.setLastUseTime(currentTime);
             this.storage.reHeapify(document);
         }
         return documents;
@@ -449,8 +449,9 @@ public class DocumentStoreImpl implements DocumentStore {
                 documentsListToReturn.add(document);
             }
         }
+        long currentTime = System.nanoTime();
         for(Document document : documentsListToReturn){
-            document.setLastUseTime(System.nanoTime());
+            document.setLastUseTime(currentTime);
             this.storage.reHeapify(document);
         }
         return documentsListToReturn;
@@ -492,7 +493,7 @@ public class DocumentStoreImpl implements DocumentStore {
                 .toList();
         long currentTime = System.nanoTime();
         for(Document document : documents){
-            document.setLastUseTime(System.nanoTime());
+            document.setLastUseTime(currentTime);
             this.storage.reHeapify(document);
         }
         return documents;
@@ -519,7 +520,7 @@ public class DocumentStoreImpl implements DocumentStore {
                 .toList();
         long currentTime = System.nanoTime();
         for(Document document : documents){
-            document.setLastUseTime(System.nanoTime());
+            document.setLastUseTime(currentTime);
             this.storage.reHeapify(document);
         }
         return documents;

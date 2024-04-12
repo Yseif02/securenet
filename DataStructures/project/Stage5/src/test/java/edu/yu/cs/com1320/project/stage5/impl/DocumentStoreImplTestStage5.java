@@ -140,6 +140,8 @@ class DocumentStoreImplTestStage5 {
 
 
 
+
+
     @Test
     void put_withMaxBytesSetAfterPut1() throws IOException, NoSuchFieldException, IllegalAccessException {
         addSomeMixedDocs();
@@ -801,5 +803,50 @@ class DocumentStoreImplTestStage5 {
     void setMaxDocumentBytes_negativeInt() {
         assertThrows(IllegalArgumentException.class, ()
                 -> this.documentStore.setMaxDocumentBytes(-1));
+    }
+
+    @Test
+    void test_heapProperties() throws IOException, NoSuchFieldException, IllegalAccessException {
+        MinHeapImpl<Document> storage = (MinHeapImpl<Document>) reflectField(documentStore, "storage");
+        FileInput heapTestTextFile1 = createNewTXTFile("heapTestTextFile1", "Here are some words");
+        FileInput heapTestTextFile2 = createNewTXTFile("heapTestTextFile2", "This is the text for heapTestTextFile2");
+        FileInput heapTestTextDoc3 = createNewTXTFile("heapTestTextDoc3", "This is the third text doc");
+        FileInput heapTestBinaryDoc = createNewBinaryFile("heapTestBinaryDoc");
+        Document doc1 = this.documentStore.get(heapTestTextFile1.getUrl());
+        Document doc2 = this.documentStore.get(heapTestTextFile2.getUrl());
+        Document doc3 = this.documentStore.get(heapTestTextDoc3.getUrl());
+        Document doc4binary = this.documentStore.get(heapTestBinaryDoc.getUrl());
+        assertEquals(storage.peek(), doc1);
+        this.documentStore.setMetadata(doc1.getKey(), "key", "value");
+
+        assertEquals(storage.peek(), doc2);
+        this.documentStore.get(doc2.getKey());
+
+        assertEquals(storage.peek(), doc3);
+        this.documentStore.search("third");
+
+        assertEquals(storage.peek(), doc4binary);
+        this.documentStore.setMetadata(doc4binary.getKey(), "key1", "value1");
+
+        assertEquals(storage.peek(), doc1);
+        HashMap<String, String > testMap = new HashMap<>();
+        testMap.put("key", "value");
+        this.documentStore.searchByKeywordAndMetadata("Here", testMap);
+
+        assertEquals(storage.peek(), doc2);
+        this.documentStore.searchByPrefix("fo");
+
+        assertEquals(storage.peek(), doc3);
+        this.documentStore.get(doc3.getKey());
+
+        assertEquals(storage.peek(), doc4binary);
+        HashMap<String, String > testMap2 = new HashMap<>();
+        testMap2.put("key1", "value1");
+        this.documentStore.searchByMetadata(testMap2);
+
+        assertEquals(storage.peek(), doc1);
+        this.documentStore.searchByPrefixAndMetadata("He", testMap);
+
+        assertEquals(storage.peek(), doc2);
     }
 }
