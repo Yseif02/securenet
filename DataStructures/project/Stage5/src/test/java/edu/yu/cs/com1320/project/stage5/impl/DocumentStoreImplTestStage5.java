@@ -297,6 +297,37 @@ class DocumentStoreImplTestStage5 {
     }
 
     @Test
+    void undo_urlInStack() throws IOException, NoSuchFieldException, IllegalAccessException {
+        FileInput txtForUndoURLInStack1 = createNewTXTFile("txtForUndoURLInStack1", "some text");
+        FileInput txtForUndoURLInStack2 = createNewTXTFile("txtForUndoURLInStack2", "some text");
+        FileInput binaryForUndoURLInStack = createNewBinaryFile("binaryForUndoURLInStack");
+        this.documentStore.deleteAll("some");
+        this.documentStore.undo(txtForUndoURLInStack2.getUrl());
+        MinHeapImpl<Document> heap = (MinHeapImpl<Document>) reflectField(documentStore, "storage");
+        assertEquals(heap.peek(), this.documentStore.get(binaryForUndoURLInStack.getUrl()));
+
+    }
+
+    @Test
+    void undo_urlInStackMultipleStacks() throws IOException, NoSuchFieldException, IllegalAccessException {
+        FileInput txtForUndoURLInStack1 = createNewTXTFile("txtForUndoURLInStack1", "some text");
+        FileInput txtForUndoURLInStack2 = createNewTXTFile("txtForUndoURLInStack2", "some text");
+        FileInput txtForUndoURLInStack3 = createNewTXTFile("txtForUndoURLInStack3", "more text");
+        FileInput txtForUndoURLInStack4 = createNewTXTFile("txtForUndoURLInStack4", "more text");
+        FileInput binaryForUndoURLInStack = createNewBinaryFile("binaryForUndoURLInStack");
+        this.documentStore.deleteAll("some");
+        this.documentStore.deleteAll("more");
+        this.documentStore.undo(txtForUndoURLInStack2.getUrl());
+        assertNull(this.documentStore.get(txtForUndoURLInStack1.getUrl()));
+        assertNull(this.documentStore.get(txtForUndoURLInStack3.getUrl()));
+        assertNull(this.documentStore.get(txtForUndoURLInStack4.getUrl()));
+        assertNotNull(this.documentStore.get(txtForUndoURLInStack2.getUrl()));
+        MinHeapImpl<Document> heap = (MinHeapImpl<Document>) reflectField(documentStore, "storage");
+        assertEquals(heap.peek(), this.documentStore.get(binaryForUndoURLInStack.getUrl()));
+
+    }
+
+    @Test
     void undo_addCommandStackBackWithMemoryLimit() throws IOException {
         FileInput txtForUndoWithMemoryLimit1 = createNewTXTFile("txtForUndoWithMemoryLimit1", "This doc has 21 bytes");
         FileInput txtForUndoWithMemoryLimit2 = createNewTXTFile("txtForUndoWithMemoryLimit2", "This document has 26 bytes");
@@ -342,6 +373,17 @@ class DocumentStoreImplTestStage5 {
         MinHeapImpl<Document> heap = (MinHeapImpl<Document>) reflectField(documentStore, "storage");
         assertEquals(heap.peek(), this.documentStore.get(binaryForNanoTime2.getUrl()));
         assertEquals(heap.peek(), this.documentStore.get(binaryForNanoTime1.getUrl()));
+    }
+
+    @Test
+    void undo_memoryTest2() throws IOException {
+        FileInput TXTForUndo_memoryTest1 = createNewTXTFile("TXTForUndo_memoryTest1", "this doc has 21 bytes");
+        FileInput TXTForUndo_memoryTest2 = createNewTXTFile("TXTForUndo_memoryTest2", "this doc has 21 bytes");
+        FileInput TXTForUndo_memoryTest3 = createNewTXTFile("TXTForUndo_memoryTest3", "this doc has 21 bytes");
+        this.documentStore.deleteAll("this");
+        this.documentStore.setMaxDocumentBytes(60);
+        this.documentStore.undo();
+        assertEquals(2, this.documentStore.documentStore.keySet().size());
     }
 
     @Test

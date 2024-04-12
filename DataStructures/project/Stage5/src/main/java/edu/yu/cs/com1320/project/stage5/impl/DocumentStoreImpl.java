@@ -249,8 +249,10 @@ public class DocumentStoreImpl implements DocumentStore {
             Set<? extends GenericCommand<?>> undone = ((CommandSet<?>) command).undoAll();
             for (GenericCommand<?> genericCommand : undone){
                 Document document = this.documentStore.get((URI) genericCommand.getTarget());
-                document.setLastUseTime(currentTime);
-                this.storage.insert(document);
+                if(document != null) {
+                    document.setLastUseTime(currentTime);
+                    this.storage.reHeapify(document);
+                }
             }
         } else{
             command.undo();
@@ -386,6 +388,7 @@ public class DocumentStoreImpl implements DocumentStore {
         for (Document document : documents){
             Consumer<URI> undoConsumer = HashTableImpl -> {
                 restoreDocumentToStore(document.getKey(), document);
+                this.storage.insert(document);
                 this.totalMemoryInBytes += getDocumentBytesLength(document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undoConsumer));
@@ -414,11 +417,11 @@ public class DocumentStoreImpl implements DocumentStore {
         Set<URI> urisToReturn = documents.stream()
                 .map(Document::getKey)
                 .collect(Collectors.toSet());
-        long currentTime = System.nanoTime();
         for (Document document : documents){
             removeDocumentFromStore(document, false, true, true);
             Consumer<URI> undo = HashTableImpl -> {
                 restoreDocumentToStore(document.getKey(), document);
+                this.storage.insert(document);
                 this.totalMemoryInBytes += getDocumentBytesLength(document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undo));
@@ -539,6 +542,7 @@ public class DocumentStoreImpl implements DocumentStore {
             urisToReturn.add(document.getKey());
             Consumer<URI> undoConsumer = HashTableImpl -> {
                 restoreDocumentToStore(document.getKey(), document);
+                this.storage.insert(document);
                 this.totalMemoryInBytes += getDocumentBytesLength(document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undoConsumer));
@@ -573,6 +577,7 @@ public class DocumentStoreImpl implements DocumentStore {
             urisToReturn.add(document.getKey());
             Consumer<URI> undoConsumer = HashTableImpl -> {
                 restoreDocumentToStore(document.getKey(), document);
+                this.storage.insert(document);
                 this.totalMemoryInBytes += getDocumentBytesLength(document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undoConsumer));
@@ -609,6 +614,7 @@ public class DocumentStoreImpl implements DocumentStore {
             urisToReturn.add(document.getKey());
             Consumer<URI> undoConsumer = HashTableImpl -> {
                 restoreDocumentToStore(document.getKey(), document);
+                this.storage.insert(document);
                 this.totalMemoryInBytes += getDocumentBytesLength(document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undoConsumer));
