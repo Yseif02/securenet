@@ -27,7 +27,7 @@ public class DocumentStoreImpl implements DocumentStore {
     private long totalMemoryInBytes;
     private long maxMemoryInBytes;
     private int maxDocs;
-    private int docTracker;
+
 
 
 
@@ -39,8 +39,6 @@ public class DocumentStoreImpl implements DocumentStore {
         this.maxMemoryInBytes = -1;
         this.maxDocs = -1;
         this.storage = new MinHeapImpl<>();
-        //REMOVE THIS LINE
-        this.docTracker = 0;
     }
 
 

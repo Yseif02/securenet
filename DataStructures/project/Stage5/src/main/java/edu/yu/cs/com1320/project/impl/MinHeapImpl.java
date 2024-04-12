@@ -15,6 +15,9 @@ public class MinHeapImpl<E extends Comparable<E>> extends MinHeap<E>{
      * @param element
      */
     public void reHeapify(E element) {
+        if (element == null){
+            throw new IllegalArgumentException();
+        }
         int arrayIndex = getArrayIndex(element);
         if(arrayIndex == -1) return; //element doesn't exist
         if(arrayIndex == 0) return; //should not happen
@@ -38,6 +41,9 @@ public class MinHeapImpl<E extends Comparable<E>> extends MinHeap<E>{
      * @return
      */
     protected int getArrayIndex(E element) {
+        if (element == null){
+            throw new IllegalArgumentException();
+        }
         for(int i = 1; i <= this.count; i++){
             if(elements[i] == element) return i;
         }
