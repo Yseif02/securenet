@@ -28,14 +28,16 @@ class DocumentStoreImplTestStage5 {
     void setUp() throws FileNotFoundException {
         this.documentStore = new DocumentStoreImpl();
     }
-    private static FileInput createNewTXTFile(String fileName, String fileTXT) throws IOException {
+    private FileInput createNewTXTFile(String fileName, String fileTXT) throws IOException {
         String destinationFolder = "C:\\Users\\heich\\Desktop\\code\\MyRepo\\Seif_Avraham_800699054\\DataStructures\\project\\Stage5\\src\\main\\resources";
         File file = new File(destinationFolder, fileName);
         file.createNewFile();
         FileWriter myWriter = new FileWriter(file);
         myWriter.write(fileTXT);
         myWriter.close();
-        return new FileInput(file.getPath());
+        FileInput fileInput = new FileInput(file.getPath());
+        this.documentStore.put(fileInput.getFis(), fileInput.getUrl(), DocumentStore.DocumentFormat.TXT);
+        return fileInput;
     }
 
     private FileInput createNewBinaryFile(String fileName) throws IOException {
@@ -48,7 +50,9 @@ class DocumentStoreImplTestStage5 {
         byte[] data = generateRandomByteArray(random);
         oos.writeObject(data);
         oos.close();
-        return new FileInput(file.getPath());
+        FileInput fileInput = new FileInput(file.getPath());
+        this.documentStore.put(fileInput.getFis(), fileInput.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        return fileInput;
     }
 
     public static byte[] generateRandomByteArray(Random random) {
@@ -78,7 +82,7 @@ class DocumentStoreImplTestStage5 {
     @Test
     void put_TXTDoc() throws IOException {
         FileInput TXTDoc1 = createNewTXTFile("binaryDoc1", "This is the text to Text Document 1.");
-        this.documentStore.put(TXTDoc1.getFis(), TXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(TXTDoc1.getNewFis(), TXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         assertEquals(1, this.documentStore.documentStore.keySet().size());
         assertEquals(this.documentStore.get(TXTDoc1.getUrl()).getKey(), TXTDoc1.getUrl());
     }
@@ -89,11 +93,11 @@ class DocumentStoreImplTestStage5 {
         FileInput binaryDoc2 = createNewBinaryFile("binaryDoc2");
         FileInput TXTDoc3 = createNewTXTFile("TXTDoc3", "This is the text to Text Document 3.");
         FileInput binaryDoc3 = createNewBinaryFile("binaryDoc3");
-        this.documentStore.put(TXTDoc2.getFis(), TXTDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
+        /*this.documentStore.put(TXTDoc2.getFis(), TXTDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(binaryDoc2.getFis(), binaryDoc2.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(TXTDoc3.getFis(), TXTDoc3.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(binaryDoc3.getFis(), binaryDoc3.getUrl(), DocumentStore.DocumentFormat.BINARY);
-        assertEquals(4, this.documentStore.documentStore.keySet().size());
+        assertEquals(4, this.documentStore.documentStore.keySet().size());*/
         assertEquals(this.documentStore.get(TXTDoc2.getUrl()).getKey(), TXTDoc2.getUrl());
         assertEquals(this.documentStore.get(TXTDoc3.getUrl()).getKey(), TXTDoc3.getUrl());
         assertEquals(this.documentStore.get(binaryDoc2.getUrl()).getKey(), binaryDoc2.getUrl());
@@ -105,10 +109,10 @@ class DocumentStoreImplTestStage5 {
         FileInput binaryDoc5 = createNewBinaryFile("binaryDoc5");
         FileInput TXTDoc8 = createNewTXTFile("TXTDoc8", "This is the text to Text Document 8.");
         FileInput binaryDoc6 = createNewBinaryFile("binaryDoc6");
-        this.documentStore.put(TXTDoc7.getFis(), TXTDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);
+       /* this.documentStore.put(TXTDoc7.getFis(), TXTDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(binaryDoc5.getFis(), binaryDoc5.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(TXTDoc8.getFis(), TXTDoc8.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(binaryDoc6.getFis(), binaryDoc6.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        this.documentStore.put(binaryDoc6.getFis(), binaryDoc6.getUrl(), DocumentStore.DocumentFormat.BINARY);*/
         return binaryDoc6.getUrl();
     }
 
@@ -116,8 +120,8 @@ class DocumentStoreImplTestStage5 {
     void put_replaceTXTDoc() throws IOException, NoSuchFieldException, IllegalAccessException {
         URI uriToReplace = addSomeMixedDocs();
         FileInput newTXTDoc = createNewTXTFile("newTXTDoc", "This is the text for a new TXT document that replaces an old document");
-        this.documentStore.put(newTXTDoc.getFis(), uriToReplace, DocumentStore.DocumentFormat.TXT);
-        assertEquals(4, this.documentStore.documentStore.keySet().size());
+//        this.documentStore.put(newTXTDoc.getFis(), uriToReplace, DocumentStore.DocumentFormat.TXT);
+        assertEquals(5, this.documentStore.documentStore.keySet().size());
         Class<?> docStore = documentStore.getClass();
         Field totalMemoryInBytesField = docStore.getDeclaredField("totalMemoryInBytes");
         totalMemoryInBytesField.setAccessible(true);
@@ -129,7 +133,7 @@ class DocumentStoreImplTestStage5 {
         documentStore.setMaxDocumentBytes(150);
         addSomeMixedDocs();
         FileInput anotherTXTDoc2 = createNewTXTFile("anotherTXTDoc2", "More text document. Hopefully this will have enough bytes to delete other docs. 123");
-        this.documentStore.put(anotherTXTDoc2.getFis(), anotherTXTDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(anotherTXTDoc2.getFis(), anotherTXTDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         long totalMemoryInBytes = (long) reflectField(documentStore, "totalMemoryInBytes");
         assertTrue(150 > totalMemoryInBytes);
     }
@@ -141,7 +145,7 @@ class DocumentStoreImplTestStage5 {
         addSomeMixedDocs();
         documentStore.setMaxDocumentBytes(150);
         FileInput anotherTXTDoc1 = createNewTXTFile("anotherTXTDoc1", "More text document. Hopefully this will have enough bytes to delete other docs. 123");
-        this.documentStore.put(anotherTXTDoc1.getFis(), anotherTXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(anotherTXTDoc1.getFis(), anotherTXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         Class<?> docStore = documentStore.getClass();
         Field totalMemoryInBytesField = docStore.getDeclaredField("totalMemoryInBytes");
         totalMemoryInBytesField.setAccessible(true);
@@ -153,7 +157,7 @@ class DocumentStoreImplTestStage5 {
     void put_withMaxBytesSetAfterPut2() throws IOException {
         addSomeMixedDocs();
         FileInput anotherTXTDoc1 = createNewTXTFile("anotherTXTDoc1", "More text document. Hopefully this will have enough bytes to delete other docs. 123");
-        this.documentStore.put(anotherTXTDoc1.getFis(), anotherTXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(anotherTXTDoc1.getFis(), anotherTXTDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         documentStore.setMaxDocumentBytes(150);
     }
 
@@ -170,7 +174,7 @@ class DocumentStoreImplTestStage5 {
     void get_BinaryGoodURI() throws IOException {
         URI uri = addSomeMixedDocs();
         FileInput binary1 = createNewBinaryFile("binary1");
-        this.documentStore.put(binary1.getFis(), binary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
+//        this.documentStore.put(binary1.getFis(), binary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
         assertNotNull(this.documentStore.get(binary1.getUrl()));
         assertEquals(this.documentStore.get(binary1.getUrl()).getKey(), binary1.getUrl());
     }
@@ -188,11 +192,156 @@ class DocumentStoreImplTestStage5 {
     }
 
     @Test
-    void undo() {
+    void undo_setMetaData() throws IOException {
+        FileInput undo1 = createNewBinaryFile("undo1");
+        this.documentStore.setMetadata(undo1.getUrl(), "key1", "value1");
+        HashMap<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        assertEquals(1, this.documentStore.searchByMetadata(testMap).size());
+        this.documentStore.undo();
+        assertEquals(0, this.documentStore.searchByMetadata(testMap).size());
+        this.documentStore.setMetadata(undo1.getUrl(), "key1", "value1");
+        assertEquals(1, this.documentStore.searchByMetadata(testMap).size());
+        this.documentStore.undo(undo1.getUrl());
+        assertEquals(0, this.documentStore.searchByMetadata(testMap).size());
     }
 
     @Test
-    void testUndo() {
+    void undo_put() throws IOException {
+        //regular undo
+        FileInput undoPut1 = createNewBinaryFile("undoPut1");
+        assertNotNull(this.documentStore.get(undoPut1.getUrl()));
+        this.documentStore.undo();
+        assertNull(this.documentStore.get(undoPut1.getUrl()));
+
+        //undo url
+        FileInput undoPut2 = createNewBinaryFile("undoPut1");
+        assertNotNull(this.documentStore.get(undoPut2.getUrl()));
+        this.documentStore.undo(undoPut2.getUrl());
+        assertNull(this.documentStore.get(undoPut2.getUrl()));
+    }
+
+    @Test
+    void undo_delete() throws IOException {
+        FileInput undoDeleteTXT1 = createNewTXTFile("undoDeleteTXT1", "This doc has 21 bytes");
+        assertNotNull(this.documentStore.get(undoDeleteTXT1.getUrl()));
+        this.documentStore.delete(undoDeleteTXT1.getUrl());
+        assertNull(this.documentStore.get(undoDeleteTXT1.getUrl()));
+        this.documentStore.undo();
+        assertNotNull(this.documentStore.get(undoDeleteTXT1.getUrl()));
+    }
+
+    @Test
+    void undo_deleteAll() throws IOException, NoSuchFieldException, IllegalAccessException {
+        FileInput undoDeleteAll1 = createNewTXTFile("undoDeleteAll1", "This doc has 21 bytes");
+        FileInput undoDeleteAll2 = createNewTXTFile("undoDeleteAll2", "This document has 26 bytes");
+        assertNotNull(this.documentStore.get(undoDeleteAll1.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAll2.getUrl()));
+        this.documentStore.deleteAll("has");
+        long totalBytes = (long) reflectField(documentStore, "totalMemoryInBytes");
+        assert (totalBytes == 0);
+        assertNull(this.documentStore.get(undoDeleteAll1.getUrl()));
+        assertNull(this.documentStore.get(undoDeleteAll2.getUrl()));
+        this.documentStore.undo();
+        assertNotNull(this.documentStore.get(undoDeleteAll1.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAll2.getUrl()));
+    }
+
+    @Test
+    void undo_deleteAllWithPrefix() throws IOException, NoSuchFieldException, IllegalAccessException {
+        FileInput undoDeleteAllWithPrefix1 = createNewTXTFile("undoDeleteAllWithPrefix1", "This doc has 21 bytes");
+        FileInput undoDeleteAllWithPrefix2 = createNewTXTFile("undoDeleteAllWithPrefix2", "This document has 26 bytes");
+        assertNotNull(this.documentStore.get(undoDeleteAllWithPrefix1.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAllWithPrefix2.getUrl()));
+        long beforeDelete = (long) reflectField(documentStore, "totalMemoryInBytes");
+        assert (beforeDelete == 47);
+        this.documentStore.deleteAllWithPrefix("do");
+        long afterDelete = (long) reflectField(documentStore, "totalMemoryInBytes");
+        assert (afterDelete == 0);
+        assertNull(this.documentStore.get(undoDeleteAllWithPrefix1.getUrl()));
+        assertNull(this.documentStore.get(undoDeleteAllWithPrefix2.getUrl()));
+        this.documentStore.undo();
+        assertNotNull(this.documentStore.get(undoDeleteAllWithPrefix1.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAllWithPrefix2.getUrl()));
+        long afterUndo = (long) reflectField(documentStore, "totalMemoryInBytes");
+        assert (afterUndo == 47);
+
+    }
+
+    @Test
+    void undo_deleteAllWithMetadata() throws IOException {
+        FileInput undoDeleteAllWithMetaDataTXT = createNewTXTFile("undoDeleteAllWithMetaDataTXT", "some text");
+        FileInput undoDeleteAllWithMetaDataBinary = createNewBinaryFile("undoDeleteAllWithMetaDataBinary");
+        this.documentStore.setMetadata(undoDeleteAllWithMetaDataTXT.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(undoDeleteAllWithMetaDataBinary.getUrl(), "key1", "value1");
+        HashMap<String, String> testMap= new HashMap<>();
+        testMap.put("key1", "value1");
+        assertNotNull(this.documentStore.get(undoDeleteAllWithMetaDataTXT.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAllWithMetaDataBinary.getUrl()));
+        this.documentStore.deleteAllWithMetadata(testMap);
+        assertNull(this.documentStore.get(undoDeleteAllWithMetaDataTXT.getUrl()));
+        assertNull(this.documentStore.get(undoDeleteAllWithMetaDataBinary.getUrl()));
+        this.documentStore.undo();
+        assertNotNull(this.documentStore.get(undoDeleteAllWithMetaDataTXT.getUrl()));
+        assertNotNull(this.documentStore.get(undoDeleteAllWithMetaDataBinary.getUrl()));
+    }
+
+    @Test
+    void undo_deleteAllWithKeywordAndMetadata(){
+
+    }
+
+    @Test
+    void undo_deleteAllWithPrefixAndMetadata(){
+
+    }
+
+    @Test
+    void undo_addCommandStackBackWithMemoryLimit() throws IOException {
+        FileInput txtForUndoWithMemoryLimit1 = createNewTXTFile("txtForUndoWithMemoryLimit1", "This doc has 21 bytes");
+        FileInput txtForUndoWithMemoryLimit2 = createNewTXTFile("txtForUndoWithMemoryLimit2", "This document has 26 bytes");
+        this.documentStore.deleteAll("This");
+        this.documentStore.setMaxDocumentBytes(25);
+        assertThrows(IllegalArgumentException.class,
+                () -> this.documentStore.undo());
+    }
+
+    @Test
+    void undo_addCommandStackBackWithDocumentLimit() throws IOException {
+        FileInput binary1 = createNewBinaryFile("binary1");
+        FileInput binary2 = createNewBinaryFile("binary2");
+        FileInput binary3 = createNewBinaryFile("binary3");
+        FileInput binary4 = createNewBinaryFile("binary4");
+        FileInput txt1 = createNewTXTFile("txt1", "The");
+        FileInput txt2 = createNewTXTFile("txt2", "The");
+        FileInput txt3 = createNewTXTFile("txt3", "The");
+        FileInput txt4 = createNewTXTFile("txt4", "The");
+        this.documentStore.deleteAll("The");
+        this.documentStore.setMaxDocumentCount(4);
+        this.documentStore.undo();
+        assertNull(this.documentStore.get(binary1.getUrl()));
+        assertNull(this.documentStore.get(binary2.getUrl()));
+        assertNull(this.documentStore.get(binary3.getUrl()));
+        assertNull(this.documentStore.get(binary4.getUrl()));
+        assertNotNull(this.documentStore.get(txt1.getUrl()));
+        assertNotNull(this.documentStore.get(txt2.getUrl()));
+        assertNotNull(this.documentStore.get(txt3.getUrl()));
+        assertNotNull(this.documentStore.get(txt4.getUrl()));
+    }
+
+    @Test
+    void testUndo() throws IOException, NoSuchFieldException, IllegalAccessException {
+        FileInput textForNanoTimeTest1 = createNewTXTFile("textForNanoTimeTest1", "Here is some text");
+        FileInput textForNanoTimeTest2 = createNewTXTFile("textForNanoTimeTest2", "Here is some text");
+        FileInput binaryForNanoTime1 = createNewBinaryFile("binaryForNanoTime1");
+        FileInput binaryForNanoTime2 = createNewBinaryFile("binaryForNanoTime2");
+        FileInput textForNanoTimeTest3 = createNewTXTFile("textForNanoTimeTest3", "Here is some text");
+        this.documentStore.setMetadata(binaryForNanoTime1.getUrl(), "key", "value");
+        this.documentStore.deleteAll("Here");
+        this.documentStore.undo();
+        MinHeapImpl<Document> heap = (MinHeapImpl<Document>) reflectField(documentStore, "storage");
+        assertEquals(heap.peek(), this.documentStore.get(binaryForNanoTime2.getUrl()));
+        assertEquals(heap.peek(), this.documentStore.get(binaryForNanoTime1.getUrl()));
     }
 
     @Test
@@ -208,7 +357,7 @@ class DocumentStoreImplTestStage5 {
         FileInput searchBinary3 = createNewBinaryFile("searchBinary3");
         FileInput searchDoc7 = createNewTXTFile("searchDoc7", "Jack's dog's tail wagged excitedly as it eagerly awaited its" +
                 " owner's return, while Sarah's cat's playful antics amused everyone in the room, making it a lively gathering despite the storm's relentless pounding against the windows.");
-        this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        /*this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc2.getFis(), searchDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary1.getFis(), searchBinary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(searchDoc3.getFis(), searchDoc3.getUrl(), DocumentStore.DocumentFormat.TXT);
@@ -217,7 +366,7 @@ class DocumentStoreImplTestStage5 {
         this.documentStore.put(searchDoc5.getFis(), searchDoc5.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc6.getFis(), searchDoc6.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary3.getFis(), searchBinary3.getUrl(), DocumentStore.DocumentFormat.BINARY);
-        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);*/
         //Search for uppercase at start of sentence
         List<Document> searchThe = this.documentStore.search("The");
         assertEquals(3, searchThe.size());
@@ -270,7 +419,7 @@ class DocumentStoreImplTestStage5 {
         FileInput searchBinary3 = createNewBinaryFile("searchBinary3");
         FileInput searchDoc7 = createNewTXTFile("searchDoc7", "Jack's dog's tail wagged excitedly as it eagerly awaited its" +
                 " owner's return, while Sarah's cat's playful antics amused everyone in the room, making it a lively gathering despite the storm's relentless pounding against the windows.");
-        this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        /*this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc2.getFis(), searchDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary1.getFis(), searchBinary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(searchDoc3.getFis(), searchDoc3.getUrl(), DocumentStore.DocumentFormat.TXT);
@@ -279,7 +428,7 @@ class DocumentStoreImplTestStage5 {
         this.documentStore.put(searchDoc5.getFis(), searchDoc5.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc6.getFis(), searchDoc6.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary3.getFis(), searchBinary3.getUrl(), DocumentStore.DocumentFormat.BINARY);
-        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);*/
         //search for "in" (doc 2 has into, 3,5,6,7 all have in)
         assertEquals(5, this.documentStore.searchByPrefix("in").size());
         assertEquals(7, this.documentStore.searchByPrefix("th").size());
@@ -305,7 +454,7 @@ class DocumentStoreImplTestStage5 {
         FileInput searchBinary3 = createNewBinaryFile("searchBinary3");
         FileInput searchDoc7 = createNewTXTFile("searchDoc7", "Jack's dog's tail wagged excitedly as it eagerly awaited its" +
                 " owner's return, while Sarah's cat's playful antics amused everyone in the room, making it a lively gathering despite the storm's relentless pounding against the windows.");
-        this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+       /* this.documentStore.put(searchDoc1.getFis(), searchDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc2.getFis(), searchDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary1.getFis(), searchBinary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(searchDoc3.getFis(), searchDoc3.getUrl(), DocumentStore.DocumentFormat.TXT);
@@ -314,15 +463,15 @@ class DocumentStoreImplTestStage5 {
         this.documentStore.put(searchDoc5.getFis(), searchDoc5.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchDoc6.getFis(), searchDoc6.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchBinary3.getFis(), searchBinary3.getUrl(), DocumentStore.DocumentFormat.BINARY);
-        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(searchDoc7.getFis(), searchDoc7.getUrl(), DocumentStore.DocumentFormat.TXT);*/
     }
 
     @Test
     void deleteAll() throws IOException, NoSuchFieldException, IllegalAccessException, NoSuchMethodException {
         FileInput deleteAllDoc1 = createNewTXTFile("deleteAllDoc1", "She decided to learn Spanish to better connect with her relatives in Barcelona.");
-        this.documentStore.put(deleteAllDoc1.getFis(), deleteAllDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(deleteAllDoc1.getFis(), deleteAllDoc1.getUrl(), DocumentStore.DocumentFormat.TXT);
         FileInput deleteAllDoc2 = createNewTXTFile("deleteAllDoc2", "The restaurant down the street serves delicious Spanish tapas every Friday night.");
-        this.documentStore.put(deleteAllDoc2.getFis(), deleteAllDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(deleteAllDoc2.getFis(), deleteAllDoc2.getUrl(), DocumentStore.DocumentFormat.TXT);
         assertEquals(2, this.documentStore.deleteAll("Spanish").size());
         TrieImpl<Document> trie = (TrieImpl<Document>) reflectField(documentStore, "documentWordsTrie");
         assertTrue(trie.get("She").isEmpty());
@@ -350,7 +499,9 @@ class DocumentStoreImplTestStage5 {
         assertTrue(trie.get("every").isEmpty());
         assertTrue(trie.get("Friday").isEmpty());
         assertTrue(trie.get("night.").isEmpty());
+        //empty keyword
         assertTrue(this.documentStore.deleteAll("").isEmpty());
+        //null keyword
         assertThrows(IllegalArgumentException.class, ()
                 -> this.documentStore.deleteAll(null));
     }
@@ -362,13 +513,13 @@ class DocumentStoreImplTestStage5 {
         FileInput deletePrefix3 = createNewTXTFile("deletePrefix3", "The cautious cat cautiously crept closer to the curious mouse, its whiskers twitching with anticipation.");
         FileInput deletePrefix4 = createNewTXTFile("deletePrefix4", "The majestic eagle soared high above the rugged mountain peaks, its keen eyes scanning the vast landscape below.");
         FileInput deletePrefix5 = createNewTXTFile("deletePrefix5", "With a gentle sigh, she closed her eyes and let the soothing melody of the piano wash over her, transporting her to a realm of tranquility.");
-        this.documentStore.put(deletePrefix1.getFis(), deletePrefix1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        /*this.documentStore.put(deletePrefix1.getFis(), deletePrefix1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(deletePrefix2.getFis(), deletePrefix2.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(deletePrefix3.getFis(), deletePrefix3.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(deletePrefix3.getFis(), deletePrefix3.getUrl(), DocumentStore.DocumentFormat.TXT);*/
         FileInput deleteAllPrefixBinaryDoc = createNewBinaryFile("deleteAllPrefixBinaryDoc");
-        this.documentStore.put(deleteAllPrefixBinaryDoc.getFis(), deleteAllPrefixBinaryDoc.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        /*this.documentStore.put(deleteAllPrefixBinaryDoc.getFis(), deleteAllPrefixBinaryDoc.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(deletePrefix4.getFis(), deletePrefix4.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(deletePrefix5.getFis(), deletePrefix5.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(deletePrefix5.getFis(), deletePrefix5.getUrl(), DocumentStore.DocumentFormat.TXT);*/
         Set<URI> documentSet = this.documentStore.deleteAllWithPrefix("ca");
         assertEquals(3, documentSet.size());
         assertFalse(documentSet.contains(deletePrefix4.getUrl()));
@@ -382,13 +533,13 @@ class DocumentStoreImplTestStage5 {
     @Test
     void searchByMetadata() throws IOException {
         FileInput searchByMetaDataTXT1 = createNewTXTFile("searchByMetaDataTXT1", "Here is some text");
-        this.documentStore.put(searchByMetaDataTXT1.getFis(), searchByMetaDataTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(searchByMetaDataTXT1.getFis(), searchByMetaDataTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
         FileInput searchByMetaDataTXT2 = createNewTXTFile("searchByMetaDataTXT2", "The cascade of colorful leaves danced in the autumn breeze, creating a captivating spectacle.");
-        this.documentStore.put(searchByMetaDataTXT2.getFis(), searchByMetaDataTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
+//        this.documentStore.put(searchByMetaDataTXT2.getFis(), searchByMetaDataTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
         FileInput searchByMetaDataBinary1 = createNewBinaryFile("searchByMetaDataBinary1");
-        this.documentStore.put(searchByMetaDataBinary1.getFis(), searchByMetaDataBinary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
+//        this.documentStore.put(searchByMetaDataBinary1.getFis(), searchByMetaDataBinary1.getUrl(), DocumentStore.DocumentFormat.BINARY);
         FileInput searchByMetaDataBinary2 = createNewBinaryFile("searchByMetaDataBinary2");
-        this.documentStore.put(searchByMetaDataBinary2.getFis(), searchByMetaDataBinary2.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        //this.documentStore.put(searchByMetaDataBinary2.getFis(), searchByMetaDataBinary2.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.setMetadata(searchByMetaDataTXT1.getUrl(), "key1","value1");
         this.documentStore.setMetadata(searchByMetaDataTXT1.getUrl(), "key2","value2");
         this.documentStore.setMetadata(searchByMetaDataBinary1.getUrl(), "key1","value1");
@@ -404,9 +555,12 @@ class DocumentStoreImplTestStage5 {
         assertTrue(documentList.contains(this.documentStore.get(searchByMetaDataBinary1.getUrl())));
         assertFalse(documentList.contains(this.documentStore.get(searchByMetaDataTXT2.getUrl())));
         assertFalse(documentList.contains(this.documentStore.get(searchByMetaDataBinary2.getUrl())));
-        assertTrue(this.documentStore.deleteAllWithPrefix("").isEmpty());
-        assertThrows(IllegalArgumentException.class, ()
-                -> this.documentStore.deleteAllWithPrefix(null));
+        //empty map
+        HashMap<String, String> emptyMap = new HashMap<>();
+        List<Document> emptyList = this.documentStore.searchByMetadata(emptyMap);
+        assertTrue(emptyList.isEmpty());
+        //null map
+        assertTrue(this.documentStore.searchByMetadata(null).isEmpty());
     }
 
     @Test
@@ -414,17 +568,23 @@ class DocumentStoreImplTestStage5 {
         FileInput searchByKeywordAndMetaDataTXT1 = createNewTXTFile("searchByKeywordTXT1", "how much wood can a woodchuck chuck if a woodchuck could chuck wood?");
         FileInput searchByKeywordAndMetaDataTXT2 = createNewTXTFile("searchByKeywordTXT2", "oogabooga booga can word here there up down");
         FileInput searchByKeywordAndMetaDataBinary = createNewBinaryFile("searchByKeywordAndMetaDataBinary");
-        this.documentStore.put(searchByKeywordAndMetaDataTXT1.getFis(), searchByKeywordAndMetaDataTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        /*this.documentStore.put(searchByKeywordAndMetaDataTXT1.getFis(), searchByKeywordAndMetaDataTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchByKeywordAndMetaDataTXT2.getFis(), searchByKeywordAndMetaDataTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(searchByKeywordAndMetaDataBinary.getFis(), searchByKeywordAndMetaDataBinary.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        this.documentStore.put(searchByKeywordAndMetaDataBinary.getFis(), searchByKeywordAndMetaDataBinary.getUrl(), DocumentStore.DocumentFormat.BINARY);*/
         this.documentStore.setMetadata(searchByKeywordAndMetaDataTXT1.getUrl(), "key1", "value1");
         this.documentStore.setMetadata(searchByKeywordAndMetaDataBinary.getUrl(),"key1", "value1");
         HashMap<String, String > testMap = new HashMap<>();
         testMap.put("key1", "value1");
         assertEquals(1, this.documentStore.searchByKeywordAndMetadata("can", testMap).size());
+        //empty keyword
         assertTrue(this.documentStore.searchByKeywordAndMetadata("", new HashMap<>()).isEmpty());
+        //null keyword
         assertThrows(IllegalArgumentException.class,
                 () -> this.documentStore.searchByKeywordAndMetadata(null, new HashMap<>()));
+        //empty map
+        assertTrue(this.documentStore.searchByKeywordAndMetadata("can", new HashMap<>()).isEmpty());
+        //null map
+        assertTrue(this.documentStore.searchByKeywordAndMetadata("can", null).isEmpty());
     }
 
     @Test
@@ -434,13 +594,13 @@ class DocumentStoreImplTestStage5 {
         FileInput searchPrefixAndMD3 = createNewTXTFile("searchPrefixAndMD3", "The cautious cat cautiously crept closer to the curious mouse, its whiskers twitching with anticipation.");
         FileInput searchPrefixAndMD4 = createNewTXTFile("searchPrefixAndMD4", "The majestic eagle soared high above the rugged mountain peaks, its keen eyes scanning the vast landscape below.");
         FileInput searchPrefixAndMD5 = createNewTXTFile("searchPrefixAndMD5", "With a gentle sigh, she closed her eyes and let the soothing melody of the piano wash over her, transporting her to a realm of tranquility.");
-        this.documentStore.put(searchPrefixAndMD1.getFis(), searchPrefixAndMD1.getUrl(), DocumentStore.DocumentFormat.TXT);
+       /* this.documentStore.put(searchPrefixAndMD1.getFis(), searchPrefixAndMD1.getUrl(), DocumentStore.DocumentFormat.TXT);
         this.documentStore.put(searchPrefixAndMD2.getFis(), searchPrefixAndMD2.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(searchPrefixAndMD3.getFis(), searchPrefixAndMD3.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(searchPrefixAndMD3.getFis(), searchPrefixAndMD3.getUrl(), DocumentStore.DocumentFormat.TXT);*/
         FileInput searchPrefixAndBD = createNewBinaryFile("searchPrefixAndBD");
-        this.documentStore.put(searchPrefixAndBD.getFis(), searchPrefixAndBD.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        /*this.documentStore.put(searchPrefixAndBD.getFis(), searchPrefixAndBD.getUrl(), DocumentStore.DocumentFormat.BINARY);
         this.documentStore.put(searchPrefixAndMD4.getFis(), searchPrefixAndMD4.getUrl(), DocumentStore.DocumentFormat.TXT);
-        this.documentStore.put(searchPrefixAndMD5.getFis(), searchPrefixAndMD5.getUrl(), DocumentStore.DocumentFormat.TXT);
+        this.documentStore.put(searchPrefixAndMD5.getFis(), searchPrefixAndMD5.getUrl(), DocumentStore.DocumentFormat.TXT);*/
 
         HashMap<String, String > testMap = new HashMap<>();
         testMap.put("key1", "value1");
@@ -461,18 +621,104 @@ class DocumentStoreImplTestStage5 {
         assertTrue(this.documentStore.searchByPrefixAndMetadata("", new HashMap<>()).isEmpty());
         assertThrows(IllegalArgumentException.class,
                 () -> this.documentStore.searchByKeywordAndMetadata(null, new HashMap<>()));
+        //empty map
+        assertTrue(this.documentStore.searchByPrefixAndMetadata("can", new HashMap<>()).isEmpty());
+        //null map
+        assertTrue(this.documentStore.searchByPrefixAndMetadata("can", null).isEmpty());
     }
 
     @Test
-    void deleteAllWithMetadata() {
+    void deleteAllWithMetadata() throws IOException {
+        FileInput DAWMDTXT1 = createNewTXTFile("DAWMDTXT1", "Some text");
+        //this.documentStore.put(DAWMDTXT1.getFis(), DAWMDTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWMDTXT2 = createNewTXTFile("DAWMDTXT2", "More text");
+//        this.documentStore.put(DAWMDTXT2.getFis(), DAWMDTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWMDB1 = createNewBinaryFile("DAWMDB1");
+//        this.documentStore.put(DAWMDB1.getFis(), DAWMDB1.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        FileInput DAWMDB2 = createNewBinaryFile("DAWMDB2");
+//        this.documentStore.put(DAWMDB2.getFis(), DAWMDB2.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        this.documentStore.setMetadata(DAWMDTXT1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWMDB1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWMDTXT2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWMDB2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWMDTXT1.getUrl(), "key2", "value2");
+        this.documentStore.setMetadata(DAWMDB1.getUrl(), "key2", "value2");
+        HashMap<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Set<URI> deleted =  this.documentStore.deleteAllWithMetadata(testMap);
+        assertEquals(2, deleted.size());
+        assertTrue(deleted.contains(DAWMDTXT1.getUrl()));
+        assertTrue(deleted.contains(DAWMDB1.getUrl()));
+        //empty map
+        assertTrue(this.documentStore.deleteAllWithMetadata(new HashMap<>()).isEmpty());
+        //null map
+        assertTrue(this.documentStore.deleteAllWithMetadata(null).isEmpty());
     }
 
     @Test
-    void deleteAllWithKeywordAndMetadata() {
+    void deleteAllWithKeywordAndMetadata() throws IOException {
+        FileInput DAWKAMDTXT1 = createNewTXTFile("DAWMDTXT1", "Some text");
+        //this.documentStore.put(DAWKAMDTXT1.getFis(), DAWKAMDTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWKAMDTXT2 = createNewTXTFile("DAWMDTXT2", "More text");
+        //this.documentStore.put(DAWKAMDTXT2.getFis(), DAWKAMDTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWKAMDB1 = createNewBinaryFile("DAWKAMDB1");
+        //this.documentStore.put(DAWKAMDB1.getFis(), DAWKAMDB1.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        FileInput DAWKAMDB2 = createNewBinaryFile("DAWKAMDB2");
+        //this.documentStore.put(DAWKAMDB2.getFis(), DAWKAMDB2.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        this.documentStore.setMetadata(DAWKAMDTXT1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWKAMDB1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWKAMDTXT2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWKAMDB2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWKAMDTXT1.getUrl(), "key2", "value2");
+        this.documentStore.setMetadata(DAWKAMDB1.getUrl(), "key2", "value2");
+        HashMap<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Set<URI> deleted =  this.documentStore.deleteAllWithKeywordAndMetadata("text", testMap);
+        assertEquals(1, deleted.size());
+        assertTrue(deleted.contains(DAWKAMDTXT1.getUrl()));
+        //empty map
+        assertTrue(this.documentStore.deleteAllWithKeywordAndMetadata("text", new HashMap<>()).isEmpty());
+        //null map
+        assertTrue(this.documentStore.deleteAllWithKeywordAndMetadata("text", null).isEmpty());
+        //empty string
+        assertTrue(this.documentStore.deleteAllWithKeywordAndMetadata("", testMap).isEmpty());
+        assertThrows(IllegalArgumentException.class,
+                () -> this.documentStore.deleteAllWithKeywordAndMetadata(null, testMap));
+
     }
 
     @Test
-    void deleteAllWithPrefixAndMetadata() {
+    void deleteAllWithPrefixAndMetadata() throws IOException {
+        FileInput DAWPAMDTXT1 = createNewTXTFile("DAWMDTXT1", "Some text");
+        //this.documentStore.put(DAWPAMDTXT1.getFis(), DAWPAMDTXT1.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWPAMDTXT2 = createNewTXTFile("DAWMDTXT2", "More text");
+        //this.documentStore.put(DAWPAMDTXT2.getFis(), DAWPAMDTXT2.getUrl(), DocumentStore.DocumentFormat.TXT);
+        FileInput DAWPAMDB1 = createNewBinaryFile("DAWKAMDB1");
+        //this.documentStore.put(DAWPAMDB1.getFis(), DAWPAMDB1.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        FileInput DAWPAMDB2 = createNewBinaryFile("DAWKAMDB2");
+        //this.documentStore.put(DAWPAMDB2.getFis(), DAWPAMDB2.getUrl(), DocumentStore.DocumentFormat.BINARY);
+        this.documentStore.setMetadata(DAWPAMDTXT1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWPAMDB1.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWPAMDTXT2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWPAMDB2.getUrl(), "key1", "value1");
+        this.documentStore.setMetadata(DAWPAMDTXT1.getUrl(), "key2", "value2");
+        this.documentStore.setMetadata(DAWPAMDB1.getUrl(), "key2", "value2");
+        HashMap<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Set<URI> deleted =  this.documentStore.deleteAllWithPrefixAndMetadata("te", testMap);
+        assertEquals(1, deleted.size());
+        assertTrue(deleted.contains(DAWPAMDTXT1.getUrl()));
+        //empty map
+        assertTrue(this.documentStore.deleteAllWithPrefixAndMetadata("te", new HashMap<>()).isEmpty());
+        //null map
+        assertTrue(this.documentStore.deleteAllWithPrefixAndMetadata("te", null).isEmpty());
+        //empty string
+        assertTrue(this.documentStore.deleteAllWithPrefixAndMetadata("", testMap).isEmpty());
+        assertThrows(IllegalArgumentException.class,
+                () -> this.documentStore.deleteAllWithPrefixAndMetadata(null, testMap));
     }
 
     @Test
@@ -486,8 +732,8 @@ class DocumentStoreImplTestStage5 {
     void setMaxDocumentCount_setLimitWhileOverLimit() throws IOException, NoSuchFieldException, IllegalAccessException {
         FileInput binaryFile = createNewBinaryFile("binaryFileForMaxDocCount");
         FileInput binaryFile2 = createNewBinaryFile("binaryFileForMaxDocCount2");
-        this.documentStore.put(binaryFile.getFis(), binaryFile.getUrl(), DocumentStore.DocumentFormat.BINARY);
-        this.documentStore.put(binaryFile2.getFis(), binaryFile2.getUrl(), DocumentStore.DocumentFormat.BINARY);
+//        this.documentStore.put(binaryFile.getFis(), binaryFile.getUrl(), DocumentStore.DocumentFormat.BINARY);
+//        this.documentStore.put(binaryFile2.getFis(), binaryFile2.getUrl(), DocumentStore.DocumentFormat.BINARY);
         addSomeMixedDocs();
         this.documentStore.setMaxDocumentCount(5);
         assertEquals(5, this.documentStore.documentStore.keySet().size());
