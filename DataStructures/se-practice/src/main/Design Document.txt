@@ -1,0 +1,27 @@
+Stage 1
+Who uses it?
+-anyone that wants to read any book from kotar.co.il (a large israeli online ebook library)o
+
+Why would one use this program?
+-They don't want to pay view the full book
+
+What function does your software provide to the user to accomplish to help him achieve his goal?
+- User will given the book.
+
+How does he use it?
+- gets a book ID from the Kotar website and copies that id into the software, the softaware will then provide him with the book with no extra steps needed.
+
+
+Stage 2
+- What data will be used?
+	- An array of book ID's.
+	- Html data and jpg images from the net, which will be stored in the program.
+	- Tools to turn pages (multiple jpgs) into books (pdfs), stored on the hard drive.
+
+- What data structures should you use to store and access your data?
+	- An array of book ID's (ints or strings).
+	- A map of strings (names of book) to id's/pdf, saved on locally.
+
+
+
+
