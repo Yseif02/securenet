@@ -5,7 +5,7 @@ import edu.yu.cs.com1320.project.MinHeap;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
 
-public class MinHeapImpl<E extends Comparable<E>> extends MinHeap<E>{
+public class MinHeapImpl<E extends Comparable<E>> extends MinHeap<E> {
     public MinHeapImpl(){
         super.elements = (E[]) new Comparable[10];
     }

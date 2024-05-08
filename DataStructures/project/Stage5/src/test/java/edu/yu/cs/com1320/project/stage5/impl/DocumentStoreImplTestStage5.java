@@ -451,6 +451,18 @@ class DocumentStoreImplTestStage5 {
     }
 
     @Test
+    void searchPrefixCorrectOrdering() throws IOException {
+        FileInput searchPrefixCorrectOrdering2 = createNewTXTFile("searchPrefixCorrectOrdering2", "This doc has 2 instances of ton tool");
+        FileInput searchPrefixCorrectOrderingBinary = createNewBinaryFile("searchPrefixCorrectOrderingBinary");
+        FileInput searchPrefixCorrectOrdering3 = createNewTXTFile("searchPrefixCorrectOrdering3", "This doc has 1 instance of tough");
+        FileInput searchPrefixCorrectOrdering1 = createNewTXTFile("searchPrefixCorrectOrdering1", "This doc has 3 instances of to toe too");
+        List<Document> docs = this.documentStore.searchByPrefix("to");
+        for (Document document : docs){
+            System.out.println(document.getDocumentTxt() != null ? document.getDocumentTxt() : null);
+        }
+    }
+
+    @Test
     void searchByPrefix() throws IOException {
         FileInput searchDoc1 = createNewTXTFile("searchDoc1", "The crimson sun dipped hArSHlEy below the horizon, painting the sky with its' hues Of orange and of pink.");
         FileInput searchDoc2 = createNewTXTFile("searchDoc2", "With a flicker of hesitation, she pressed the send button, releasing her heartfelt message into the digital ether.");

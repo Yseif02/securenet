@@ -1,25 +1,22 @@
-package edu.yu.cs.com1320.project.stage5.impl;
+package edu.yu.cs.com1320.project.stage6.impl;
 
-import edu.yu.cs.com1320.project.HashTable;
-import edu.yu.cs.com1320.project.impl.HashTableImpl;
-import edu.yu.cs.com1320.project.stage5.Document;
-import edu.yu.cs.com1320.project.stage5.DocumentStore;
+import edu.yu.cs.com1320.project.stage6.Document;
+import edu.yu.cs.com1320.project.stage6.DocumentStore;
 import org.jetbrains.annotations.NotNull;
 
 import java.net.URI;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 
 public class DocumentImpl implements Document {
-    private final URI uri;
-    private String text;
-    private byte[] binaryData;
-    private final HashTableImpl<String,String> metadata;
+    private final URI uri; //serialize
+    private String text; //serialize
+    private byte[] binaryData;  //serialize
+    private HashMap<String,String> metadata; //serialize
+    private HashMap<String, Integer> wordCountMap; //serialize
+
+    private String[] documentWords;
     private final DocumentStore.DocumentFormat documentFormat;
-    private final HashMap<String, Integer> wordCountMap;
     private final Set<String> documentWordSet;
     private long timeLastUsed;
     private int byteSize;
@@ -28,35 +25,39 @@ public class DocumentImpl implements Document {
         if(uri == null || binaryData == null) throw new IllegalArgumentException();
         this.uri = uri;
         this.binaryData = binaryData;
-        this.metadata = new HashTableImpl<>();
+        this.metadata = new HashMap<>();
         this.documentFormat = DocumentStore.DocumentFormat.BINARY;
         this.byteSize = binaryData.length;
         this.wordCountMap = null;
         this.documentWordSet = null;
     }
 
-    public DocumentImpl(URI uri, String txt){
-        if(uri == null || txt.isEmpty()) throw new IllegalArgumentException();
+    public DocumentImpl(URI uri, String text, Map<String, Integer> wordCountMap){
+        if(uri == null || text.isEmpty()) throw new IllegalArgumentException();
         this.uri = uri;
-        this.text = txt;
-        this.metadata = new HashTableImpl<>();
+        this.text = text;
+        this.metadata = new HashMap<>();
         this.documentFormat = DocumentStore.DocumentFormat.TXT;
-        this.wordCountMap = new HashMap<>();
+        if (wordCountMap != null) {
+            this.setWordMap((HashMap<String, Integer>) wordCountMap);
+            this.documentWords = wordCountMap.keySet().toArray(new String[0]);
+        } else{
+            this.wordCountMap = new HashMap<>();
+            this.documentWords = getDocumentWords();
+        }
+
         this.documentWordSet = new HashSet<>();
-        this.byteSize = txt.getBytes().length;
-        String[] documentWords = getDocumentWords();
-        if(documentWords != null) addWordsToHashMapAndSet(documentWords);
+        this.byteSize = text.getBytes().length;
+        if(documentWords != null) addWordsToHashMapAndSet(documentWords, wordCountMap);
     }
 
-    private void addWordsToHashMapAndSet(String[] documentWords) {
-        for (String word : documentWords){
-            if(this.wordCountMap.get(word) == null){
-                wordCountMap.put(word, 1);
-            }else{
-                wordCountMap.merge(word, 1, Integer::sum);
+    private void addWordsToHashMapAndSet(String[] documentWords, Map<String, Integer> wordCountMap) {
+        if (wordCountMap == null){
+            for (String word : documentWords){
+                addToMap(word);
             }
-            this.documentWordSet.add(word);
         }
+        this.documentWordSet.addAll(Arrays.asList(documentWords));
     }
 
     private String[] getDocumentWords() {
@@ -66,6 +67,14 @@ public class DocumentImpl implements Document {
                 .splitAsStream(newText)
                 .filter(word -> !word.isEmpty())
                 .toArray(String[]::new);
+    }
+
+    private void addToMap(String word) {
+        if(this.wordCountMap.get(word) == null){
+            this.wordCountMap.put(word, 1);
+        }else{
+            this.wordCountMap.merge(word, 1, Integer::sum);
+        }
     }
 
     @Override
@@ -105,8 +114,8 @@ public class DocumentImpl implements Document {
      * @return a COPY of the metadata saved in this document
      */
     @Override
-    public HashTable<String, String> getMetadata() {
-        HashTable<String, String> tableToReturn = new HashTableImpl<>();
+    public HashMap<String, String> getMetadata() {
+        HashMap<String, String> tableToReturn = new HashMap<>();
         for(String key:this.metadata.keySet()) {
             String valueToAddToTable = getMetadataValue(key);
             tableToReturn.put(key, valueToAddToTable);
@@ -115,11 +124,20 @@ public class DocumentImpl implements Document {
     }
 
     /**
+     * @param metadata
+     */
+    @Override
+    public void setMetadata(HashMap<String, String> metadata) {
+        this.metadata = metadata;
+    }
+
+    /**
      * @return content of text document
      */
     @Override
     public String getDocumentTxt() {
         return (documentFormat.equals(DocumentStore.DocumentFormat.TXT)) ? this.text : null;
+
     }
 
     /**
@@ -146,9 +164,9 @@ public class DocumentImpl implements Document {
      */
     @Override
     public int wordCount(String word) {
-        if (this.documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return 0;
-        if (this.wordCountMap.entrySet().isEmpty()) return 0;
-        if (this.wordCountMap.get(word) == null) return 0;
+        if(this.documentFormat.equals(DocumentStore.DocumentFormat.BINARY)) return 0;
+        if(this.wordCountMap.entrySet().isEmpty()) return 0;
+        if(this.wordCountMap.get(word) == null) return 0;
         return this.wordCountMap.get(word);
     }
 
@@ -177,6 +195,23 @@ public class DocumentImpl implements Document {
         this.timeLastUsed = timeInNanoseconds;
     }
 
+    /**
+     * @return a copy of the word to count map so it can be serialized
+     */
+    @Override
+    public HashMap<String, Integer> getWordMap() {
+        return this.wordCountMap;
+    }
+
+    /**
+     * This must set the word to count map durlng deserialization
+     *
+     * @param wordMap
+     */
+    @Override
+    public void setWordMap(HashMap<String, Integer> wordMap) {
+        this.wordCountMap = wordMap;
+    }
 
     /**
      * Compares this object with the specified object for order.  Returns a
