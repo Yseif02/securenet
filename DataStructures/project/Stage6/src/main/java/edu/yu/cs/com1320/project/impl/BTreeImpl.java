@@ -94,7 +94,8 @@ public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key,
             //if val is null, Doc can either be on disk or non-existent/deleted
             try {
                 //if able to deserialize then return serialization
-                return serializer.deserialize(k);
+                Value value = serializer.deserialize(k);
+                return value;
             } catch (IOException e) {
                 //If not then it is non-existent
 
@@ -152,29 +153,16 @@ public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key,
             return delete(k, alreadyThere);
         };
 
-        if (alreadyThere != null){
+        if (alreadyThere != null ){
+            //I can assume that if a doc existed it is in memory and off the disk since any put call get
+
+            //If there exists an entry there are 3 possibilities
+            //1) The key has a non-null value in the tree. This means that either it was always in memory or it was
+            //just brought into memory by the get method that called the put method.
+            //2) If the value is null this means that a document existed but was deleted, or it was just called in from memory?
             //entry exists, need to replace it with the new value
-            //if the value is null, either the doc is on disk or it doesn't exist
-            //if the doc is on disk, delete it then set the new val to alreadyThere.val
-            //
-
-
-            Value value = this.get(k);
-            if(alreadyThere.val != null){
-                alreadyThere.val = v;
-            }
-        }
-        if(alreadyThere != null && alreadyThere.val != null) {
-            alreadyThere.val = v;
-            return v;
-        } else if (alreadyThere != null){
-            try {
-                this.serializer.delete(k);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            alreadyThere.val = v;
-            return v;
+            //if the value is null, a doc doesn't exist anymore and set new value
+            return (Value) (alreadyThere.val = v);
         }
         Node newNode = this.put(this.root, k, v, this.height);
         this.n++;

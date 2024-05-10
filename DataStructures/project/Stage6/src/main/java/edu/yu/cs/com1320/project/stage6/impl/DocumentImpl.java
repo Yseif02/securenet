@@ -15,11 +15,11 @@ public class DocumentImpl implements Document {
     private HashMap<String,String> metadata; //serialize
     private HashMap<String, Integer> wordCountMap; //serialize
 
-    private String[] documentWords;
-    private final DocumentStore.DocumentFormat documentFormat;
-    private final Set<String> documentWordSet;
-    private long timeLastUsed;
-    private int byteSize;
+    private /*transient*/ String[] documentWordArray;
+    private /*transient*/ final DocumentStore.DocumentFormat documentFormat;
+    private /*transient*/ final Set<String> documentWordSet;
+    private /*transient*/ long timeLastUsed;
+    private /*transient*/ int byteSize;
 
     public DocumentImpl(URI uri, byte[] binaryData){
         if(uri == null || binaryData == null) throw new IllegalArgumentException();
@@ -40,16 +40,17 @@ public class DocumentImpl implements Document {
         this.documentFormat = DocumentStore.DocumentFormat.TXT;
         if (wordCountMap != null) {
             this.setWordMap((HashMap<String, Integer>) wordCountMap);
-            this.documentWords = wordCountMap.keySet().toArray(new String[0]);
+            this.documentWordArray = wordCountMap.keySet().toArray(new String[0]);
         } else{
             this.wordCountMap = new HashMap<>();
-            this.documentWords = getDocumentWords();
+            this.documentWordArray = getDocumentWords();
         }
 
         this.documentWordSet = new HashSet<>();
         this.byteSize = text.getBytes().length;
-        if(documentWords != null) addWordsToHashMapAndSet(documentWords, wordCountMap);
+        if(documentWordArray != null) addWordsToHashMapAndSet(documentWordArray, wordCountMap);
     }
+    private void test(){}
 
     private void addWordsToHashMapAndSet(String[] documentWords, Map<String, Integer> wordCountMap) {
         if (wordCountMap == null){

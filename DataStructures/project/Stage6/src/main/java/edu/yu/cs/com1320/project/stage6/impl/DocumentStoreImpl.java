@@ -21,12 +21,13 @@ import java.util.function.Consumer;
 
 public class DocumentStoreImpl implements DocumentStore {
     private final StackImpl<Undoable> commandStack;
-    protected BTreeImpl<URI, Document> documentStore;
+    private BTreeImpl<URI, Document> documentStore;
     private TrieImpl<URI> documentWordsTrie;
     private MinHeapImpl<DocumentGrabberURI> storage;
     private HashMap<URI, DocumentGrabberURI> documentGrabber;
     private Set<URI> docStoreURIs;
     private PersistenceManagerImpl<URI, Document> serializer;
+    private Map<URI, HashMap<String,String>> URItoMetadataMap;
     private long totalMemoryInBytes;
     private long maxMemoryInBytes;
     private int maxDocs;
@@ -40,6 +41,7 @@ public class DocumentStoreImpl implements DocumentStore {
         this.storage = new MinHeapImpl<>();
         this.docStoreURIs = new HashSet<>();
         this.documentGrabber = new HashMap<>();
+        this.URItoMetadataMap = new HashMap<>();
         this.documentStoreMemorySize = 0;
         this.fullDocStoreSize = 0;
         this.totalMemoryInBytes = 0;
@@ -56,6 +58,7 @@ public class DocumentStoreImpl implements DocumentStore {
         this.storage = new MinHeapImpl<>();
         this.docStoreURIs = new HashSet<>();
         this.documentGrabber = new HashMap<>();
+        this.URItoMetadataMap = new HashMap<>();
         this.documentStoreMemorySize = 0;
         this.fullDocStoreSize = 0;
         this.totalMemoryInBytes = 0;
@@ -71,7 +74,8 @@ public class DocumentStoreImpl implements DocumentStore {
             this.uri = uri;
         }
         private Document getDocument() {
-            return documentStore.get(uri);
+            Document document = documentStore.get(uri);
+            return document;
         }
         @Override
         public int compareTo(@NotNull DocumentStoreImpl.DocumentGrabberURI o) {
@@ -105,8 +109,10 @@ public class DocumentStoreImpl implements DocumentStore {
         this.commandStack.push(new GenericCommand<>(uri, undo));
         document.setLastUseTime(System.nanoTime());
         this.storage.reHeapify(this.documentGrabber.get(uri));
+        URItoMetadataMap.put(uri, document.getMetadata());
         return oldValue;
     }
+
 
     /**
      * get the value corresponding to the given metadata key for the document at the given uri
@@ -186,14 +192,7 @@ public class DocumentStoreImpl implements DocumentStore {
         document.setLastUseTime(System.nanoTime());
         this.storage.insert(this.documentGrabber.get(url));
         while ((this.maxMemoryInBytes != -1 && this.totalMemoryInBytes > this.maxMemoryInBytes) || (this.maxDocs != -1 && this.documentStoreMemorySize > this.maxDocs)){
-            DocumentGrabberURI peeked = this.storage.peek();
-            Document documentToMove = peeked.getDocument();
-            removeDocumentFromStorage(documentToMove);
-            this.documentStoreMemorySize--;
-            this.documentStore.moveToDisk(documentToMove.getKey());
-            //Document deletedDocument = this.removeDocumentFromStore(documentToDelete, true, true, true);
-            //this.docStoreURIs.remove(deletedDocument.getKey());
-            //this.size--;
+            sendOldestDocumentToDisk();
         }
         return document;
     }
@@ -226,21 +225,23 @@ public class DocumentStoreImpl implements DocumentStore {
     @Override
     public Document get(URI url) throws IOException {
         Document document = this.documentStore.get(url);
-        if(!docStoreURIs.contains(url)){
+        if(document == null){
             return null;
-        } else
-        //if null and URI is in uriSet doc is on disk
-        if(document == null && docStoreURIs.contains(url)) {
-            //have to put document in store
-            Document retrievedDocument = this.serializer.deserialize(url);
-            this.documentStore.put(url, retrievedDocument);
         }
-        if(document != null) {
-            document.setLastUseTime(System.nanoTime());
-            this.storage.reHeapify(documentGrabber.get(url));
+        //have to see if document is coming from disk
+        //can do that by checking URI set
+        if(!this.docStoreURIs.contains(url)){
+            //document came from disk, have to restore it
+            restoreDocumentToStore(url, document);
+            this.docStoreURIs.add(url);
+            this.documentStoreMemorySize = this.docStoreURIs.size();
         }
+        document.setLastUseTime(System.nanoTime());
+        this.storage.reHeapify(documentGrabber.get(document.getKey()));
         return document;
     }
+
+
 
     /**
      * @param url the unique identifier of the document to delete
@@ -372,12 +373,10 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public List<Document> searchByPrefix(String keywordPrefix) throws IOException {
-        if (keywordPrefix == null)
-            throw new IllegalArgumentException();
-        if (keywordPrefix.isEmpty())
-            return new ArrayList<>();
+        if (keywordPrefix == null)          throw new IllegalArgumentException();
+        if (keywordPrefix.isEmpty())        return new ArrayList<>();
         String newKey = keywordPrefix.replaceAll("[^a-zA-Z1-9\\s]", "");
-        if (newKey.isEmpty()) return new ArrayList<>();
+        if (newKey.isEmpty())               return new ArrayList<>();
         Comparator<URI> comparator = new Comparator<>() {
             @Override
             public int compare(URI o1, URI o2) {
@@ -486,38 +485,25 @@ public class DocumentStoreImpl implements DocumentStore {
         if (keysValues == null || keysValues.isEmpty())
             return new ArrayList<>();
         List<Document> documentList = new ArrayList<>();
-        for (URI uri : docStoreURIs) documentList.add(this.get(uri));
-        Set<String> keys = keysValues.keySet();
-        List<Document> documentsListToReturn = new ArrayList<>();
-        for (Document document : documentList){
-            if(document.getMetadata().keySet().isEmpty()) {
-                continue;
-            }
-            if(compareKeys(document.getMetadata().keySet(), keys, document.getKey(), keysValues)) {
-                documentsListToReturn.add(document);
+        Set<Map.Entry<URI, HashMap<String, String>>> entrySet = this.URItoMetadataMap.entrySet();
+        for(Map.Entry<URI, HashMap<String, String>> entry : entrySet){
+            HashMap<String, String> documentMetadata = entry.getValue();
+            if(compareMaps(keysValues, documentMetadata)){
+                documentList.add(this.documentGrabber.get(entry.getKey()).getDocument());
             }
         }
         long currentTime = System.nanoTime();
-        for(Document document : documentsListToReturn){
+        for(Document document : documentList){
             document.setLastUseTime(currentTime);
             this.storage.reHeapify(this.documentGrabber.get(document.getKey()));
         }
-        return documentsListToReturn;
+        return documentList;
     }
 
-    private boolean compareKeys(Set<String> metaDataKeys, Set<String> keysToSearch, URI uri, Map<String, String> keysValues) throws IOException {
-        boolean containsAll = true;
-        for (String key : keysToSearch){
-            if(metaDataKeys.contains(key)){
-                if(!this.get(uri).getMetadataValue(key).equals(keysValues.get(key))){
-                    containsAll = false;
-                }
-            } else {
-                return false;
-            }
-        }
-        return containsAll;
+    private boolean compareMaps(Map<String, String> keysValues, HashMap<String, String> documentMetadata) {
+        return (keysValues.equals(documentMetadata));
     }
+
 
     /**
      * Retrieve all documents whose text contains the given keyword AND which has the given key-value pairs in its metadata
@@ -691,12 +677,7 @@ public class DocumentStoreImpl implements DocumentStore {
         if(limit < 1) throw new IllegalArgumentException();
         this.maxDocs = limit;
         while (this.documentStoreMemorySize > this.maxDocs){
-            Document documentToSendToDisk = this.storage.remove().getDocument();
-            try {
-                this.documentStore.moveToDisk(documentToSendToDisk.getKey());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            sendOldestDocumentToDisk();
         }
     }
 
@@ -711,12 +692,7 @@ public class DocumentStoreImpl implements DocumentStore {
         if (limit < 1) throw new IllegalArgumentException();
         this.maxMemoryInBytes = limit;
         while (this.totalMemoryInBytes > this.maxMemoryInBytes){
-            Document documentToSendToDisk = this.storage.remove().getDocument();
-            try {
-                this.documentStore.moveToDisk(documentToSendToDisk.getKey());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            sendOldestDocumentToDisk();
         }
     }
 
@@ -792,32 +768,41 @@ public class DocumentStoreImpl implements DocumentStore {
         while (tempStack.size() > 0) commandStack.push(tempStack.pop());
     }
 
-    //this method does not add the uri to the uri set. That action should be done in the method that was called
+    //this method does not add the uri to the uri set. That action should be done in the caller method
     private Document restoreDocumentToStore(URI url, Document previousDocument) {
         //rejecting a doc that can't fit in the store and throwing an exception
         if (this.maxMemoryInBytes != -1 && getDocumentBytesLength(previousDocument) > this.maxMemoryInBytes)
-            throw new IllegalArgumentException();
+            throw new IllegalArgumentException("doc is too big");
         //make space for document
         while ((this.maxMemoryInBytes != -1 && this.totalMemoryInBytes + getDocumentBytesLength(previousDocument) > this.maxMemoryInBytes)){
-            Document documentToSendToDisk = this.storage.remove().getDocument();
-            try {
-                this.documentStore.moveToDisk(documentToSendToDisk.getKey());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            sendOldestDocumentToDisk();
         }
+
         this.addDocumentWordsToTrie(previousDocument);
-        this.documentStore.put(url, previousDocument);
-        this.documentGrabber.put(url, new DocumentGrabberURI(url));
+        this.documentStore.put(previousDocument.getKey(), previousDocument);
+        if(!this.documentGrabber.containsKey(previousDocument.getKey()))
+            this.documentGrabber.put(previousDocument.getKey(), new DocumentGrabberURI(previousDocument.getKey()));
+        previousDocument.setLastUseTime(System.nanoTime());
+        this.storage.insert(this.documentGrabber.get(previousDocument.getKey()));
+        this.documentStoreMemorySize++;
+        this.totalMemoryInBytes += getDocumentBytesLength(previousDocument);
+
         //making sure docStore is not above docLimit
         while (this.maxDocs != -1 && this.documentStoreMemorySize > this.maxDocs){
-            Document documentToSendToDisk = this.storage.remove().getDocument();
-            try {
-                this.documentStore.moveToDisk(documentToSendToDisk.getKey());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+           sendOldestDocumentToDisk();
         }
         return previousDocument;
+    }
+
+    private void sendOldestDocumentToDisk() {
+        Document documentToSendToDisk = this.storage.remove().getDocument();
+        try {
+            this.documentStore.moveToDisk(documentToSendToDisk.getKey());
+            this.documentStoreMemorySize--;
+            this.totalMemoryInBytes -= getDocumentBytesLength(documentToSendToDisk);
+            this.docStoreURIs.remove(documentToSendToDisk.getKey());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

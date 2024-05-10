@@ -40,6 +40,11 @@ class DocumentStoreImplTest {
         documentStore.setMetadata(uri1, "key2", "value2");
         documentStore.setMetadata(uri1, "key3", "value3");
 
+        String binaryFile1Name = "http://www.yu.edu/docStoreTest/binary1";
+        URI binary1URI = URI.create(binaryFile1Name);
+        byte[] binary1bytes = {34, 27, 1, 67, 36, 84, -4, 7};
+        InputStream binaryInputStream = new ByteArrayInputStream(binary1bytes);
+        documentStore.put(binaryInputStream, binary1URI, DocumentStore.DocumentFormat.BINARY);
 
         String file2Name = "http://www.yu.edu/docStoreTest/doc2";
         URI uri2 = URI.create(file2Name);
@@ -47,7 +52,9 @@ class DocumentStoreImplTest {
         //Document document1 = new DocumentImpl(uri1, text, null);
         InputStream inputStream2 = new StringBufferInputStream(text2);
         documentStore.put(inputStream2, uri2, DocumentStore.DocumentFormat.TXT);
-        System.out.println();
+        //documentStore.setMaxDocumentCount(10);
+        documentStore.setMetadata(uri1, "key1", "newValue");
+        documentStore.setMetadata(binary1URI, "key1", "value1");
     }
 
     @Test
