@@ -1,18 +1,21 @@
 package edu.yu.cs.com1320.project.impl;
 
 import edu.yu.cs.com1320.project.BTree;
+import edu.yu.cs.com1320.project.stage6.Document;
 import edu.yu.cs.com1320.project.stage6.PersistenceManager;
+import edu.yu.cs.com1320.project.stage6.impl.DocumentPersistenceManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key, Value> {
     protected PersistenceManager<Key, Value> serializer;
-    private static final int MAX = 6;
+    private static final int MAX = 4;
     //root of the B-tree
     private Node root;
     private Node leftMostExternalNode;
@@ -267,6 +270,7 @@ public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key,
         for (int j = 0; j < MAX / 2; j++)
         {
             newNode.entries[j] = currentNode.entries[MAX / 2 + j];
+            currentNode.entries[MAX / 2 + j] = null;
         }
         //external node
         if (height == 0)

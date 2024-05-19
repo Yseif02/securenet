@@ -26,7 +26,6 @@ public class DocumentStoreImpl implements DocumentStore {
     private MinHeapImpl<DocumentGrabberURI> storage;
     private HashMap<URI, DocumentGrabberURI> documentGrabber;
     private Set<URI> docStoreURIs;
-    private PersistenceManagerImpl<URI, Document> serializer;
     private Map<URI, HashMap<String,String>> URItoMetadataMap;
     private long totalMemoryInBytes;
     private long maxMemoryInBytes;
@@ -37,6 +36,7 @@ public class DocumentStoreImpl implements DocumentStore {
     public DocumentStoreImpl() {
         this.commandStack = new StackImpl<>();
         this.documentStore = new BTreeImpl<>();
+        this.documentStore.setPersistenceManager(new DocumentPersistenceManager<URI, Document>(null));
         this.documentWordsTrie = new TrieImpl<>();
         this.storage = new MinHeapImpl<>();
         this.docStoreURIs = new HashSet<>();
@@ -47,13 +47,12 @@ public class DocumentStoreImpl implements DocumentStore {
         this.totalMemoryInBytes = 0;
         this.maxMemoryInBytes = -1;
         this.maxDocs = -1;
-        this.serializer = new PersistenceManagerImpl<>(null);
-        this.documentStore.setPersistenceManager(this.serializer);
     }
 
     public DocumentStoreImpl(File baseDir){
         this.commandStack = new StackImpl<>();
         this.documentStore = new BTreeImpl<>();
+        this.documentStore.setPersistenceManager(new DocumentPersistenceManager<URI, Document>(baseDir));
         this.documentWordsTrie = new TrieImpl<>();
         this.storage = new MinHeapImpl<>();
         this.docStoreURIs = new HashSet<>();
@@ -64,8 +63,6 @@ public class DocumentStoreImpl implements DocumentStore {
         this.totalMemoryInBytes = 0;
         this.maxMemoryInBytes = -1;
         this.maxDocs = -1;
-        this.serializer = new PersistenceManagerImpl<>(baseDir);
-        this.documentStore.setPersistenceManager(this.serializer);
     }
 
     private class DocumentGrabberURI implements Comparable<DocumentGrabberURI>{
@@ -94,6 +91,8 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public String setMetadata(URI uri, String key, String value) throws IOException {
+        //check if doc is in memory for undo
+        boolean inMemory = this.docStoreURIs.contains(uri);
         if(uri == null || uri.toString().isEmpty() || get(uri) == null|| key == null || key.isEmpty()){
             throw new IllegalArgumentException();
         }
@@ -105,6 +104,13 @@ public class DocumentStoreImpl implements DocumentStore {
         Consumer<URI> undo =
             BTreeImpl -> {
                 document.setMetadataValue(key, (oldKey == null) ? null : oldValue);
+                if(!inMemory) {
+                    try {
+                        this.documentStore.moveToDisk(uri);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
             };
         this.commandStack.push(new GenericCommand<>(uri, undo));
         document.setLastUseTime(System.nanoTime());
@@ -125,9 +131,10 @@ public class DocumentStoreImpl implements DocumentStore {
     @Override
     public String getMetadata(URI uri, String key) throws IOException {
         if(uri == null || key == null || key.isEmpty() || get(uri) == null || uri.toString().isEmpty()) throw new IllegalArgumentException();
-        get(uri).setLastUseTime(System.nanoTime());
+        Document document = this.get(uri);
+        document.setLastUseTime(System.nanoTime());
         this.storage.reHeapify(this.documentGrabber.get(uri));
-        return get(uri).getMetadataValue(key);
+        return document.getMetadataValue(key);
     }
 
 
@@ -145,6 +152,7 @@ public class DocumentStoreImpl implements DocumentStore {
         boolean documentExists;
         int previousHashCode = 0;
         Document previousDocument;
+        boolean docExistsInMemory = this.docStoreURIs.contains(url);
         if (get(url) != null) {
             documentExists = true;
             previousHashCode = get(url).hashCode();
@@ -157,8 +165,16 @@ public class DocumentStoreImpl implements DocumentStore {
         byte[] contents = input.readAllBytes();
         Document newDocument = createAndAddDocument(url, format, contents, documentExists, previousDocument);
         Consumer<URI> undoConsumer = uri -> {
-            removeDocumentFromStore(newDocument, true, true, true);
-            if(documentExists){
+        removeDocumentFromStore(newDocument, true, false, true);
+        if (documentExists && !docExistsInMemory){
+            //this case is where the old document was on disk, need to send it back
+            try {
+                this.documentStore.put(url, previousDocument);
+                this.documentStore.moveToDisk(url);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        } else if(documentExists) {
                 //If put replaced a document, restore that document
                 Document document = restoreDocumentToStore(url, previousDocument);
                 document.setLastUseTime(System.nanoTime());
@@ -249,8 +265,13 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
-        if (!docStoreURIs.contains(url)) return false;
-        Document deletedDocument = this.documentStore.get(url);
+        Document deletedDocument;
+        try {
+            deletedDocument = get(url);
+        } catch (IOException e){
+            throw new RuntimeException();
+        }
+        if (deletedDocument == null) {return false;}
         removeDocumentFromStore(deletedDocument, true, true, true);
         this.docStoreURIs.remove(url);
         this.documentStoreMemorySize--;
@@ -275,20 +296,28 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo() throws IllegalStateException {
+        //check if in memory here
         if(commandStack.size() == 0) throw new IllegalStateException("Command Stack is empty");
         Undoable command = this.commandStack.pop();
         if(command instanceof CommandSet<?> commandSet){
-            long currentTime = System.nanoTime();
-            Set<? extends GenericCommand<?>> undone = ((CommandSet<?>) command).undoAll();
-            for (GenericCommand<?> genericCommand : undone){
-                Document document = this.documentStore.get((URI) genericCommand.getTarget());
-                if(document != null) {
-                    document.setLastUseTime(currentTime);
-                    this.storage.reHeapify(this.documentGrabber.get(document.getKey()));
-                }
-            }
+            undoCommandSet(commandSet);
         } else{
+            GenericCommand<?> genericCommand = (GenericCommand<?>) command;
+            boolean inMemory = this.docStoreURIs.contains((URI) ((GenericCommand<?>) command).getTarget());
             command.undo();
+        }
+    }
+
+    private void undoCommandSet(CommandSet<?> command) {
+        long currentTime = System.nanoTime();
+        Set<? extends GenericCommand<?>> undone = command.undoAll();
+
+        for (GenericCommand<?> genericCommand : undone){
+            if (this.docStoreURIs.contains((URI) genericCommand.getTarget())) {
+                Document document = this.documentStore.get((URI) genericCommand.getTarget());
+                document.setLastUseTime(currentTime);
+                    this.storage.reHeapify(this.documentGrabber.get(document.getKey()));
+            }
         }
     }
 
@@ -421,15 +450,11 @@ public class DocumentStoreImpl implements DocumentStore {
         CommandSet<URI> commandSet = new CommandSet<>();
         Set<URI> urisToReturn = this.documentWordsTrie.deleteAll(newKey);
         for (URI uri : urisToReturn){
-            this.docStoreURIs.remove(uri);
-            Document document = documentStore.get(uri);
+            //need to check if in memory
+            boolean inMemory = this.docStoreURIs.remove(uri);
+            Document document = this.documentStore.get(uri);
             Consumer<URI> undoConsumer = BtreeImpl -> {
-                restoreDocumentToStore(uri, document);
-                this.docStoreURIs.add(document.getKey());
-                this.documentStoreMemorySize++;
-                this.fullDocStoreSize++;
-                this.storage.insert(this.documentGrabber.get(uri));
-                this.totalMemoryInBytes += getDocumentBytesLength(document);
+                restoreForUndoDelete(uri, inMemory, document);
             };
             commandSet.addCommand(new GenericCommand<>(uri, undoConsumer));
             removeDocumentFromStore(document, true, true, true);
@@ -457,16 +482,11 @@ public class DocumentStoreImpl implements DocumentStore {
         CommandSet<URI> commandSet = new CommandSet<>();
         Set<URI> urisToReturn = this.documentWordsTrie.deleteAllWithPrefix(newKey);
         for (URI uri : urisToReturn){
-            this.docStoreURIs.remove(uri);
-            Document document = documentStore.get(uri);
+            boolean inMemory = this.docStoreURIs.remove(uri);
+            Document document = this.documentStore.get(uri);
             removeDocumentFromStore(document, false, true, true);
             Consumer<URI> undo = BTreeImpl -> {
-                restoreDocumentToStore(document.getKey(), document);
-                this.docStoreURIs.add(document.getKey());
-                this.documentStoreMemorySize++;
-                this.fullDocStoreSize++;
-                this.storage.insert(this.documentGrabber.get(uri));
-                this.totalMemoryInBytes += getDocumentBytesLength(document);
+                restoreForUndoDelete(uri, inMemory, document);
             };
             commandSet.addCommand(new GenericCommand<>(document.getKey(), undo));
         }
@@ -474,6 +494,24 @@ public class DocumentStoreImpl implements DocumentStore {
         this.documentStoreMemorySize -= urisToReturn.size();
         this.commandStack.push(commandSet);
         return urisToReturn;
+    }
+
+    private void restoreForUndoDelete(URI uri, boolean inMemory, Document document) {
+        if(!inMemory) {
+            this.documentStore.put(uri, document);
+            try {
+                this.documentStore.moveToDisk(uri);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        } else {
+            restoreDocumentToStore(uri, document);
+            this.docStoreURIs.add(document.getKey());
+            this.documentStoreMemorySize++;
+            this.fullDocStoreSize++;
+            this.storage.insert(this.documentGrabber.get(uri));
+            this.totalMemoryInBytes += getDocumentBytesLength(document);
+        }
     }
 
     /**
@@ -559,21 +597,20 @@ public class DocumentStoreImpl implements DocumentStore {
     @Override
     public Set<URI> deleteAllWithMetadata(Map<String, String> keysValues) throws IOException {
         CommandSet<URI> commandSet = new CommandSet<>();
-        List<Document> documentsToDelete = searchByMetadata(keysValues);
         Set<URI> urisToReturn = new HashSet<>();
-        for (Document document : documentsToDelete){
-            urisToReturn.add(document.getKey());
-            this.docStoreURIs.remove(document.getKey());
-            Consumer<URI> undoConsumer = uri -> {
-                restoreDocumentToStore(document.getKey(), document);
-                this.docStoreURIs.add(document.getKey());
-                this.documentStoreMemorySize++;
-                this.fullDocStoreSize++;
-                this.storage.insert(this.documentGrabber.get(document.getKey()));
-                this.totalMemoryInBytes += getDocumentBytesLength(document);
-            };
-            commandSet.addCommand(new GenericCommand<>(document.getKey(), undoConsumer));
+        Set<Map.Entry<URI, HashMap<String, String>>> entrySet = this.URItoMetadataMap.entrySet();
+        for(Map.Entry<URI, HashMap<String, String>> entry : entrySet) {
+            HashMap<String, String> documentMetadata = entry.getValue();
+            if (documentMetadata.equals(keysValues))    {urisToReturn.add(entry.getKey());}
+        }
+        for (URI uri : urisToReturn){
+            boolean inMemory = this.docStoreURIs.remove(uri);
+            Document document = this.documentStore.get(uri);
             removeDocumentFromStore(document, true, true, true);
+            Consumer<URI> undo = BTreeImpl -> {
+                restoreForUndoDelete(uri, inMemory, document);
+            };
+            commandSet.addCommand(new GenericCommand<>(document.getKey(), undo));
         }
         this.documentStoreMemorySize -= urisToReturn.size();
         this.fullDocStoreSize -= urisToReturn.size();
@@ -771,7 +808,7 @@ public class DocumentStoreImpl implements DocumentStore {
     //this method does not add the uri to the uri set. That action should be done in the caller method
     private Document restoreDocumentToStore(URI url, Document previousDocument) {
         //rejecting a doc that can't fit in the store and throwing an exception
-        if (this.maxMemoryInBytes != -1 && getDocumentBytesLength(previousDocument) > this.maxMemoryInBytes)
+        if (this.maxMemoryInBytes != -1 && getDocumentBytesLength(previousDocument) >= this.maxMemoryInBytes)
             throw new IllegalArgumentException("doc is too big");
         //make space for document
         while ((this.maxMemoryInBytes != -1 && this.totalMemoryInBytes + getDocumentBytesLength(previousDocument) > this.maxMemoryInBytes)){
@@ -781,15 +818,16 @@ public class DocumentStoreImpl implements DocumentStore {
         this.addDocumentWordsToTrie(previousDocument);
         this.documentStore.put(previousDocument.getKey(), previousDocument);
         if(!this.documentGrabber.containsKey(previousDocument.getKey()))
-            this.documentGrabber.put(previousDocument.getKey(), new DocumentGrabberURI(previousDocument.getKey()));
+            {this.documentGrabber.put(previousDocument.getKey(), new DocumentGrabberURI(previousDocument.getKey()));}
         previousDocument.setLastUseTime(System.nanoTime());
         this.storage.insert(this.documentGrabber.get(previousDocument.getKey()));
         this.documentStoreMemorySize++;
         this.totalMemoryInBytes += getDocumentBytesLength(previousDocument);
 
         //making sure docStore is not above docLimit
-        while (this.maxDocs != -1 && this.documentStoreMemorySize > this.maxDocs){
-           sendOldestDocumentToDisk();
+        while (this.maxDocs != -1  && this.documentStoreMemorySize > this.maxDocs){
+            //if this is the last document in the store and max docs != 0 don't move it to disk
+            sendOldestDocumentToDisk();
         }
         return previousDocument;
     }
