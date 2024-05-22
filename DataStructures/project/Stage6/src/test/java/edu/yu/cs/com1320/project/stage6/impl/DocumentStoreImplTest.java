@@ -1044,22 +1044,163 @@ class DocumentStoreImplTest {
         assertTrue(docStoreURIs.contains(udakamdimadBinary4.getKey()));
     }
 
-
     @Test
-    void deleteAllWithPrefixAndMetadataIM() {
+    void deleteAllWithPrefixAndMetadataIM() throws IOException {
+        Map<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Document dapamdimBinary1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimBinary1"); //yes md
+        Document dapamdimBinary2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimBinary2"); //no md
+        Document dapamdimTXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT1", "Here is some text for txt 1. The word is bananas");
+        Document dapamdimTXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT2", "bananas");
+        Document dapamdimTXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT3");
+        Document dapamdimTXT4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT4");
+        this.documentStore.setMetadata(dapamdimTXT1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT1.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(dapamdimTXT2.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT3.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimTXT4.getKey());
+        this.documentStore.setMetadata(dapamdimBinary1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimBinary1.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimBinary2.getKey());
+
+
+        Set<URI> documents = this.documentStore.deleteAllWithPrefixAndMetadata("banan", testMap);
+        assertEquals(1, documents.size());
+        assertTrue(documents.contains(dapamdimTXT1.getKey()));
     }
 
     @Test
-    void deleteAllWithPrefixAndMetadataIMAD() {
+    void undoDeleteAllWithPrefixAndMetadataIM() throws IOException {
+        Map<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Document dapamdimBinary1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimBinary1"); //yes md
+        Document dapamdimBinary2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimBinary2"); //no md
+        Document dapamdimTXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT1", "Here is some text for txt 1. The word is bananas");
+        Document dapamdimTXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT2", "bananas");
+        Document dapamdimTXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT3");
+        Document dapamdimTXT4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimTXT4");
+        this.documentStore.setMetadata(dapamdimTXT1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT1.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(dapamdimTXT2.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimTXT3.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimTXT4.getKey());
+        this.documentStore.setMetadata(dapamdimBinary1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimBinary1.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimBinary2.getKey());
+
+        Set<URI> documents = this.documentStore.deleteAllWithPrefixAndMetadata("banan", testMap);
+        assertEquals(5, docStoreURIs.size());
+        this.documentStore.undo();
+        assertEquals(6, docStoreURIs.size());
     }
 
     @Test
-    void undoDeleteAllWithPrefixAndMetadataIM() {
+    void deleteAllWithPrefixAndMetadataIMAD() throws IOException {
+        Map<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Document dapamdimadBinary1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimadBinary1"); //yes md
+        Document dapamdimadBinary2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimadBinary2"); //no md
+        Document dapamdimadTXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT1", "Here is some text for txt 1. The word is bananas");
+        Document dapamdimadTXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT2", "bananas");
+        Document dapamdimadTXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT3");
+        Document dapamdimadTXT4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT4");
+        this.documentStore.setMetadata(dapamdimadTXT1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT1.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(dapamdimadTXT2.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT3.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimadTXT4.getKey());
+        this.documentStore.setMetadata(dapamdimadBinary1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadBinary1.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimadBinary2.getKey());
+
+        Document dapamdimadBinary3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimadBinary3");
+        Document dapamdimadBinary4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "dapamdimadBinary4");
+        Document dapamdimadTXT5 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT5", "Here is some text for txt 1. The word is bananas");
+        Document dapamdimadTXT6 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT6", "bananas");
+        Document dapamdimadTXT7 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT7");
+        Document dapamdimadTXT8 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dapamdimadTXT8");
+        this.documentStore.setMetadata(dapamdimadTXT5.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT5.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(dapamdimadTXT6.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT7.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadTXT7.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimadTXT8.getKey());
+        this.documentStore.setMetadata(dapamdimadBinary3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(dapamdimadBinary3.getKey(),"key2", "value2");
+        this.documentStore.get(dapamdimadBinary4.getKey());
+
+        this.documentStore.setMaxDocumentCount(6);
+        Set<URI> documents = this.documentStore.deleteAllWithPrefixAndMetadata("banan", testMap);
+        assertEquals(2, documents.size());
+        assertTrue(documents.contains(dapamdimadTXT1.getKey()));
+        assertTrue(documents.contains(dapamdimadTXT5.getKey()));
+        assertEquals(5, docStoreURIs.size());
+        assertFalse(docStoreURIs.contains(dapamdimadTXT5.getKey()));
+        assertTrue(docStoreURIs.contains(dapamdimadTXT6.getKey()));
+        assertTrue(docStoreURIs.contains(dapamdimadTXT7.getKey()));
+        assertTrue(docStoreURIs.contains(dapamdimadTXT8.getKey()));
+        assertTrue(docStoreURIs.contains(dapamdimadBinary3.getKey()));
+        assertTrue(docStoreURIs.contains(dapamdimadBinary4.getKey()));
     }
 
     @Test
-    void undoDeleteAllWithPrefixAndMetadataIMAD() {
+    void undoDeleteAllWithPrefixAndMetadataIMAD() throws IOException {
+        Map<String, String> testMap = new HashMap<>();
+        testMap.put("key1", "value1");
+        testMap.put("key2", "value2");
+        Document udapamdimadBinary1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "udapamdimadBinary1"); //yes md
+        Document udapamdimadBinary2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "udapamdimadBinary2"); //no md
+        Document udapamdimadTXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT1", "Here is some text for txt 1. The word is bananas");
+        Document udapamdimadTXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT2", "bananas");
+        Document udapamdimadTXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT3");
+        Document udapamdimadTXT4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT4");
+        this.documentStore.setMetadata(udapamdimadTXT1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT1.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(udapamdimadTXT2.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT3.getKey(),"key2", "value2");
+        this.documentStore.get(udapamdimadTXT4.getKey());
+        this.documentStore.setMetadata(udapamdimadBinary1.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadBinary1.getKey(),"key2", "value2");
+        this.documentStore.get(udapamdimadBinary2.getKey());
+
+        Document udapamdimadBinary3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "udapamdimadBinary3");
+        Document udapamdimadBinary4 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.BINARY, "udapamdimadBinary4");
+        Document udapamdimadTXT5 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT5", "Here is some text for txt 1. The word is bananas");
+        Document udapamdimadTXT6 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT6", "bananas");
+        Document udapamdimadTXT7 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT7");
+        Document udapamdimadTXT8 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udapamdimadTXT8");
+        this.documentStore.setMetadata(udapamdimadTXT5.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT5.getKey(),"key2", "value2");
+        this.documentStore.setMetadata(udapamdimadTXT6.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT7.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadTXT7.getKey(),"key2", "value2");
+        this.documentStore.get(udapamdimadTXT8.getKey());
+        this.documentStore.setMetadata(udapamdimadBinary3.getKey(),"key1", "value1");
+        this.documentStore.setMetadata(udapamdimadBinary3.getKey(),"key2", "value2");
+        this.documentStore.get(udapamdimadBinary4.getKey());
+
+        this.documentStore.setMaxDocumentCount(6);
+        Set<URI> documents = this.documentStore.deleteAllWithKeywordAndMetadata("bananas", testMap);
+        assertEquals(5, this.docStoreURIs.size());
+        assertEquals(2, documents.size());
+        this.documentStore.setMaxDocumentCount(12);
+        this.documentStore.undo();
+        assertEquals(6, this.docStoreURIs.size());
+        assertTrue(docStoreURIs.contains(udapamdimadTXT5.getKey()));
+        assertTrue(docStoreURIs.contains(udapamdimadTXT6.getKey()));
+        assertTrue(docStoreURIs.contains(udapamdimadTXT7.getKey()));
+        assertTrue(docStoreURIs.contains(udapamdimadTXT8.getKey()));
+        assertTrue(docStoreURIs.contains(udapamdimadBinary3.getKey()));
+        assertTrue(docStoreURIs.contains(udapamdimadBinary4.getKey()));
     }
+
 
     @Test
     void setMaxDocumentCount() {
