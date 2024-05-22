@@ -124,17 +124,17 @@ public class DocumentStoreImpl implements DocumentStore {
     }
 
     private void undoSetMetadata(URI uri, String key, String oldKey, String oldValue, boolean inMemory, boolean hadToMakeSpace, Document oldestDocument, long oldestDocTime, long timeOfAction) {
-        Document document1 = this.documentStore.get(uri);
-        document1.setMetadataValue(key, (oldKey == null) ? null : oldValue);
-        this.URItoMetadataMap.put(uri, document1.getMetadata());
+        Document documentToUndo = this.documentStore.get(uri);
+        documentToUndo.setMetadataValue(key, (oldKey == null) ? null : oldValue);
+        this.URItoMetadataMap.put(uri, documentToUndo.getMetadata());
         if(!inMemory) {
             try {
                 if(this.docStoreURIs.contains(uri)) {
-                    removeDocumentFromStorage(document1);
+                    removeDocumentFromStorage(documentToUndo);
                     this.documentStoreMemorySize--;
-                    this.totalMemoryInBytes -= getDocumentBytesLength(document1);
+                    this.totalMemoryInBytes -= getDocumentBytesLength(documentToUndo);
                     this.docStoreURIs.remove(uri);
-                } else {this.documentStore.put(uri, document1);}
+                } else {this.documentStore.put(uri, documentToUndo);}
                 this.documentStore.moveToDisk(uri);
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -149,7 +149,7 @@ public class DocumentStoreImpl implements DocumentStore {
                 }
             }
         } else {
-            restoreDocumentToStore(uri, document1, timeOfAction);
+            restoreDocumentToStore(uri, documentToUndo, timeOfAction);
             this.docStoreURIs.add(uri);
             this.documentStoreMemorySize = this.docStoreURIs.size();
         }
@@ -193,7 +193,6 @@ public class DocumentStoreImpl implements DocumentStore {
             documentExists = true;
             previousHashCode = get(url).hashCode();
             previousDocument = this.documentStore.get(url);
-            HashMap<String, String> previousDocMetaData = previousDocument.getMetadata();
         } else {
             previousDocument = null;
             documentExists = false;
@@ -309,6 +308,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public boolean delete(URI url) {
+        if(url == null) throw new IllegalArgumentException();
         Document deletedDocument;
         deletedDocument = this.documentStore.get(url);
         if (deletedDocument == null) {return false;}
@@ -338,8 +338,9 @@ public class DocumentStoreImpl implements DocumentStore {
                 }
             }
         };
-        removeDocumentFromStore(deletedDocument, true, true, true);
-        this.documentStoreMemorySize--;
+        removeDocumentFromStore(deletedDocument, true, true, inMemory);
+        if(inMemory)
+            this.documentStoreMemorySize--;
         this.fullDocStoreSize--;
         this.commandStack.push(new GenericCommand<>(url, undoDelete));
         return true;
@@ -370,6 +371,7 @@ public class DocumentStoreImpl implements DocumentStore {
      */
     @Override
     public void undo(URI url) throws IllegalStateException {
+        if(url == null) throw new IllegalArgumentException();
         if(commandStack.size() == 0) throw new IllegalStateException("Command Stack is empty");
         StackImpl<Undoable> tempStack = new StackImpl<>();
         while (this.commandStack.size() > 0) {

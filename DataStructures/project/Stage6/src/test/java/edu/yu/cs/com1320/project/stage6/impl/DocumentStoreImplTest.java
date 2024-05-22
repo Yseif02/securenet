@@ -362,6 +362,36 @@ class DocumentStoreImplTest {
     }
 
     @Test
+    void deleteOnDisk2() throws IOException {
+        Document dod2TXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dod2TXT1");
+        Document dod2TXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dod2TXT2");
+        Document dod2TXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "dod2TXT3");
+        documentStore.setMaxDocumentCount(2);
+        this.documentStore.delete(dod2TXT1.getKey());
+    }
+
+    @Test
+    void undoDeleteOnDisk2() throws IOException {
+        Document udod2TXT1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udod2TXT1");
+        Document udod2TXT2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udod2TXT2");
+        Document udod2TXT3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "udod2TXT3");
+        documentStore.setMaxDocumentCount(2);
+        this.documentStore.delete(udod2TXT1.getKey());
+        assertEquals(2, docStoreURIs.size());
+        assertFalse(docStoreURIs.contains(udod2TXT1.getKey()));
+
+        this.documentStore.undo();
+        assertEquals(2, docStoreURIs.size());
+        assertFalse(docStoreURIs.contains(udod2TXT1.getKey()));
+
+        this.documentStore.get(udod2TXT1.getKey());
+        assertEquals(2, docStoreURIs.size());
+        assertFalse(docStoreURIs.contains(udod2TXT2.getKey()));
+        assertTrue(docStoreURIs.contains(udod2TXT1.getKey()));
+        assertTrue(docStoreURIs.contains(udod2TXT3.getKey()));
+    }
+
+    @Test
     void undo() {
     }
 
