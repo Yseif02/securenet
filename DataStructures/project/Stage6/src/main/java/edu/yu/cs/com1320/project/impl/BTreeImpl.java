@@ -15,7 +15,7 @@ import java.util.Arrays;
 
 public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key, Value> {
     protected PersistenceManager<Key, Value> serializer;
-    private static final int MAX = 4;
+    private static final int MAX = 6;
     //root of the B-tree
     private Node root;
     private Node leftMostExternalNode;
@@ -306,6 +306,8 @@ public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key,
      */
     @Override
     public void setPersistenceManager(PersistenceManager<Key, Value> pm) {
+        if(pm == null)
+            throw new IllegalArgumentException("Persistence manager is null");
         this.serializer = pm;
     }
 

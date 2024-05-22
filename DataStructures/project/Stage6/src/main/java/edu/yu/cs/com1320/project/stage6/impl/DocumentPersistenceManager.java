@@ -19,12 +19,13 @@ public class DocumentPersistenceManager<Key, Value> implements PersistenceManage
 
     public DocumentPersistenceManager(File baseDir) {
         if (baseDir == null) {
-            directory = getBaseDir();
+            this.directory = getBaseDir();
+        }else{
+            this.directory = baseDir;
         }
         if (directory != null && !directory.isDirectory()) {
             throw new IllegalArgumentException("The specified base directory is invalid");
         }
-        this.directory = baseDir;
         this.gson = new GsonBuilder()
                 .registerTypeAdapter(Document.class, (JsonSerializer<Document>) (document, typeOfT, context) -> {
                     JsonObject jsonObject = new JsonObject();
@@ -84,6 +85,8 @@ public class DocumentPersistenceManager<Key, Value> implements PersistenceManage
      */
     @Override
     public void serialize(URI uri, Document val) throws IOException {
+        if(uri == null || val == null)
+            throw new IllegalArgumentException("uri or document to serialize is null");
         String url = uri.toString();
         if (url.startsWith("http://")) {
             url = url.substring("http://".length()); // Remove "http://"
@@ -105,6 +108,8 @@ public class DocumentPersistenceManager<Key, Value> implements PersistenceManage
      */
     @Override
     public Document deserialize(URI uri) throws IOException {
+        if(uri == null)
+            throw new IllegalArgumentException("uri to deserialize is null");
         String url = uri.toString();
         url = url.replace("http://", "");
         String fileToGet = this.directory.getAbsolutePath() + File.separator + url + ".json";
@@ -126,6 +131,8 @@ public class DocumentPersistenceManager<Key, Value> implements PersistenceManage
      */
     @Override
     public boolean delete(URI uri) throws IOException {
+        if(uri == null)
+            throw new IllegalArgumentException("uri to delete is null");
         String url = uri.toString();
         url = url.replace("http://", "");
         String fileToGet = this.directory.getAbsolutePath() + File.separator + url + ".json";
@@ -136,6 +143,16 @@ public class DocumentPersistenceManager<Key, Value> implements PersistenceManage
         if (file.isDirectory()) {
             return false;
         }
-        return file.delete();
+        boolean fileDeleted = file.delete();
+        if (fileDeleted) {
+            deleteEmptyParentDirectories(file.getParentFile());
+        }
+        return fileDeleted;
+    }
+
+    private void deleteEmptyParentDirectories(File currentDirectory) {
+        while (!currentDirectory.equals(this.directory) && currentDirectory.isDirectory() && currentDirectory.list().length == 0 && currentDirectory.delete()) {
+            currentDirectory = currentDirectory.getParentFile();
+        }
     }
 }

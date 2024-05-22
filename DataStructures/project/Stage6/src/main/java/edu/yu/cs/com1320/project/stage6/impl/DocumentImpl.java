@@ -96,7 +96,11 @@ public class DocumentImpl implements Document {
     public String setMetadataValue(String key, String value) {
         if(key == null || key.isEmpty()) throw new IllegalArgumentException();
         String oldValue = this.metadata.get(key);
-        this.metadata.put(key, value);
+        if(value == null){
+            this.metadata.remove(key);
+        } else {
+            this.metadata.put(key, value);
+        }
         return oldValue;
     }
 
@@ -211,6 +215,8 @@ public class DocumentImpl implements Document {
      */
     @Override
     public void setWordMap(HashMap<String, Integer> wordMap) {
+        if(wordMap == null)
+            throw new IllegalArgumentException("word map is null");
         this.wordCountMap = wordMap;
     }
 
