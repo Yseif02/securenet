@@ -181,7 +181,6 @@ public class BTreeImpl<Key extends Comparable<Key>, Value> implements BTree<Key,
         return v;
     }
 
-    @Nullable
     private Value delete(Key k, Entry alreadyThere) {
         //value exists but is on disk
         if(alreadyThere.val == null){
