@@ -385,6 +385,9 @@ public class DocumentStoreImpl implements DocumentStore {
                 commandToCheck.undo();
                 this.commandStack.pop();
                 while (tempStack.size() > 0) this.commandStack.push(tempStack.pop());
+                /*while ((this.maxMemoryInBytes != -1 && this.totalMemoryInBytes > this.maxMemoryInBytes) || (this.maxDocs != -1 && this.documentStoreMemorySize > this.maxDocs)){
+                    sendOldestDocumentToDisk();
+                }*/
                 return;
             }
             tempStack.push(this.commandStack.pop());
@@ -560,10 +563,13 @@ public class DocumentStoreImpl implements DocumentStore {
             }
         } else {
             restoreDocumentToStore(uri, document, time);
-            this.docStoreURIs.add(document.getKey());
+
             this.documentStoreMemorySize = this.docStoreURIs.size();
         }
         this.fullDocStoreSize++;
+        while ((this.maxMemoryInBytes != -1 && this.totalMemoryInBytes > this.maxMemoryInBytes) || (this.maxDocs != -1 && this.documentStoreMemorySize > this.maxDocs)){
+            sendOldestDocumentToDisk();
+        }
     }
 
     /**
@@ -915,6 +921,7 @@ public class DocumentStoreImpl implements DocumentStore {
         this.documentStoreMemorySize++;
         this.totalMemoryInBytes += getDocumentBytesLength(previousDocument);
         this.addDocumentWordsToTrie(previousDocument);
+        this.docStoreURIs.add(previousDocument.getKey());
         if(!previousDocument.getMetadata().isEmpty() && (previousDocument.getMetadata() != null))
             this.URItoMetadataMap.put(previousDocument.getKey(), previousDocument.getMetadata());
 

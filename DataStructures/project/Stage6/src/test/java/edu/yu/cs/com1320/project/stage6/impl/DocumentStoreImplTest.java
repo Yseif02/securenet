@@ -392,6 +392,17 @@ class DocumentStoreImplTest {
     }
 
     @Test
+    void pushToDiskViaMaxDocCountViaUndoDelete() throws IOException {
+        Document document1 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "document1");
+        //Document document2 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "document2");
+        documentStore.setMaxDocumentCount(1);
+        documentStore.delete(document1.getKey());
+        Document document3 = documentCreator.createAndAddNewDocumentToStore(DocumentStore.DocumentFormat.TXT, "document3");
+        this.documentStore.undo(document1.getKey());
+        assertFalse(docStoreURIs.contains(document1.getKey()));
+    }
+
+    @Test
     void undo() {
     }
 
@@ -1305,7 +1316,10 @@ class DocumentStoreImplTest {
             return documentStore.get(uri);
         }
     }
-
+    /*
+     * @param objectToReflect - the class in which the field you
+     * field = the data structure or field you want to reflect
+     */
     private Object reflectField(Object objectToReflect, String field) throws NoSuchFieldException, IllegalAccessException {
         Class<?> classObject = objectToReflect.getClass();
         Field classField = classObject.getDeclaredField(field);
