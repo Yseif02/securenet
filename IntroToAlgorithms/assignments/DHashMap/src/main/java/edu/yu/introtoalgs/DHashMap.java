@@ -14,12 +14,14 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
 
     private final HashMap<Integer, HashMap<Key, Value>> fallbackServerLookup;
     private HashMap<Key, Value> fallbackServer;
-    private final List<TreeMap<Integer, HashMap<Key, Value>>> serverRings;
+
+    private final List<Integer> otherServerIdsToSearch;
 
 
 
     private final List<HashMap<Key, Value>> serverList;
     private final HashMap<Integer, List<Integer>> serverVirtualNodes;
+
     boolean virtualNodes;
     /**
      * Constructor: client specifies the per-server capacity of participating
@@ -40,6 +42,8 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         this.serverLookupTable = new HashMap<>();
         this.reverseServerLookupTable = new HashMap<>();
         this.serverList = new ArrayList<>();
+        this.otherServerIdsToSearch = new ArrayList<>();
+
         this.serverVirtualNodes = new HashMap<>();
         this.virtualNodes = false;
 
@@ -47,7 +51,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         this.totalEntries = 0;
         this.fallbackServerLookup = new HashMap<>();
         this.fallbackServer = null;
-        this.serverRings = new ArrayList<>();
     }
 
     /**
@@ -261,6 +264,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         int hashPosition = hashcodeForKey % this.servers.lastKey();
         boolean placed = false;
         int attempts = 3;
+        Set< Map.Entry<Integer, HashMap<Key, Value>>> serversEntriesAttempted = new HashSet<>();
 
         Map.Entry<Integer, HashMap<Key, Value>> serverEntryToPlaceInto = this.servers.ceilingEntry(hashPosition);
 
@@ -278,6 +282,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
 
             } else {
                 //map is full, go to the next map
+                serversEntriesAttempted.add(serverEntryToPlaceInto);
                 serverEntryToPlaceInto = this.servers.higherEntry(serverEntryToPlaceInto.getKey());
                 if (serverEntryToPlaceInto == null) {
                     serverEntryToPlaceInto = this.servers.firstEntry(); // Wrap around to the first server
@@ -297,6 +302,17 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         // Fallback server is full, worst case scenario
         //give up
         //throw new IllegalArgumentException("No Space available");
+        Set<Map.Entry<Integer, HashMap<Key, Value>>> serverEntriesNotAttempted = new HashSet<>(this.servers.entrySet());
+        serverEntriesNotAttempted.removeAll(serversEntriesAttempted);
+        for(Map.Entry<Integer, HashMap<Key, Value>> mapEntry : serverEntriesNotAttempted){
+            if (mapEntry.getValue().size() == getPerServerMaxCapacity()) {continue;}
+            HashMap<Key, Value> serverToPlaceInto = this.servers.get(mapEntry.getKey());
+            serverToPlaceInto.put(key, value);
+            totalEntries++;
+            this.otherServerIdsToSearch.add(mapEntry.getKey());
+            return value;
+        }
+
 
         return null;
     }
@@ -313,7 +329,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
      */
     @Override
     public Value get(Object key) {
-        Set<HashMap<Key, Value>> serversSearched = new HashSet<>();
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
         if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = key.hashCode();
@@ -327,7 +342,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         while (attempts >= 0) {
             //Value valueToReturn = serverEntryToSearch.getValue().get(key);
             if (!serverEntryToSearch.getValue().containsKey(key)) {
-                serversSearched.add(serverEntryToSearch.getValue());
                 serverEntryToSearch = this.servers.higherEntry(serverEntryToSearch.getKey());
                 if (serverEntryToSearch == null) {
                     serverEntryToSearch = this.servers.firstEntry();
@@ -338,17 +352,23 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 return serverEntryToSearch.getValue().get(key);
             }
         }
-        /*List<HashMap<Key, Value>> notSearched = new ArrayList<>(this.serverList);
-        notSearched.removeAll(serversSearched);
-        for (HashMap<Key, Value> server : notSearched) {
-            if (server.containsKey(key)) {
-                return server.get(key);
-            }
-        }*/
-
 
         if (this.fallbackServer != null) {
-            return this.fallbackServer.get(key);
+            Value value = this.fallbackServer.get(key);
+            if (value != null) {return this.fallbackServer.get(key);}
+        }
+
+        // check otherServerList
+        Set<Integer> searched = new HashSet<>();
+        for (Integer id : this.otherServerIdsToSearch){
+            if (searched.contains(id)){continue;}
+            HashMap<Key, Value> mapToSearch = this.servers.get(id);
+            Value value = mapToSearch.get(key);
+            if (value != null) {
+                otherServerIdsToSearch.remove(id);
+                return value;
+            }
+            searched.add(id);
         }
         return null;
     }

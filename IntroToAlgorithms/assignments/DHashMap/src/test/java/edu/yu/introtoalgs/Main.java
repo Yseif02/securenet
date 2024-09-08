@@ -1,10 +1,13 @@
 package edu.yu.introtoalgs;
 
+import org.junit.jupiter.api.Test;
+
 public class Main {
     public static void main(String[] args) {
         //testCase1();
         //testCase2();
-        testCase3();
+        //testCase3();
+        testCase4();
     }
 
     private static void testCase1() {
@@ -89,5 +92,47 @@ public class Main {
         // dhm.removeServer(50); //remove a server
 
         dhm.removeServer(4);; // remove backup server
+    }
+
+    private static void testCase4(){
+        final int perServerMaxCapacity = 3;
+        final DHashMap<Integer, Integer> dhm = new DHashMap<>(perServerMaxCapacity);
+        dhm.addServer(1, new SizedHashMap<>(perServerMaxCapacity)); // 1 - 7
+        dhm.addServer(2, new SizedHashMap<>(perServerMaxCapacity)); // 8 - 14
+
+        dhm.addServer(1000, new SizedHashMap<>(perServerMaxCapacity)); // fallback
+
+        dhm.addServer(3, new SizedHashMap<>(perServerMaxCapacity)); // 15 - 21
+        dhm.addServer(4, new SizedHashMap<>(perServerMaxCapacity)); // 22 - 28
+        dhm.addServer(5, new SizedHashMap<>(perServerMaxCapacity)); // 29 - 35
+        dhm.addServer(6, new SizedHashMap<>(perServerMaxCapacity)); // 36 - 42
+        dhm.addServer(7, new SizedHashMap<>(perServerMaxCapacity)); // 43 - 49
+        dhm.addServer(8, new SizedHashMap<>(perServerMaxCapacity)); // 50 - 56
+        dhm.addServer(9, new SizedHashMap<>(perServerMaxCapacity)); // 57 - 63
+        dhm.addServer(50, new SizedHashMap<>(perServerMaxCapacity)); // 64 - 350
+
+        dhm.put(1, 1);
+        dhm.put(2, 2);
+        dhm.put(3, 3);
+
+        dhm.put(8, 8);
+        dhm.put(9, 9);
+        dhm.put(10, 10);
+
+        dhm.put(15, 15);
+        dhm.put(16, 16);
+        dhm.put(17, 17);
+
+        dhm.put(64, 64);
+        dhm.put(65, 65);
+        dhm.put(66, 66);
+
+        dhm.put(67, 67);
+        dhm.put(68, 68);
+        dhm.put(69, 69);
+
+        dhm.put(70, 70);
+
+        System.out.println(dhm.get(70));
     }
 }
