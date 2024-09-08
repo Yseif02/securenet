@@ -9,6 +9,20 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     private final HashMap<Integer, Integer> serverLookupTable;
     // gets id based on server hash
     private final HashMap<Integer, Integer> reverseServerLookupTable;
+    private int totalEntries;
+
+
+    private final HashMap<Integer, HashMap<Key, Value>> fallbackServerLookup;
+    private HashMap<Key, Value> fallbackServer;
+
+    private final List<Integer> otherServerIdsToSearch;
+
+
+
+    private final List<HashMap<Key, Value>> serverList;
+    private final HashMap<Integer, List<Integer>> serverVirtualNodes;
+
+    boolean virtualNodes;
     /**
      * Constructor: client specifies the per-server capacity of participating
      * servers (hash maps) in the distributed hash map.  (For simplicity, each
@@ -27,6 +41,16 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         this.servers = new TreeMap<>();
         this.serverLookupTable = new HashMap<>();
         this.reverseServerLookupTable = new HashMap<>();
+        this.serverList = new ArrayList<>();
+        this.otherServerIdsToSearch = new ArrayList<>();
+
+        this.serverVirtualNodes = new HashMap<>();
+        this.virtualNodes = false;
+
+
+        this.totalEntries = 0;
+        this.fallbackServerLookup = new HashMap<>();
+        this.fallbackServer = null;
     }
 
     /**
@@ -56,18 +80,69 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     @Override
     public void addServer(int id, SizedHashMap<Key, Value> map) {
         if (map == null) {throw new IllegalArgumentException("map is null");}
-        if (id < 0 || serverLookupTable.containsKey(id)) {throw new IllegalArgumentException("Id is less than zero: " + id + ", or server Id already exists: " + serverLookupTable.containsKey(id));}
+        if (id < 0 || this.serverLookupTable.containsKey(id) || this.fallbackServerLookup.containsKey(id)) {throw new IllegalArgumentException("Id is less than zero: " + id + ", or server Id already exists: " + this.serverLookupTable.containsKey(id));}
+        if (this.fallbackServer == null && this.serverList.size() > 1) {
+            this.fallbackServerLookup.put(id, map);
+            this.fallbackServer = map;
+            this.serverList.add(map);
+            return;
+        }
+
+
         int hashcodeForNewServer = id * 7;
         this.serverLookupTable.put(id, hashcodeForNewServer);
         this.reverseServerLookupTable.put(hashcodeForNewServer, id);
         // find the hashmap that is storing data that may need to move into the new hashmap
-        Map.Entry<Integer, HashMap<Key, Value>> mapEntryToRebalance = servers.ceilingEntry(hashcodeForNewServer) != null
-                ? servers.ceilingEntry(hashcodeForNewServer) // if there is a server with a higher hash value
-                : servers.firstEntry(); // otherwise it becomes the first server
-        servers.put(hashcodeForNewServer, map);
-        if (servers.size() > 1 && mapEntryToRebalance != null) {
+        Map.Entry<Integer, HashMap<Key, Value>> mapEntryToRebalance = this.servers.ceilingEntry(hashcodeForNewServer) != null
+                ? this.servers.ceilingEntry(hashcodeForNewServer) // if there is a server with a higher hash value
+                : this.servers.firstEntry(); // otherwise it becomes the first server
+        this.servers.put(hashcodeForNewServer, map);
+        this.serverList.add(map);
+        /*List<Integer> virtualNodes = new ArrayList<>();
+        virtualNodes.add(hashcodeForNewServer);
+        this.serverVirtualNodes.put(id, virtualNodes);
+        if(servers.size() > 1 && needsMoreServerNodes()){
+            addMoreNodes();
+            this.virtualNodes = true;
+        }*/
+
+        if (this.servers.size() > 1 && mapEntryToRebalance != null) {
             this.reBalanceServer(mapEntryToRebalance, map, id, hashcodeForNewServer);
         }
+
+
+    }
+
+    private void addMoreNodes() {
+        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
+        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
+        Map.Entry<Integer, HashMap<Key, Value>> serverEntryForNewNode;
+        int positionAdder = lastServerHashValue/secondLastServerHashValue;
+        int position = secondLastServerHashValue + positionAdder; //hash value of virtual node position
+        for (int i = 0; i < this.servers.size(); i++) {
+            if (i == 0) {
+                // get last server id
+                int serverId = this.reverseServerLookupTable.get(lastServerHashValue);
+                // add a new virtual node at the next position
+                this.servers.put(position, this.servers.get(this.serverLookupTable.get(serverId)));
+
+                this.reverseServerLookupTable.put(serverId, position);
+                // add this position to the servers virtual nodes list
+                this.serverVirtualNodes.get(serverId).add(position);
+                // move to next position
+                position += positionAdder;
+                // get entry of first server
+                serverEntryForNewNode = this.servers.lowerEntry(lastServerHashValue);
+
+            }
+
+        }
+    }
+
+    private boolean needsMoreServerNodes() {
+        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
+        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
+        return (2 * secondLastServerHashValue < secondLastServerHashValue);
     }
 
     private void reBalanceServer(Map.Entry<Integer, HashMap<Key, Value>> oldMapEntry, HashMap<Key,Value> newMap, int newMapId, int newServerHashcode) {
@@ -102,14 +177,69 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
      */
     @Override
     public void removeServer(int id) {
-        int hashcodeOfServerToRemove = serverLookupTable.get(id);
-        HashMap<Key, Value> serverToRemove = servers.get(hashcodeOfServerToRemove);
+        if (id < 0 || (!this.serverLookupTable.containsKey(id) && !this.fallbackServerLookup.containsKey(id))) {throw new IllegalArgumentException("Id is less than zero: " + id + ", or server Id doesn't exists: " + this.serverLookupTable.containsKey(id));}
+        if (this.fallbackServerLookup.containsKey(id)){
+            if (this.totalEntries - this.fallbackServer.size() > (this.serverList.size() - 1) * getPerServerMaxCapacity()) {
+                throw new IllegalArgumentException("No space available to redistribute");
+            }
+            removeFallbackServer(id);
+            return;
+        }
+        int hashcodeOfServerToRemove = this.serverLookupTable.get(id);
+        HashMap<Key, Value> serverToRemove = this.servers.get(hashcodeOfServerToRemove);
+        if (this.totalEntries - serverToRemove.size() > (this.serverList.size() - 1) * getPerServerMaxCapacity()) {
+            throw new IllegalArgumentException("No space available to redistribute");
+        }
         Set<Map.Entry<Key, Value>> entriesToReAddToServers = serverToRemove.entrySet();
-        servers.remove(hashcodeOfServerToRemove);
-        serverLookupTable.remove(id);
-        reverseServerLookupTable.remove(hashcodeOfServerToRemove);
+        this.servers.remove(hashcodeOfServerToRemove);
+        this.serverLookupTable.remove(id);
+        this.reverseServerLookupTable.remove(hashcodeOfServerToRemove);
+        this.serverList.remove(serverToRemove);
+        this.totalEntries -= entriesToReAddToServers.size();
         for (Map.Entry<Key, Value> entry : entriesToReAddToServers){
             this.put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void removeFallbackServer(int id) {
+        Set<Map.Entry<Key, Value>> entriesToReAddToServers = this.fallbackServer.entrySet();
+        this.totalEntries -= entriesToReAddToServers.size();
+        this.serverList.remove(this.fallbackServerLookup.remove(id));
+        this.fallbackServer = null;
+        this.fallbackServerLookup.remove(id);
+        Set<Map.Entry<Key, Value>> notPlaced = new HashSet<>();
+        for (Map.Entry<Key, Value> entry : entriesToReAddToServers){
+            if (this.put(entry.getKey(), entry.getValue()) == null) {
+                notPlaced.add(entry);
+            }
+        }
+        for (Map.Entry<Key, Value> entry : notPlaced) {
+            int hashcodeForKey = entry.getKey().hashCode();
+            int hashPosition = hashcodeForKey % this.servers.lastKey();
+            int attempts = this.serverList.size();
+
+            Map.Entry<Integer, HashMap<Key, Value>> serverEntryToPlaceInto = this.servers.ceilingEntry(hashPosition);
+
+            if (serverEntryToPlaceInto == null) {
+                serverEntryToPlaceInto = this.servers.firstEntry();
+            }
+            while (attempts > 0) {
+                HashMap<Key, Value> serverToPlaceInto = serverEntryToPlaceInto.getValue();
+                if (serverToPlaceInto.size() < getPerServerMaxCapacity()) {
+                    serverToPlaceInto.put(entry.getKey(), entry.getValue());
+                    this.totalEntries++;
+                    //placed = true;
+
+
+                } else {
+                    //map is full, go to the next map
+                    serverEntryToPlaceInto = this.servers.higherEntry(serverEntryToPlaceInto.getKey());
+                    if (serverEntryToPlaceInto == null) {
+                        serverEntryToPlaceInto = this.servers.firstEntry(); // Wrap around to the first server
+                    }
+                    attempts--;
+                }
+            }
         }
     }
 
@@ -127,37 +257,64 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
      */
     @Override
     public Value put(Key key, Value value) {
+        if (this.totalEntries == (this.serverList.size() * getPerServerMaxCapacity())) {throw new IllegalArgumentException("No Space available");}
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = key.hashCode();
-        int hashPosition = hashcodeForKey % servers.lastKey();
+        int hashPosition = hashcodeForKey % this.servers.lastKey();
         boolean placed = false;
         int attempts = 3;
+        Set< Map.Entry<Integer, HashMap<Key, Value>>> serversEntriesAttempted = new HashSet<>();
 
-        Map.Entry<Integer, HashMap<Key, Value>> serverEntryToPlaceInto = servers.ceilingEntry(hashPosition);
+        Map.Entry<Integer, HashMap<Key, Value>> serverEntryToPlaceInto = this.servers.ceilingEntry(hashPosition);
 
         if (serverEntryToPlaceInto == null) {
-            serverEntryToPlaceInto = servers.firstEntry();
+            serverEntryToPlaceInto = this.servers.firstEntry();
         }
-        while (attempts >= 0) {
+        while (attempts > 0) {
             HashMap<Key, Value> serverToPlaceInto = serverEntryToPlaceInto.getValue();
             if (serverToPlaceInto.size() < getPerServerMaxCapacity()) {
                 serverToPlaceInto.put(key, value);
+                this.totalEntries++;
                 //placed = true;
                 return value;
 
 
             } else {
                 //map is full, go to the next map
-                serverEntryToPlaceInto = servers.higherEntry(serverEntryToPlaceInto.getKey());
+                serversEntriesAttempted.add(serverEntryToPlaceInto);
+                serverEntryToPlaceInto = this.servers.higherEntry(serverEntryToPlaceInto.getKey());
                 if (serverEntryToPlaceInto == null) {
-                    serverEntryToPlaceInto = servers.firstEntry(); // Wrap around to the first server
+                    serverEntryToPlaceInto = this.servers.firstEntry(); // Wrap around to the first server
                 }
                 attempts--;
 
             }
         }
-        throw new IllegalArgumentException("No Space available");
+
+        // 3 consecutive Servers are full, place in fallback server
+        if (this.fallbackServer != null && this.fallbackServer.size() < getPerServerMaxCapacity()) {
+            this.fallbackServer.put(key, value);
+            totalEntries++;
+            return value;
+        }
+
+        // Fallback server is full, worst case scenario
+        //give up
+        //throw new IllegalArgumentException("No Space available");
+        Set<Map.Entry<Integer, HashMap<Key, Value>>> serverEntriesNotAttempted = new HashSet<>(this.servers.entrySet());
+        serverEntriesNotAttempted.removeAll(serversEntriesAttempted);
+        for(Map.Entry<Integer, HashMap<Key, Value>> mapEntry : serverEntriesNotAttempted){
+            if (mapEntry.getValue().size() == getPerServerMaxCapacity()) {continue;}
+            HashMap<Key, Value> serverToPlaceInto = this.servers.get(mapEntry.getKey());
+            serverToPlaceInto.put(key, value);
+            totalEntries++;
+            this.otherServerIdsToSearch.add(mapEntry.getKey());
+            return value;
+        }
+
+
+        return null;
     }
 
     /**
@@ -173,27 +330,45 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     @Override
     public Value get(Object key) {
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = key.hashCode();
-        int hashPosition = hashcodeForKey % servers.lastKey();
+        int hashPosition = hashcodeForKey % this.servers.lastKey();
         int attempts = 3;
-        Map.Entry<Integer, HashMap<Key, Value>> serverEntryToSearch = servers.ceilingEntry(hashPosition);
+        Map.Entry<Integer, HashMap<Key, Value>> serverEntryToSearch = this.servers.ceilingEntry(hashPosition);
         if (serverEntryToSearch == null) {
-            serverEntryToSearch = servers.firstEntry();
+            serverEntryToSearch = this.servers.firstEntry();
         }
         if (serverEntryToSearch == null) {throw new IllegalStateException("no servers");}
         while (attempts >= 0) {
             //Value valueToReturn = serverEntryToSearch.getValue().get(key);
             if (!serverEntryToSearch.getValue().containsKey(key)) {
-                serverEntryToSearch = servers.higherEntry(serverEntryToSearch.getKey());
+                serverEntryToSearch = this.servers.higherEntry(serverEntryToSearch.getKey());
                 if (serverEntryToSearch == null) {
-                    serverEntryToSearch = servers.firstEntry();
+                    serverEntryToSearch = this.servers.firstEntry();
                 }
                 attempts--;
             } else {
                 //placed = true;
                 return serverEntryToSearch.getValue().get(key);
             }
+        }
+
+        if (this.fallbackServer != null) {
+            Value value = this.fallbackServer.get(key);
+            if (value != null) {return this.fallbackServer.get(key);}
+        }
+
+        // check otherServerList
+        Set<Integer> searched = new HashSet<>();
+        for (Integer id : this.otherServerIdsToSearch){
+            if (searched.contains(id)){continue;}
+            HashMap<Key, Value> mapToSearch = this.servers.get(id);
+            Value value = mapToSearch.get(key);
+            if (value != null) {
+                otherServerIdsToSearch.remove(id);
+                return value;
+            }
+            searched.add(id);
         }
         return null;
     }
@@ -211,7 +386,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     @Override
     public Value remove(Object key) {
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = key.hashCode();
         int hashPosition = hashcodeForKey % servers.lastKey();
         int attempts = servers.size();
@@ -230,7 +405,23 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 attempts--;
             } else {
                 //placed = true;
-                return serverEntryToSearch.getValue().remove(key);
+                Value valueToReturn = serverEntryToSearch.getValue().remove(key);
+                this.totalEntries--;
+            }
+        }
+//        List<HashMap<Key, Value>> notSearched = new ArrayList<>(this.serverList);
+//        notSearched.removeAll(serversSearched);
+//        for (HashMap<Key, Value> server : notSearched) {
+//            if (server.containsKey(key)) {
+//                return server.get(key);
+//            }
+//        }
+
+        if (this.fallbackServer != null) {
+            Value value = this.fallbackServer.remove(key);
+            if (value != null) {
+                this.totalEntries--;
+                return value;
             }
         }
         return null;
