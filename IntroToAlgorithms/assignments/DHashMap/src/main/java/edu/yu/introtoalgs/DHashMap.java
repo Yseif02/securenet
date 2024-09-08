@@ -9,6 +9,13 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     private final HashMap<Integer, Integer> serverLookupTable;
     // gets id based on server hash
     private final HashMap<Integer, Integer> reverseServerLookupTable;
+
+
+
+
+    private final List<HashMap<Key, Value>> serverList;
+    private final HashMap<Integer, List<Integer>> serverVirtualNodes;
+    boolean virtualNodes;
     /**
      * Constructor: client specifies the per-server capacity of participating
      * servers (hash maps) in the distributed hash map.  (For simplicity, each
@@ -27,6 +34,9 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         this.servers = new TreeMap<>();
         this.serverLookupTable = new HashMap<>();
         this.reverseServerLookupTable = new HashMap<>();
+        this.serverList = new ArrayList<>();
+        this.serverVirtualNodes = new HashMap<>();
+        this.virtualNodes = false;
     }
 
     /**
@@ -65,9 +75,52 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 ? servers.ceilingEntry(hashcodeForNewServer) // if there is a server with a higher hash value
                 : servers.firstEntry(); // otherwise it becomes the first server
         servers.put(hashcodeForNewServer, map);
+        serverList.add(map);
+        /*List<Integer> virtualNodes = new ArrayList<>();
+        virtualNodes.add(hashcodeForNewServer);
+        this.serverVirtualNodes.put(id, virtualNodes);
+        if(servers.size() > 1 && needsMoreServerNodes()){
+            addMoreNodes();
+            this.virtualNodes = true;
+        }*/
+
         if (servers.size() > 1 && mapEntryToRebalance != null) {
             this.reBalanceServer(mapEntryToRebalance, map, id, hashcodeForNewServer);
         }
+
+
+    }
+
+    private void addMoreNodes() {
+        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
+        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
+        Map.Entry<Integer, HashMap<Key, Value>> serverEntryForNewNode;
+        int positionAdder = lastServerHashValue/secondLastServerHashValue;
+        int position = secondLastServerHashValue + positionAdder; //hash value of virtual node position
+        for (int i = 0; i < this.servers.size(); i++) {
+            if (i == 0) {
+                // get last server id
+                int serverId = this.reverseServerLookupTable.get(lastServerHashValue);
+                // add a new virtual node at the next position
+                this.servers.put(position, this.servers.get(this.serverLookupTable.get(serverId)));
+
+                this.reverseServerLookupTable.put(serverId, position);
+                // add this position to the servers virtual nodes list
+                this.serverVirtualNodes.get(serverId).add(position);
+                // move to next position
+                position += positionAdder;
+                // get entry of first server
+                serverEntryForNewNode = this.servers.lowerEntry(lastServerHashValue);
+
+            }
+
+        }
+    }
+
+    private boolean needsMoreServerNodes() {
+        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
+        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
+        return (2 * secondLastServerHashValue < secondLastServerHashValue);
     }
 
     private void reBalanceServer(Map.Entry<Integer, HashMap<Key, Value>> oldMapEntry, HashMap<Key,Value> newMap, int newMapId, int newServerHashcode) {
@@ -102,12 +155,14 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
      */
     @Override
     public void removeServer(int id) {
+        if (id < 0 || !serverLookupTable.containsKey(id)) {throw new IllegalArgumentException("Id is less than zero: " + id + ", or server Id doesn't exists: " + serverLookupTable.containsKey(id));}
         int hashcodeOfServerToRemove = serverLookupTable.get(id);
         HashMap<Key, Value> serverToRemove = servers.get(hashcodeOfServerToRemove);
         Set<Map.Entry<Key, Value>> entriesToReAddToServers = serverToRemove.entrySet();
         servers.remove(hashcodeOfServerToRemove);
         serverLookupTable.remove(id);
         reverseServerLookupTable.remove(hashcodeOfServerToRemove);
+        serverList.remove(serverToRemove);
         for (Map.Entry<Key, Value> entry : entriesToReAddToServers){
             this.put(entry.getKey(), entry.getValue());
         }
@@ -132,7 +187,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         int hashcodeForKey = key.hashCode();
         int hashPosition = hashcodeForKey % servers.lastKey();
         boolean placed = false;
-        int attempts = 3;
+        int attempts = servers.size();
 
         Map.Entry<Integer, HashMap<Key, Value>> serverEntryToPlaceInto = servers.ceilingEntry(hashPosition);
 
@@ -172,6 +227,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
      */
     @Override
     public Value get(Object key) {
+        Set<HashMap<Key, Value>> serversSearched = new HashSet<>();
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
         if (servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = key.hashCode();
@@ -185,6 +241,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         while (attempts >= 0) {
             //Value valueToReturn = serverEntryToSearch.getValue().get(key);
             if (!serverEntryToSearch.getValue().containsKey(key)) {
+                serversSearched.add(serverEntryToSearch.getValue());
                 serverEntryToSearch = servers.higherEntry(serverEntryToSearch.getKey());
                 if (serverEntryToSearch == null) {
                     serverEntryToSearch = servers.firstEntry();
@@ -195,6 +252,14 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 return serverEntryToSearch.getValue().get(key);
             }
         }
+        /*List<HashMap<Key, Value>> notSearched = new ArrayList<>(this.serverList);
+        notSearched.removeAll(serversSearched);
+        for (HashMap<Key, Value> server : notSearched) {
+            if (server.containsKey(key)) {
+                return server.get(key);
+            }
+        }*/
+
         return null;
     }
 
@@ -233,6 +298,13 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 return serverEntryToSearch.getValue().remove(key);
             }
         }
+//        List<HashMap<Key, Value>> notSearched = new ArrayList<>(this.serverList);
+//        notSearched.removeAll(serversSearched);
+//        for (HashMap<Key, Value> server : notSearched) {
+//            if (server.containsKey(key)) {
+//                return server.get(key);
+//            }
+//        }
         return null;
     }
 
