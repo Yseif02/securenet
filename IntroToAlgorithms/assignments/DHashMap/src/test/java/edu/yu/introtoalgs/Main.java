@@ -3,7 +3,8 @@ package edu.yu.introtoalgs;
 public class Main {
     public static void main(String[] args) {
         //testCase1();
-        testCase2();
+        //testCase2();
+        testCase3();
     }
 
     private static void testCase1() {
@@ -53,5 +54,40 @@ public class Main {
 //        dhm.put(68, 68);
 //        dhm.put(69, 69);
         System.out.println(dhm.get(62));
+    }
+
+    private static void testCase3(){
+        final int perServerMaxCapacity = 3;
+        final DHashMap<Integer, Integer> dhm = new DHashMap<>(perServerMaxCapacity);
+        dhm.addServer(1, new SizedHashMap<>(perServerMaxCapacity));
+        dhm.addServer(2, new SizedHashMap<>(perServerMaxCapacity));
+        dhm.addServer(4, new SizedHashMap<>(perServerMaxCapacity)); // backup server
+        dhm.addServer(3, new SizedHashMap<>(perServerMaxCapacity)); // 14 - 21
+        dhm.addServer(50, new SizedHashMap<>(perServerMaxCapacity));
+        dhm.put(1, 1); // 1
+        dhm.put(2, 2); // 1
+        dhm.put(3, 3); // 1
+
+        dhm.put(8, 8); // 2
+        dhm.put(9, 9); // 2
+        dhm.put(10, 10); // 2
+
+        dhm.put(51, 51); // 50
+        dhm.put(52, 52); // 50
+        dhm.put(53, 53); // 50
+
+        dhm.put(15, 15); // 3
+        dhm.put(16, 16); // 3
+        dhm.put(17, 17); // 3
+        dhm.put(18, 18); // backup 4
+
+        dhm.remove(18); // test removal from backup server
+        dhm.put(18, 18);
+
+        dhm.remove(17);
+
+        // dhm.removeServer(50); //remove a server
+
+        dhm.removeServer(4);; // remove backup server
     }
 }
