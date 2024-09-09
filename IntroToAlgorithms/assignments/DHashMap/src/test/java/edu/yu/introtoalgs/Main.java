@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Test;
 
 public class Main {
     public static void main(String[] args) {
-        //testCase1();
-        //testCase2();
-        //testCase3();
+        testCase1();
+        testCase2();
+        testCase3();
         testCase4();
     }
 
