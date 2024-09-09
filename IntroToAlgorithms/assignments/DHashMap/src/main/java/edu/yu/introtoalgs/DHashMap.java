@@ -203,7 +203,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     public Value put(Key key, Value value) {
         if (this.totalEntries == (this.serverList.size() * getPerServerMaxCapacity())) {throw new IllegalArgumentException("No Space available");}
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty() && this.fallbackServer == null) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = Math.abs(key.hashCode());
         int hashPosition = hashcodeForKey % this.servers.lastKey();
         int attempts = 3;
@@ -244,6 +244,8 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         // Fallback server is full, worst case scenario
         //give up
         //throw new IllegalArgumentException("No Space available");
+
+        // place in one of the servers i havent searched yet
         Set<Map.Entry<Integer, HashMap<Key, Value>>> serverEntriesNotAttempted = new HashSet<>(this.servers.entrySet());
         serverEntriesNotAttempted.removeAll(serversEntriesAttempted);
         for(Map.Entry<Integer, HashMap<Key, Value>> mapEntry : serverEntriesNotAttempted){
@@ -272,7 +274,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     @Override
     public Value get(Object key) {
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty() && this.fallbackServer == null) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = Math.abs(key.hashCode());
         int hashPosition = hashcodeForKey % this.servers.lastKey();
         int attempts = 3;
@@ -327,7 +329,7 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     @Override
     public Value remove(Object key) {
         if (key == null) {throw new IllegalArgumentException("Key can't be null");}
-        if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
+        if (this.servers.isEmpty() && this.fallbackServer == null) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = Math.abs(key.hashCode());
         int hashPosition = hashcodeForKey % servers.lastKey();
         int attempts = servers.size();
