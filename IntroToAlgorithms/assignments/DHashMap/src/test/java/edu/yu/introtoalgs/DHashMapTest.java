@@ -67,6 +67,25 @@ class DHashMapTest {
 
     @Test
     void remove() {
+        dhm.addServer(1, new SizedHashMap<>(5000));
+        dhm.addServer(2, new SizedHashMap<>(5000));
+        dhm.addServer(3, new SizedHashMap<>(5000));
+        dhm.addServer(4, new SizedHashMap<>(5000));
+        dhm.addServer(5, new SizedHashMap<>(5000));
+
+        dhm.put(5, 5);
+        assertEquals(5, dhm.remove(5));
+
+        Random random = new Random();
+        List<Integer> keys = new ArrayList<>();
+        for (int i = 0; i < 10000; i++) {
+            int num = Math.abs(random.nextInt());
+            dhm.put(num, num);
+            keys.add(num);
+        }
+        int numToDelete = keys.get(random.nextInt(keys.size()));
+        assertEquals(numToDelete, dhm.remove(numToDelete));
+
     }
 
     public static class StopWatch{

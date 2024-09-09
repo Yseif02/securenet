@@ -10,19 +10,11 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
     // gets id based on server hash
     private final HashMap<Integer, Integer> reverseServerLookupTable;
     private int totalEntries;
-
-
     private final HashMap<Integer, HashMap<Key, Value>> fallbackServerLookup;
     private HashMap<Key, Value> fallbackServer;
-
     private final List<Integer> otherServerIdsToSearch;
-
-
-
     private final List<HashMap<Key, Value>> serverList;
-    private final HashMap<Integer, List<Integer>> serverVirtualNodes;
 
-    boolean virtualNodes;
     /**
      * Constructor: client specifies the per-server capacity of participating
      * servers (hash maps) in the distributed hash map.  (For simplicity, each
@@ -43,11 +35,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         this.reverseServerLookupTable = new HashMap<>();
         this.serverList = new ArrayList<>();
         this.otherServerIdsToSearch = new ArrayList<>();
-
-        this.serverVirtualNodes = new HashMap<>();
-        this.virtualNodes = false;
-
-
         this.totalEntries = 0;
         this.fallbackServerLookup = new HashMap<>();
         this.fallbackServer = null;
@@ -87,8 +74,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
             this.serverList.add(map);
             return;
         }
-
-
         int hashcodeForNewServer = id * 7;
         this.serverLookupTable.put(id, hashcodeForNewServer);
         this.reverseServerLookupTable.put(hashcodeForNewServer, id);
@@ -98,54 +83,15 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 : this.servers.firstEntry(); // otherwise it becomes the first server
         this.servers.put(hashcodeForNewServer, map);
         this.serverList.add(map);
-        /*List<Integer> virtualNodes = new ArrayList<>();
-        virtualNodes.add(hashcodeForNewServer);
-        this.serverVirtualNodes.put(id, virtualNodes);
-        if(servers.size() > 1 && needsMoreServerNodes()){
-            addMoreNodes();
-            this.virtualNodes = true;
-        }*/
-
         if (this.servers.size() > 1 && mapEntryToRebalance != null) {
-            this.reBalanceServer(mapEntryToRebalance, map, id, hashcodeForNewServer);
+            this.reBalanceServer(mapEntryToRebalance, map, hashcodeForNewServer);
         }
 
 
     }
 
-    private void addMoreNodes() {
-        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
-        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
-        Map.Entry<Integer, HashMap<Key, Value>> serverEntryForNewNode;
-        int positionAdder = lastServerHashValue/secondLastServerHashValue;
-        int position = secondLastServerHashValue + positionAdder; //hash value of virtual node position
-        for (int i = 0; i < this.servers.size(); i++) {
-            if (i == 0) {
-                // get last server id
-                int serverId = this.reverseServerLookupTable.get(lastServerHashValue);
-                // add a new virtual node at the next position
-                this.servers.put(position, this.servers.get(this.serverLookupTable.get(serverId)));
 
-                this.reverseServerLookupTable.put(serverId, position);
-                // add this position to the servers virtual nodes list
-                this.serverVirtualNodes.get(serverId).add(position);
-                // move to next position
-                position += positionAdder;
-                // get entry of first server
-                serverEntryForNewNode = this.servers.lowerEntry(lastServerHashValue);
-
-            }
-
-        }
-    }
-
-    private boolean needsMoreServerNodes() {
-        int lastServerHashValue = serverLookupTable.get(this.servers.lastEntry().getKey());
-        int secondLastServerHashValue = this.servers.floorKey(lastServerHashValue);
-        return (2 * secondLastServerHashValue < secondLastServerHashValue);
-    }
-
-    private void reBalanceServer(Map.Entry<Integer, HashMap<Key, Value>> oldMapEntry, HashMap<Key,Value> newMap, int newMapId, int newServerHashcode) {
+    private void reBalanceServer(Map.Entry<Integer, HashMap<Key, Value>> oldMapEntry, HashMap<Key,Value> newMap, int newServerHashcode) {
         Set<Map.Entry<Key, Value>> oldMapEntries = oldMapEntry.getValue().entrySet();
         if (newMap.hashCode() < oldMapEntry.hashCode()) {
             // case where the new map has a lower hash than the old map
@@ -228,8 +174,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 if (serverToPlaceInto.size() < getPerServerMaxCapacity()) {
                     serverToPlaceInto.put(entry.getKey(), entry.getValue());
                     this.totalEntries++;
-                    //placed = true;
-
 
                 } else {
                     //map is full, go to the next map
@@ -262,7 +206,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
         if (this.servers.isEmpty()) {throw new IllegalStateException("No Servers");}
         int hashcodeForKey = Math.abs(key.hashCode());
         int hashPosition = hashcodeForKey % this.servers.lastKey();
-        boolean placed = false;
         int attempts = 3;
         Set< Map.Entry<Integer, HashMap<Key, Value>>> serversEntriesAttempted = new HashSet<>();
 
@@ -276,7 +219,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
             if (serverToPlaceInto.size() < getPerServerMaxCapacity()) {
                 serverToPlaceInto.put(key, value);
                 this.totalEntries++;
-                //placed = true;
                 return value;
 
 
@@ -348,7 +290,6 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 }
                 attempts--;
             } else {
-                //placed = true;
                 return serverEntryToSearch.getValue().get(key);
             }
         }
@@ -404,18 +345,11 @@ public class DHashMap<Key, Value> extends DHashMapBase<Key, Value>{
                 }
                 attempts--;
             } else {
-                //placed = true;
                 Value valueToReturn = serverEntryToSearch.getValue().remove(key);
                 this.totalEntries--;
+                return valueToReturn;
             }
         }
-//        List<HashMap<Key, Value>> notSearched = new ArrayList<>(this.serverList);
-//        notSearched.removeAll(serversSearched);
-//        for (HashMap<Key, Value> server : notSearched) {
-//            if (server.containsKey(key)) {
-//                return server.get(key);
-//            }
-//        }
 
         if (this.fallbackServer != null) {
             Value value = this.fallbackServer.remove(key);
