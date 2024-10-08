@@ -20,14 +20,7 @@ class TerroristNamesTest {
     }
 
     @Test
-    void getWordsForId() {
-    }
-
-    @Test
-    void checkIfWordExists() {
-    }
-    @Test
-    void test100KAddsAnd1millSearches(){
+    void test100KAddsAnd1BilSearches(){
         TerroristNamesBase terroristNamesBase = new TerroristNames();
         try {
             int count = 0;
@@ -45,7 +38,7 @@ class TerroristNamesTest {
     }
 
     @Test
-    void test1MilAdds(){
+    void test1MilAddsAnd100MilSearch(){
         TerroristNamesBase terroristNamesBase = new TerroristNames();
         try {
             List<String> lines = Files.readAllLines(Paths.get("src/main/resources/unique_random_words.txt"));
@@ -55,7 +48,91 @@ class TerroristNamesTest {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        /*for (int i = 0; i < 100_000_000; i++) {
+            terroristNamesBase.search(String.valueOf(i));
+        }*/
+
     }
+
+    @Test
+    void testAddingStringWithTab() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.add("hell\t0"));
+    }
+
+    @Test
+    void testAddingStringWithSpace() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.add("hell 0"));
+    }
+
+    @Test
+    void testAddingStringWithNumber() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        terroristNamesBase.add("hell0");
+    }
+
+    @Test
+    void testSearchStringWithTab() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.search("hell\t0"));
+    }
+
+    @Test
+    void testSearchStringWithSpace() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.search("hell 0"));
+    }
+
+    @Test
+    void testSearchStringWithNumber() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        terroristNamesBase.search("hell0");
+    }
+
+    @Test
+    void addNullId() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.add(null));
+    }
+
+    @Test
+    void addEmptyId() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.add(""));
+    }
+
+    @Test
+    void addWordThatIsAlreadyInBase() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> {
+                    terroristNamesBase.add("hello");
+                    terroristNamesBase.add("hello");
+                });
+    }
+
+    @Test
+    void searchNullId() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.search(null));
+    }
+
+    @Test
+    void searchEmptyId() {
+        TerroristNamesBase terroristNamesBase = new TerroristNames();
+        assertThrows(IllegalArgumentException.class,
+                () -> terroristNamesBase.search(""));
+    }
+
 
     @Test
     void test1MilAddsAnd1MilSearches(){
