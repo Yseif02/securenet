@@ -4,7 +4,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 public class TerroristNames extends TerroristNamesBase{
-    //key = substring           value = all names this string belongs to
     private final SuffixTreeNode root;
     private final HashSet<String> allWords;
 
@@ -14,8 +13,6 @@ public class TerroristNames extends TerroristNamesBase{
         this.allWords = new HashSet<>();
     }
 
-
-
     /**trades
      * Adds a member to the set of current members.
      *
@@ -23,7 +20,11 @@ public class TerroristNames extends TerroristNamesBase{
      */
     @Override
     public void add(String id) {
-        if ((id == null) || id.isBlank() || id.contains(" ") || id.length() > 9 || this.allWords.contains(id)) throw new IllegalArgumentException();
+        if (id == null || id.isBlank() || id.length() > MAX_ID_LENGTH || this.allWords.contains(id)) throw new IllegalArgumentException();
+        char[] idChars = id.toCharArray();
+        for (char c : idChars) {
+            if (c == ' ' || c == '\t') throw new IllegalArgumentException();
+        }
         for (int i = 0; i < id.length(); i++) {
             addSuffix(id.substring(i));
         }
@@ -41,7 +42,6 @@ public class TerroristNames extends TerroristNamesBase{
             }
             currentNode = nextNode;
             currentNode.count++;
-            //currentNode.setSubstring(suffix);
         }
     }
 
@@ -57,11 +57,11 @@ public class TerroristNames extends TerroristNamesBase{
      */
     @Override
     public int search(String id) {
-        //given a string to search return # of times string appears as a substring in terrorist names
-
-        //search hashset of substrings if there is a set of names pertaining to this string id
-        //if yes return set size
-        if ((id == null) || id.isBlank() || id.contains(" ")) throw new IllegalArgumentException();
+        if (id == null || id.isBlank() || id.length() > MAX_ID_LENGTH) throw new IllegalArgumentException();
+        char[] idChars = id.toCharArray();
+        for (char c : idChars) {
+            if (c == ' ' || c == '\t') throw new IllegalArgumentException();
+        }
         SuffixTreeNode currentNode = root;
         for (char c : id.toCharArray()) {
             currentNode = currentNode.children.get(c);
@@ -75,22 +75,6 @@ public class TerroristNames extends TerroristNamesBase{
 
     public static class SuffixTreeNode {
         private final HashMap<Character, SuffixTreeNode> children = new HashMap<>();
-        private final HashSet<String> substringWords = new HashSet<>();
         private int count = 0;
-        private String substring = null;
-
-        public String getSubstring() {
-            return substring;
-        }
-
-        public void setSubstring(String substring) {
-            this.substring = substring;
-        }
-
-        public HashSet<String> getSubstringWords(){
-            return this.substringWords;
-        }
     }
-
-
 }
