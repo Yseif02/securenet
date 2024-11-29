@@ -8,7 +8,7 @@ import static java.util.concurrent.ForkJoinTask.invokeAll;
 public class MatrixAddFJ extends MatrixAddFJBase{
     private final int threshold;
     //private final ForkJoinPool pool;
-    private static final ForkJoinPool POOL = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
+    private static final ForkJoinPool POOL = new ForkJoinPool();
 
     /**
      * Constructor: client specifies the threshold value "n" (in a "n by n"
