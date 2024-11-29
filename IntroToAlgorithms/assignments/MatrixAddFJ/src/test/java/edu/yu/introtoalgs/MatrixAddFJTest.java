@@ -116,12 +116,12 @@ class MatrixAddFJTest {
             }
         }
         double[][] result = new MatrixAddFJ(50000).add(a, b);
-        for (double[] row : result) {
+        /*for (double[] row : result) {
             for (double val : row) {
                 System.out.print(val + " ");
             }
             System.out.println();
-        }
+        }*/
 
         double[][] expected = new double[size][size];
         for (int i = 0; i < size; i++) {
@@ -142,4 +142,47 @@ class MatrixAddFJTest {
             MatrixAddFJ matrixAddFJ = new MatrixAddFJ(0);
         });
     }
+
+    @Test
+    void testCorrectMatrixFJAlg() {
+        int size = 64; // Size of the matrices
+        double[][] matrix1 = new double[size][size];
+        double[][] matrix2 = new double[size][size];
+        double[][] expectedResult = new double[size][size];
+        double expectedValue = size * size + 1;
+
+
+        int value = 1;
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                matrix1[i][j] = value++;
+            }
+        }
+
+
+        value = size * size;
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                matrix2[i][j] = value--;
+            }
+        }
+
+
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                expectedResult[i][j] = expectedValue;
+            }
+        }
+
+
+        int threshold = 8;
+        MatrixAddFJ matrixAdd = new MatrixAddFJ(threshold);
+        double[][] resultMatrix = matrixAdd.add(matrix1, matrix2);
+
+
+        assertArrayEquals(expectedResult, resultMatrix);
+
+
+    }
+
 }

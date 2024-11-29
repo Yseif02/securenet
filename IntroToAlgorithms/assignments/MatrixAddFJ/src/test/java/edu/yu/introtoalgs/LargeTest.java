@@ -1,5 +1,8 @@
 package edu.yu.introtoalgs;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class LargeTest {
 
 
@@ -9,19 +12,18 @@ public class LargeTest {
         double[][] a = new double[size][size];
         double[][] b = new double[size][size];
 
-        // Initialize matrices with dummy values
-        for (int i = 0; i < size; i++) {
-            for (int j = 0; j < size; j++) {
-                a[i][j] = i + j;
-                b[i][j] = i - j;
-            }
-        }
+
 
         testWith1MatrixAddPerOp(a, b);
 
 
         testWith1MatrixTotal(a, b);
 
+        correctMatrix();
+
+    }
+
+    private static void correctMatrix() {
 
     }
 
@@ -30,9 +32,10 @@ public class LargeTest {
         long highAvg = 0;
         int i;
         MatrixAddFJ matrixAdd = new MatrixAddFJ(higherThreshold);
-        for (i = 1; i < 500 + 1; i++){
+        for (i = 1; i < 2 + 1; i++){
             long start = System.nanoTime();
             double[][] result = matrixAdd.add(a, b);
+            //arrays.add(result);
             long end = System.nanoTime();
             highAvg += (end - start);
             //System.out.println("Time taken: " + (end - start) / 1e6 + " ms");
@@ -46,17 +49,22 @@ public class LargeTest {
         int lowerThreshold = 5000;
         long lowAvg = 0;
         MatrixAddFJ matrixAdd2 = new MatrixAddFJ(lowerThreshold);
-        for (i = 1; i < 500 + 1; i++){
+        for (i = 1; i < 2 + 1; i++){
             long start = System.nanoTime();
             double[][] result = matrixAdd2.add(a, b);
+            //arrays.add(result);
             long end = System.nanoTime();
             lowAvg += (end - start);
             //System.out.println("Time taken: " + (end - start) / 1e6 + " ms");
+
+
         }
         System.out.println("+-------------------------------+");
         System.out.printf("Lower threshold average: %.2f ms%n", (lowAvg / (double) i) / 1e6);
         System.out.println("+-------------------------------+");
         System.out.println();
+
+
     }
 
 
@@ -64,7 +72,7 @@ public class LargeTest {
         int higherThreshold = 50000;
         long highAvg = 0;
         int i;
-        for (i = 1; i < 500 + 1; i++){
+        for (i = 1; i < 50 + 1; i++){
             MatrixAddFJ matrixAdd = new MatrixAddFJ(higherThreshold);
             long start = System.nanoTime();
             double[][] result = matrixAdd.add(a, b);
@@ -79,7 +87,7 @@ public class LargeTest {
 
         int lowerThreshold = 5000;
         long lowAvg = 0;
-        for (i = 1; i < 500 + 1; i++){
+        for (i = 1; i < 50 + 1; i++){
             MatrixAddFJ matrixAdd = new MatrixAddFJ(lowerThreshold);
             long start = System.nanoTime();
             double[][] result = matrixAdd.add(a, b);
