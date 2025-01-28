@@ -72,41 +72,6 @@ public class HelpTheGabbai extends HelpTheGabbaiBase{
                 grantsRemaining--;
                 return winner;
             }
-
-            /*private void reduceWights(Map.Entry<Integer, String> entry) {
-                int keyOfWinner = entry.getKey();
-                String recentWinner = entry.getValue();
-
-                //need to be wrapper int to check for null
-                Integer lowerKey = memberGrants.lowerKey(keyOfWinner);
-                int lowerWeight = 0;
-                if (lowerKey != null) {
-                    lowerWeight = lowerKey;
-                }
-
-                int remainingWeight = keyOfWinner - lowerWeight;
-                memberGrants.remove(keyOfWinner);
-                if (remainingWeight > 1) {
-                    memberGrants.put(lowerWeight + remainingWeight - 1, recentWinner);
-                }
-
-                shiftRanges(keyOfWinner);
-            }
-
-            private void shiftRanges(int startingKey) {
-               Map<Integer, String> tailMap = memberGrants.tailMap(startingKey, false);
-                List<Map.Entry<Integer, String>> updatedEntries = new ArrayList<>();
-                for (Map.Entry<Integer, String> entry : tailMap.entrySet()) {
-                    int newKey = entry.getKey() - 1;
-                    updatedEntries.add(new AbstractMap.SimpleEntry<>(newKey, entry.getValue()));
-                }
-                for (Map.Entry<Integer, String> entry : tailMap.entrySet()) {
-                    memberGrants.remove(entry.getKey());
-                }
-                for (Map.Entry<Integer, String> entry : updatedEntries) {
-                    memberGrants.put(entry.getKey(), entry.getValue());
-                }
-            }*/
         };
     }
 }
