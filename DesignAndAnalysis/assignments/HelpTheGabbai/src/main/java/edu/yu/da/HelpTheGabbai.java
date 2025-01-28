@@ -51,9 +51,8 @@ public class HelpTheGabbai extends HelpTheGabbaiBase{
     @Override
     public Iterator<String> iterator() {
         return new Iterator<>() {
-             final Random random = new Random();
-             int grantsRemaining = totalGrants;
-
+            final Random random = new Random();
+            int grantsRemaining = totalGrants;
 
             @Override
             public boolean hasNext() {
@@ -65,10 +64,9 @@ public class HelpTheGabbai extends HelpTheGabbaiBase{
                 if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
-                int randomNum = random.nextInt(grantsRemaining) + 1;
+                int randomNum = random.nextInt(totalGrants) + 1;
                 Map.Entry<Integer, String> entry = memberGrants.ceilingEntry(randomNum);
                 String winner = entry.getValue();
-                //reduceWights(entry);
                 grantsRemaining--;
                 return winner;
             }
