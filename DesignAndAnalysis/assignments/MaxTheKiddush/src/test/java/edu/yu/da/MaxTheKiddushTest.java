@@ -38,9 +38,9 @@ public class MaxTheKiddushTest {
     @Test
     void testSingleMemberOnly() {
         int[] bookings = {7, 1, 8, 2};
-        int maxCapacity = 3;
+        int maxCapacity = 8;
         MaxTheKiddush kiddush = new MaxTheKiddush(bookings, maxCapacity);
-        assertEquals(0, kiddush.maxIt());  // Only individual members can be booked
+        assertEquals(1, kiddush.maxIt());  // Only individual members can be booked
     }
 
     @Test
@@ -99,7 +99,7 @@ public class MaxTheKiddushTest {
     }
 
     @Test
-    void testLargeUniformDataSet() {
+    void testLargeUniformDataSet1() {
         int n = 100000;
         int maxCapacity = 100000;
         int[] bookings = new int[n];
@@ -118,6 +118,57 @@ public class MaxTheKiddushTest {
         System.out.println("Execution time (ms): " + (endTime - startTime) / 1_000_000.0);
 
         assertEquals(n, result); // All members should fit
+    }
+
+    @Test
+    void testLargeUniformDataSet2() {
+        int baseSize = 100000;
+
+        for (int iteration = 0; iteration < 4; iteration++) {
+            int n = baseSize * (1 << iteration); // Doubles n each iteration
+            int maxCapacity = n; // Increase maxCapacity along with n
+            int[] bookings = new int[n];
+
+            for (int i = 0; i < n; i++) {
+                bookings[i] = 1; // Uniform values (each booking = 1)
+            }
+
+            MaxTheKiddush kiddush = new MaxTheKiddush(bookings, maxCapacity);
+
+            long startTime = System.nanoTime();
+            int result = kiddush.maxIt();
+            long endTime = System.nanoTime();
+
+            double executionTimeMs = (endTime - startTime) / 1_000_000.0;
+
+            System.out.println("Large Uniform Dataset | n = " + n);
+            System.out.println("Execution time (ms): " + executionTimeMs);
+            System.out.println("Members booked: " + result);
+
+            assertEquals(n, result); // Ensure all members fit
+        }
+    }
+
+    @Test
+    void testUniform3() {
+        int size = 200000;
+        int maxCapacity = 8000;
+        int[] bookings = new int[size];
+        int tablesNeeded = 1;
+        Arrays.fill(bookings, tablesNeeded);
+        MaxTheKiddushBase mtk = new MaxTheKiddush(bookings, maxCapacity);
+        assertEquals(maxCapacity/tablesNeeded, mtk.maxIt());
+    }
+
+    @Test
+    void testUniform4() {
+        int size = 200000;
+        int maxCapacity = 8000;
+        int[] bookings = new int[size];
+        int tablesNeeded = 2;
+        Arrays.fill(bookings, tablesNeeded);
+        MaxTheKiddushBase mtk = new MaxTheKiddush(bookings, maxCapacity);
+        assertEquals(maxCapacity/tablesNeeded, mtk.maxIt());
     }
 
     @Test

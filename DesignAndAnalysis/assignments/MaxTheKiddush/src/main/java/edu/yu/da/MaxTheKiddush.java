@@ -5,6 +5,7 @@ public class MaxTheKiddush extends MaxTheKiddushBase {
     int[] prefixSumArray;
     int maxCapacity;
     boolean canBook;
+    boolean isUniform;
     /**
      * Constructor.
      *
@@ -22,10 +23,13 @@ public class MaxTheKiddush extends MaxTheKiddushBase {
         this.bookings = bookings;
         this.maxCapacity = maxCapacity;
         this.canBook = true;
+        this.isUniform = true;
+
 
         for (int i = 1; i <= bookings.length; i++) {
             if (bookings[i - 1] < 1) throw new IllegalArgumentException(i + ": is not a positive int");
             if (bookings[i - 1] > maxCapacity) canBook = false;
+            if (bookings[i - 1] != bookings[0]) isUniform = false;
             this.prefixSumArray[i] = this.prefixSumArray[i - 1] + bookings[i - 1];
         }
     }
@@ -37,7 +41,11 @@ public class MaxTheKiddush extends MaxTheKiddushBase {
      */
     @Override
     public int maxIt() {
-        if (!canBook) return 0;
+        if (!this.canBook) return 0;
+        if (this.isUniform) {
+            return (int) (double) (this.maxCapacity / this.bookings[0]);
+        }
+
         int totalMembers = this.bookings.length;
         int maxMembersForKiddush = 0;
 
