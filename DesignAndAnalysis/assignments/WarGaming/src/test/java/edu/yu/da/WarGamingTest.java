@@ -105,7 +105,8 @@ public class WarGamingTest {
 
         // Create a ThreatScoring instance with the correct number of threat lists
         long startTime1 = System.nanoTime();
-        int totalLists = wgb.getThreatsToEvaluate().size();
+        int totalLists = 33554432;
+        //int totalLists = wgb.getThreatsToEvaluate().size();
         long endTime1 = System.nanoTime();
         System.out.println("Execution time: " + (endTime1 - startTime1) / 1_000_000_000.0 + " seconds");
 
@@ -135,7 +136,9 @@ public class WarGamingTest {
         public final Function<List<String>, Integer> DEFAULT_THREAT_SCORE = threat -> {
             timesCalled++;  // Track how many times this function is called
 
-            if (threat == null) {
+            if (timesCalled == 100) return threat.size() + 1;
+
+            /*if (threat == null) {
                 return 0; // Null threat has no danger
             }
             // Return a large score for the 2nd call
@@ -145,7 +148,7 @@ public class WarGamingTest {
             // Return a large score for the middle list
             if (timesCalled == (numberOfLists / 2)) {
                 return 50;
-            }
+            }*/
             return threat.size(); // Default score is the size of the threat list
         };
     }

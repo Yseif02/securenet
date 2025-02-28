@@ -1,7 +1,5 @@
 package edu.yu.da;
 
-import org.jetbrains.annotations.NotNull;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
@@ -50,11 +48,11 @@ public class WarGaming extends WarGamingBase {
         stack.push(new ThreatSubset(0, new ArrayList<>()));
 
         while (!stack.isEmpty()) {
-            ThreatSubset state = stack.pop();
-            allSubsets.add(new ArrayList<>(state.currentSubset));
+            ThreatSubset threat = stack.pop();
+            allSubsets.add(new ArrayList<>(threat.currentSubset()));
 
-            for (int i = state.start; i < this.threats.size(); i++) {
-                List<String> newSubset = new ArrayList<>(state.currentSubset);
+            for (int i = threat.start(); i < this.threats.size(); i++) {
+                List<String> newSubset = new ArrayList<>(threat.currentSubset());
                 newSubset.add(this.threats.get(i));
                 stack.push(new ThreatSubset(i + 1, newSubset));
             }
@@ -63,14 +61,7 @@ public class WarGaming extends WarGamingBase {
         return allSubsets;
     }
 
-    private static class ThreatSubset {
-        int start;
-        List<String> currentSubset;
-
-        public ThreatSubset(int start, List<String> currentSubset) {
-            this.start = start;
-            this.currentSubset = currentSubset;
-        }
+    private record ThreatSubset(int start, List<String> currentSubset) {
     }
 
 
@@ -117,13 +108,14 @@ public class WarGaming extends WarGamingBase {
         for (List<String> threat : allThreats) {
             int expectedThreatSize = threat.size();
             int realThreatLevel = f.apply(threat);
-            if (realThreatLevel > expectedThreatSize && realThreatLevel - expectedThreatSize > largestThreatDeviant) {
+            if(realThreatLevel > expectedThreatSize) return currentIndex;
+            /*if (realThreatLevel > expectedThreatSize && realThreatLevel - expectedThreatSize > largestThreatDeviant) {
                 largestThreatDeviant = realThreatLevel - expectedThreatSize;
                 indexOfLargestThreat = currentIndex;
-            }
+            }*/
             currentIndex++;
         }
-        return (largestThreatDeviant == 0) ? -1 : indexOfLargestThreat;
+        return -1;
     }
 
     /*private static class Threat extends ArrayList<String> implements Comparable<Threat> {
