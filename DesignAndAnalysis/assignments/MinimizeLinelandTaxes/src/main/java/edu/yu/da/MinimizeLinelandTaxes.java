@@ -47,16 +47,16 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
      */
     @Override
     public List<TripSegment> minTaxRoute() {
-        return bestRoute;
+        return this.bestRoute;
     }
 
 
     private void runBellmanFord() {
-        int[][] dist = new int[numberOfPorts + 1][this.numberOfPorts + 1];
-        int[][] prevPort = new int[numberOfPorts + 1][this.numberOfPorts + 1];
-        int[][] prevJump = new int[numberOfPorts + 1][this.numberOfPorts + 1];
+        int[][] dist = new int[this.numberOfPorts + 1][this.numberOfPorts + 1];
+        int[][] prevPort = new int[this.numberOfPorts + 1][this.numberOfPorts + 1];
+        int[][] prevJump = new int[this.numberOfPorts + 1][this.numberOfPorts + 1];
 
-        for (int i = 1; i <= numberOfPorts; i++) {
+        for (int i = 1; i <= this.numberOfPorts; i++) {
             for (int j = 0; j <= this.numberOfPorts; j++) {
                 dist[i][j] = MAX_VALUE;
                 prevPort[i][j] = -1;
@@ -65,7 +65,7 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
         }
         dist[1][0] = 0;
 
-        int totalCells = (numberOfPorts + 1) * (this.numberOfPorts + 1);
+        int totalCells = (this.numberOfPorts + 1) * (this.numberOfPorts + 1);
         for (int i = 0; i < totalCells - 1; i++) {
             relaxEdges(dist, prevPort, prevJump);
         }
@@ -74,15 +74,15 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
         int bestCost = MAX_VALUE;
         int bestJump = -1;
         for (int j = 0; j <= this.numberOfPorts; j++) {
-            if (dist[numberOfPorts][j] < bestCost) {
-                bestCost = dist[numberOfPorts][j];
+            if (dist[this.numberOfPorts][j] < bestCost) {
+                bestCost = dist[this.numberOfPorts][j];
                 bestJump = j;
             }
         }
 
         List<TripSegment> route = new ArrayList<>();
         if (bestCost < MAX_VALUE) {
-            int port = numberOfPorts;
+            int port = this.numberOfPorts;
             int jump = bestJump;
             while (port != 1 || jump != 0) {
                 int from = prevPort[port][jump];
@@ -101,7 +101,7 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
 
 
     private void relaxEdges(int[][] dist, int[][] prevPort, int[][] prevJump) {
-        for (int i = 1; i <= numberOfPorts; i++) {
+        for (int i = 1; i <= this.numberOfPorts; i++) {
             for (int j = 0; j <= this.numberOfPorts; j++) {
                 int costSoFar = dist[i][j];
                 if (costSoFar >= MAX_VALUE) continue;
@@ -109,8 +109,8 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
                 // try to move right
                 int nextJumpRight = j + 1;
                 int nextPortRight = i + nextJumpRight;
-                if (nextJumpRight <= this.numberOfPorts && nextPortRight <= numberOfPorts) {
-                    int newCost = costSoFar + taxes[nextPortRight];
+                if (nextJumpRight <= this.numberOfPorts && nextPortRight <= this.numberOfPorts) {
+                    int newCost = costSoFar + this.taxes[nextPortRight];
                     if (newCost < dist[nextPortRight][nextJumpRight]) {
                         dist[nextPortRight][nextJumpRight] = newCost;
                         prevPort[nextPortRight][nextJumpRight] = i;
@@ -122,7 +122,7 @@ public class MinimizeLinelandTaxes extends MinimizeLinelandTaxesBase {
                 if (j > 0) {
                     int previousPort = i - j;
                     if (previousPort >= 1) {
-                        int newCost = costSoFar + taxes[previousPort];
+                        int newCost = costSoFar + this.taxes[previousPort];
                         if (newCost < dist[previousPort][j]) {
                             dist[previousPort][j] = newCost;
                             prevPort[previousPort][j] = i;
