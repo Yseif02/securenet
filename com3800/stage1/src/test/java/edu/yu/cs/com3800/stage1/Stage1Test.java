@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -511,7 +512,24 @@ public class Stage1Test {
         System.out.println("Actual output: \n" + body2);
     }
 
+    @Test
+    void SendRequestAfterStop() throws IOException {
+        this.simpleServer.stop();
+        String javaSourceCode =
+                "package edu.yu.cs.com3800;\n" +
+                        "\n" +
+                        "public class TestClass14 {\n" +
+                        "    public TestClass14() {\n" +
+                        "    }\n" +
+                        "\n" +
+                        "    public String run() {\n" +
+                        "        return \"Success\";\n" +
+                        "    }\n" +
+                        "}\n";
 
-
+        this.client.sendCompileAndRunRequest(javaSourceCode);
+        //Client.Response response = );
+        assertThrows(IOException.class, () -> this.client.getResponse());
+    }
 
 }
