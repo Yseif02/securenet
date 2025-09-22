@@ -49,6 +49,9 @@ public class ClientImpl implements Client {
 
     @Override
     public Response getResponse() throws IOException {
+        if (clientResponse == null) {
+            throw new IOException("sendCompileAndRunRequest() must be called before getResponse()");
+        }
         HttpResponse<String> response;
         try {
             response = this.clientResponse.get();

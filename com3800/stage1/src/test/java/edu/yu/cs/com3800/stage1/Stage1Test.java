@@ -532,4 +532,33 @@ public class Stage1Test {
         assertThrows(IOException.class, () -> this.client.getResponse());
     }
 
+    @Test
+    void testCallGetResponseBeforeSendCompile() throws IOException {
+        assertThrows(IOException.class, () -> this.client.getResponse());
+
+    }
+
+    @Test
+    void testCallGetResponseBeforeSendCompileThenSendAndCompile() throws IOException {
+        String javaSourceCode =
+                "package edu.yu.cs.com3800;\n" +
+                        "\n" +
+                        "public class TestClass15 {\n" +
+                        "    public TestClass15() {\n" +
+                        "    }\n" +
+                        "\n" +
+                        "    public String run() {\n" +
+                        "        return \"Success\";\n" +
+                        "    }\n" +
+                        "}\n";
+
+        //assertThrows(IOException.class, () -> this.client.getResponse());
+        this.client.sendCompileAndRunRequest(javaSourceCode);
+        Client.Response response = this.client.getResponse();
+        String body = response.getBody();
+        assertEquals("Success", body);
+        System.out.println("Expected output: \nSuccess");
+        System.out.println("Actual output: \n" + body);
+    }
+
 }
