@@ -12,15 +12,25 @@ import java.nio.charset.StandardCharsets;
 
 public class SimpleServerImpl implements SimpleServer {
 
-    private final int port;
     //private final ServerSocket serverSocket;
     private final HttpServer server;
+    private int port;
     private boolean on;
 
+    //Stopped is used to see if the server has been stopped in its lifetime
+    private boolean stopped = false;
+
     public SimpleServerImpl(int port) throws IOException {
+        if (port < 0) {
+            throw new IOException("Port is out of range: " + port);
+        }
         this.port = port;
-        this.server = HttpServer.create(new InetSocketAddress(this.port), 0);
         this.on = false;
+        this.server = HttpServer.create(new InetSocketAddress(port), 0);
+        createContext(this.server);
+    }
+
+    private void createContext(HttpServer server) {
         server.createContext("/compileandrun", new HttpHandler() {
             @Override
             public void handle(HttpExchange exchange) throws IOException {
@@ -86,6 +96,15 @@ public class SimpleServerImpl implements SimpleServer {
      */
     @Override
     public void start() {
+        /*if (!this.on && stopped) {
+            try {
+                this.server = HttpServer.create(new InetSocketAddress(this.port), 0);
+
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            this.on = true;
+        }*/
         if (!this.on) {
             this.server.start();
             this.on = true;

@@ -1,12 +1,14 @@
 package edu.yu.cs.com3800.stage1;
 
+import edu.yu.cs.com3800.JavaRunner;
 import edu.yu.cs.com3800.SimpleServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
+import java.io.*;
 import java.net.ConnectException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,6 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
 public class Stage1Test {
     SimpleServer simpleServer;
     Client client;
+
+    public Stage1Test() {
+    }
 
     @BeforeEach
     void setUp() throws IOException {
@@ -198,12 +203,13 @@ public class Stage1Test {
         //simpleServer.start();
         //Client client = new ClientImpl("localhost", 9000);
         String javaSourceCode =
-                "public class TestClass5 {\n" +
-                        "public TestClass5(){}\n" +
-                        "    public String run() {\n" +
-                        "        return(\"Hello World!\");\n" +
-                        "    }\n" +
-                        "}";
+                """
+                        public class TestClass5 {
+                        public TestClass5(){}
+                            public String run() {
+                                return("Hello World!");
+                            }
+                        }""";
         this.client.sendCompileAndRunRequest(javaSourceCode);
         Client.Response response = this.client.getResponse();
         String expectedResponse = "Hello World!";
@@ -224,24 +230,26 @@ public class Stage1Test {
         //SimpleServer simpleServer = new SimpleServerImpl(9000);
         //simpleServer.start();
         String javaSourceCode =
-                "package edu.yu.cs.com3800;\n" +
-                "public class TestClass6 {\n" +
-                "    public static void main(String[] args) {\n" +
-                "        TestClass6 testClass = new TestClass6();\n" +
-                "        String result = testClass.run();\n" +
-                "    }\n" +
-                "    public TestClass6() {\n" +
-                "\n" +
-                "    }\n" +
-                "\n" +
-                "    public String run() {\n" +
-                "        int[] array = new int[4];\n" +
-                "        for (int i = 0; i <= 5; i++) {\n" +
-                "            array[i] = 1;\n" +
-                "        }\n" +
-                "        return \"Success\";\n" +
-                "    }\n" +
-                "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        public class TestClass6 {
+                            public static void main(String[] args) {
+                                TestClass6 testClass = new TestClass6();
+                                String result = testClass.run();
+                            }
+                            public TestClass6() {
+                        
+                            }
+                        
+                            public String run() {
+                                int[] array = new int[4];
+                                for (int i = 0; i <= 5; i++) {
+                                    array[i] = 1;
+                                }
+                                return "Success";
+                            }
+                        }
+                        """;
 
         //Client client = new ClientImpl("localhost", 9000);
         this.client.sendCompileAndRunRequest(javaSourceCode);
@@ -286,6 +294,7 @@ public class Stage1Test {
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
         //System.out.println(body);
+        assertEquals(400, response.getCode());
         assertTrue(body.contains("Code did not compile"));
 
         //simpleServer.stop();
@@ -296,21 +305,23 @@ public class Stage1Test {
         //SimpleServer simpleServer = new SimpleServerImpl(9000);
         //simpleServer.start();
         String javaSourceCode =
-            "package edu.yu.cs.com3800;\n" +
-                    "\n" +
-                    "public class TestClass8 {\n" +
-                    "    public static void main(String[] args) {\n" +
-                    "        TestClass8 testClass8 = new TestClass8();\n" +
-                    "        String result = testClass8.run();\n" +
-                    "    }\n" +
-                    "    public TestClass8() {\n" +
-                    "    }\n" +
-                    "\n" +
-                    "    public String run() {\n" +
-                    "        int num = 8/0;\n" +
-                    "        return \"Success\";\n" +
-                    "    }\n" +
-                    "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass8 {
+                            public static void main(String[] args) {
+                                TestClass8 testClass8 = new TestClass8();
+                                String result = testClass8.run();
+                            }
+                            public TestClass8() {
+                            }
+                        
+                            public String run() {
+                                int num = 8/0;
+                                return "Success";
+                            }
+                        }
+                        """;
 
         //Client client = new ClientImpl("localhost", 9000);
         this.client.sendCompileAndRunRequest(javaSourceCode);
@@ -327,137 +338,153 @@ public class Stage1Test {
     @Test
     void testEmptyStringReturnedInRun() throws IOException {
         String javaSourceCode =
-            "package edu.yu.cs.com3800;\n" +
-                    "\n" +
-                    "public class TestClass9 {\n" +
-                    "    public static void main(String[] args) {\n" +
-                    "        TestClass9 testClass9 = new TestClass9();\n" +
-                    "        String result = testClass9.run();\n" +
-                    "    }\n" +
-                    "    public TestClass9() {\n" +
-                    "    }\n" +
-                    "\n" +
-                    "    public String run() {\n" +
-                    "        return \"\";\n" +
-                    "    }\n" +
-                    "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass9 {
+                            public static void main(String[] args) {
+                                TestClass9 testClass9 = new TestClass9();
+                                String result = testClass9.run();
+                            }
+                            public TestClass9() {
+                            }
+                        
+                            public String run() {
+                                return "";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(javaSourceCode);
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
-        assertEquals("", body);
         System.out.println("Expected output: \n ");
         System.out.println("Actual output: \n" + body);
+        assertEquals("", body);
+        assertEquals(200, response.getCode());
     }
 
     @Test
     void test2requestsBeforeGettingResponse() throws IOException {
         String javaSourceCode =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass10 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass10 testClass10 = new TestClass10();\n" +
-                        "        String result = testClass10.run();\n" +
-                        "    }\n" +
-                        "    public TestClass10() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass10 {
+                            public static void main(String[] args) {
+                                TestClass10 testClass10 = new TestClass10();
+                                String result = testClass10.run();
+                            }
+                            public TestClass10() {
+                            }
+                        
+                            public String run() {
+                                return "";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(javaSourceCode);
         javaSourceCode =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass10 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass10 testClass10 = new TestClass10();\n" +
-                        "        String result = testClass10.run();\n" +
-                        "    }\n" +
-                        "    public TestClass10() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"Hello World!\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass10 {
+                            public static void main(String[] args) {
+                                TestClass10 testClass10 = new TestClass10();
+                                String result = testClass10.run();
+                            }
+                            public TestClass10() {
+                            }
+                        
+                            public String run() {
+                                return "Hello World!";
+                            }
+                        }
+                        """;
         this.client.sendCompileAndRunRequest(javaSourceCode);
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
+        System.out.println("Expected response: \nHello World!");
+        System.out.println("Actual response: \n" + body);
+        System.out.println("Expected code: 200");
+        System.out.println("Actual code: " + response.getCode());
         assertEquals("Hello World!", body);
-        System.out.println("Expected output: \nHello World!");
-        System.out.println("Actual output: \n" + body);
+        assertEquals(200, response.getCode());
     }
 
     @Test
     void test2GoodRequests() throws IOException {
         String javaSourceCode1 =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass11 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass11 testClass11 = new TestClass11();\n" +
-                        "        String result = testClass11.run();\n" +
-                        "    }\n" +
-                        "    public TestClass11() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"One\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass11 {
+                            public static void main(String[] args) {
+                                TestClass11 testClass11 = new TestClass11();
+                                String result = testClass11.run();
+                            }
+                            public TestClass11() {
+                            }
+                        
+                            public String run() {
+                                return "One";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(javaSourceCode1);
         Client.Response response1 = this.client.getResponse();
         String body1 = response1.getBody();
-        assertEquals("One", body1);
         System.out.println("Expected output: \nOne");
         System.out.println("Actual output: \n" + body1);
+        assertEquals("One", body1);
 
         String javaSourceCode2 =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass11 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass11 testClass11 = new TestClass11();\n" +
-                        "        String result = testClass11.run();\n" +
-                        "    }\n" +
-                        "    public TestClass11() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"Two\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass11 {
+                            public static void main(String[] args) {
+                                TestClass11 testClass11 = new TestClass11();
+                                String result = testClass11.run();
+                            }
+                            public TestClass11() {
+                            }
+                        
+                            public String run() {
+                                return "Two";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(javaSourceCode2);
         Client.Response response2 = this.client.getResponse();
         String body2 = response2.getBody();
-        assertEquals("Two", body2);
         System.out.println("Expected output: \nTwo");
         System.out.println("Actual output: \n" + body2);
+        assertEquals("Two", body2);
     }
 
     @Test
     void testGoodRequestBadRequestGoodRequest() throws IOException {
         String goodJavaSourceCode1 =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass12 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass12 testClass12 = new TestClass12();\n" +
-                        "        String result = testClass12.run();\n" +
-                        "    }\n" +
-                        "    public TestClass12() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"One\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass12 {
+                            public static void main(String[] args) {
+                                TestClass12 testClass12 = new TestClass12();
+                                String result = testClass12.run();
+                            }
+                            public TestClass12() {
+                            }
+                        
+                            public String run() {
+                                return "One";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(goodJavaSourceCode1);
         Client.Response response1 = this.client.getResponse();
@@ -467,39 +494,43 @@ public class Stage1Test {
         System.out.println("Actual output: \n" + body1);
 
         String badJavaSRC =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass12 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass12 testClass12 = new TestClass12();\n" +
-                        "        String result = testClass12.run();\n" +
-                        "    }\n" +
-                        "    public TestClass12() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"One\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass12 {
+                            public static void main(String[] args) {
+                                TestClass12 testClass12 = new TestClass12();
+                                String result = testClass12.run();
+                            }
+                            public TestClass12() {
+                            }
+                        
+                            public String run() {
+                                return "One";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(badJavaSRC);
 
 
         String goodJavaSourceCode2 =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass13 {\n" +
-                        "    public static void main(String[] args) {\n" +
-                        "        TestClass13 testClass13 = new TestClass13();\n" +
-                        "        String result = testClass13.run();\n" +
-                        "    }\n" +
-                        "    public TestClass13() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"Two\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass13 {
+                            public static void main(String[] args) {
+                                TestClass13 testClass13 = new TestClass13();
+                                String result = testClass13.run();
+                            }
+                            public TestClass13() {
+                            }
+                        
+                            public String run() {
+                                return "Two";
+                            }
+                        }
+                        """;
 
         //this.client.sendCompileAndRunRequest(goodJavaSourceCode2);
         Client newClient = new ClientImpl("localhost", 9000);
@@ -507,25 +538,29 @@ public class Stage1Test {
         Client.Response response2 = newClient.getResponse();
         String body2 = response2.getBody();
         System.out.println(body2);
-        assertEquals("Two", body2);
         System.out.println("Expected output: \nTwo");
         System.out.println("Actual output: \n" + body2);
+        assertEquals("Two", body2);
     }
 
+
+    // I redid this test @line 773 without realizing I tested for this already lol. Found a bug. Did better testing there
     @Test
     void SendRequestAfterStop() throws IOException {
         this.simpleServer.stop();
         String javaSourceCode =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass14 {\n" +
-                        "    public TestClass14() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"Success\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass14 {
+                            public TestClass14() {
+                            }
+                        
+                            public String run() {
+                                return "Success";
+                            }
+                        }
+                        """;
 
         this.client.sendCompileAndRunRequest(javaSourceCode);
         //Client.Response response = );
@@ -534,23 +569,28 @@ public class Stage1Test {
 
     @Test
     void testCallGetResponseBeforeSendCompile() throws IOException {
-        assertThrows(IOException.class, () -> this.client.getResponse());
-
+        IOException exception = assertThrows(IOException.class, () -> this.client.getResponse());
+        String expectedMessage = "sendCompileAndRunRequest() must be called before getResponse()";
+        System.out.println("Expected exception message: " + expectedMessage);
+        System.out.println("Actual exception message: " + exception.getMessage());
+        assertEquals(expectedMessage, exception.getMessage());
     }
 
     @Test
     void testCallGetResponseBeforeSendCompileThenSendAndCompile() throws IOException {
         String javaSourceCode =
-                "package edu.yu.cs.com3800;\n" +
-                        "\n" +
-                        "public class TestClass15 {\n" +
-                        "    public TestClass15() {\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    public String run() {\n" +
-                        "        return \"Success\";\n" +
-                        "    }\n" +
-                        "}\n";
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TestClass15 {
+                            public TestClass15() {
+                            }
+                        
+                            public String run() {
+                                return "Success";
+                            }
+                        }
+                        """;
 
         //assertThrows(IOException.class, () -> this.client.getResponse());
         this.client.sendCompileAndRunRequest(javaSourceCode);
@@ -561,4 +601,197 @@ public class Stage1Test {
         System.out.println("Actual output: \n" + body);
     }
 
+    @Test
+    void testJunkCode() throws IOException {
+        String src = "saifaifafoa";
+        JavaRunner javaRunner = new JavaRunner();
+        String runnerResponse = null;
+        try {
+            runnerResponse = javaRunner.compileAndRun(new ByteArrayInputStream(src.getBytes()));
+        } catch (Exception e) {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            e.printStackTrace(new PrintStream(outputStream));
+            String expectedResponse = "No class name found in code";
+            this.client.sendCompileAndRunRequest(src);
+            String response = this.client.getResponse().getBody();
+            //System.out.println(expectedResponse);
+            System.out.println("Expected message in Exception: " + expectedResponse);
+            System.out.println("Actual response: " + response);
+            assertTrue(response.contains(expectedResponse));
+            assertTrue(response.contains("IllegalArgumentException"));
+        }
+
+       
+    }
+
+
+    @Test
+    void testNegPortInSS() throws IOException {
+        IOException exception = assertThrows(IOException.class, () -> new SimpleServerImpl(-1));
+        assertEquals("Port is out of range: -1", exception.getMessage());
+    }
+
+    @Test
+    void testNullHostName() throws IOException {
+        //Client client1 = ;
+        String javaSourceCode =
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TC1 {
+                            public TC1() {
+                            }
+                        
+                            public String run() {
+                                return "Success";
+                            }
+                        }
+                        """;
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> new ClientImpl(null, 9000));
+        assertEquals("HostName can't be null", exception.getMessage());
+
+    }
+
+    @Test
+    void testBadPortName() throws IOException {
+        //Client client1 = ;
+        String javaSourceCode =
+                """
+                        package edu.yu.cs.com3800;
+                        
+                        public class TC1 {
+                            public TC1() {
+                            }
+                        
+                            public String run() {
+                                return "Success";
+                            }
+                        }
+                        """;
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> new ClientImpl("localhost", -1));
+        assertEquals("Port is out of range: " + -1, exception.getMessage());
+
+    }
+
+    @Test
+    void testNullSRCForSendReq() throws IOException {
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> this.client.sendCompileAndRunRequest(null));
+        assertEquals("Source can't be null", exception.getMessage());
+    }
+
+    //server can't be restarted
+    /*@Test
+    void testStartStopStartSendReq() throws IOException, InterruptedException {
+        this.simpleServer.stop();
+        wait(500);
+        this.simpleServer.start();
+        String javaSourceCode =
+            """
+                package edu.yu.cs.com3800;
+                
+                public class TC2 {
+                    public TC2() {
+                    }
+                
+                    public String run() {
+                        return "Success";
+                    }
+                }
+                """;
+        this.client.sendCompileAndRunRequest(javaSourceCode);
+        Client.Response response = this.client.getResponse();
+        assertEquals("Success", response.getBody());
+    }*/
+
+    @Test
+    void testSSTwoDifferentPorts() throws IOException{
+        String source1 =
+            """
+                package edu.yu.cs.com3800;
+                
+                   public class TC3 {
+                       public TC3() {
+                       }
+
+                       public String run() {
+                           return "Success1";
+                       }
+                   }
+                """;
+        SimpleServer simpleServer2 = new SimpleServerImpl(8000);
+        simpleServer2.start();
+        Client client2 = new ClientImpl("localhost", 8000);
+        this.client.sendCompileAndRunRequest(source1);
+        Client.Response response1 = this.client.getResponse();
+        assertEquals("Success1", response1.getBody());
+        String source2 =
+            """
+                package edu.yu.cs.com3800;
+                
+                   public class TC3 {
+                       public TC3() {
+                       }
+
+                       public String run() {
+                           return "Success2";
+                       }
+                   }
+                """;
+        client2.sendCompileAndRunRequest(source2);
+        Client.Response response2 = client2.getResponse();
+        assertEquals("Success2", response2.getBody());
+        simpleServer2.stop();
+    }
+
+    @Test
+    void testTryNewSSOnUnAvailablePort() throws IOException {
+        IOException exception = assertThrows(IOException.class, () -> new SimpleServerImpl(9000));
+        System.out.println(exception.getMessage());
+    }
+
+    @Test
+    void multipleClientsOnSamePort() throws IOException {
+        String source1 =
+                """
+                    package edu.yu.cs.com3800;
+                    
+                       public class TC4 {
+                           public TC4() {
+                           }
+    
+                           public String run() {
+                               return "Success1";
+                           }
+                       }
+                    """;
+
+        Client client2 = new ClientImpl("localhost", 9000);
+        this.client.sendCompileAndRunRequest(source1);
+        client2.sendCompileAndRunRequest(source1);
+        assertEquals(client2.getResponse().getBody(), client.getResponse().getBody());
+    }
+
+    @Test
+    void testSendRequestAndCheckResponseAfterServerShutdown() throws IOException {
+        this.simpleServer.stop();
+        String source1 =
+            """
+                package edu.yu.cs.com3800;
+                
+                   public class TC5 {
+                       public TC5() {
+                       }
+
+                       public String run() {
+                           return "Success1";
+                       }
+                   }
+                """;
+
+        this.client.sendCompileAndRunRequest(source1);
+        IOException ioException = assertThrows(IOException.class, () -> this.client.getResponse());
+        System.out.println("Expected message: Server is unavailable");
+        System.out.println("Actual message: " + ioException.getMessage());
+        assertEquals("Server is unavailable", ioException.getMessage());
+    }
 }
