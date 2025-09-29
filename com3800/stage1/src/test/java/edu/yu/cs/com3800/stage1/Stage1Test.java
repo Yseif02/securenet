@@ -258,7 +258,13 @@ public class Stage1Test {
                 "\tat edu.yu.cs.com3800.TestClass.main(TestClass.java:6)";*/
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
+        System.out.println("Expected in body: Index 4 out of bounds for length 4");
+        boolean foundInBody = body.contains("Index 4 out of bounds for length 4");
+        System.out.println("Found \"Index 4 out of bounds for length 4\" in body: " + foundInBody);
         assertTrue(body.contains("Index 4 out of bounds for length 4"));
+        System.out.println("Expected Exception : java.lang.ArrayIndexOutOfBoundsException");
+        boolean exceptionFound = body.contains("java.lang.ArrayIndexOutOfBoundsException");
+        System.out.println("Expected exception found: " + exceptionFound);
         assertTrue(body.contains("java.lang.ArrayIndexOutOfBoundsException"));
         assertTrue(body.contains("at edu.yu.cs.com3800.TestClass6.run("));
         //System.out.println(response.getCode());
@@ -276,6 +282,7 @@ public class Stage1Test {
                     "\n" +
                     "public class TestClass7 {\n" +
                     "    public static void main(String[] args) {\n" +
+                                      //testClass is missing number 7
                     "        TestClass7 testClass = new TestClass7();\n" +
                     "        String result = testClass7.run();\n" +
                     "    }\n" +
@@ -294,8 +301,17 @@ public class Stage1Test {
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
         //System.out.println(body);
+        //System.out.println(body);
         assertEquals(400, response.getCode());
         assertTrue(body.contains("Code did not compile"));
+        System.out.println("Expected in body: Code did not compile");
+        boolean foundInBody = body.contains("Code did not compile");
+        System.out.println("Found \"Code did not compile\" in body: " + foundInBody);
+        assertTrue(body.contains("Code did not compile"));
+        System.out.println("Expected Exception : java.lang.IllegalArgumentException");
+        boolean exceptionFound = body.contains("java.lang.IllegalArgumentException");
+        System.out.println("Expected exception found: " + exceptionFound);
+        assertTrue(body.contains("java.lang.IllegalArgumentException"));
 
         //simpleServer.stop();
     }
@@ -327,6 +343,15 @@ public class Stage1Test {
         this.client.sendCompileAndRunRequest(javaSourceCode);
         Client.Response response = this.client.getResponse();
         String body = response.getBody();
+        assertTrue(body.contains("/ by zero"));
+        System.out.println("Expected in body: / by zero");
+        boolean foundInBody = body.contains("/ by zero");
+        System.out.println("Found \"/ by zero\" in body: " + foundInBody);
+        assertTrue(body.contains("/ by zero"));
+        System.out.println("Expected Exception : java.lang.ArithmeticException");
+        boolean exceptionFound = body.contains("java.lang.ArithmeticException");
+        System.out.println("Expected exception found: " + exceptionFound);
+        assertTrue(body.contains("java.lang.ArithmeticException"));
         //System.out.println(body);
         assertTrue(body.contains("/ by zero"));
         assertTrue(body.contains("java.lang.ArithmeticException"));
@@ -537,14 +562,14 @@ public class Stage1Test {
         newClient.sendCompileAndRunRequest(goodJavaSourceCode2);
         Client.Response response2 = newClient.getResponse();
         String body2 = response2.getBody();
-        System.out.println(body2);
+        //System.out.println(body2);
         System.out.println("Expected output: \nTwo");
         System.out.println("Actual output: \n" + body2);
         assertEquals("Two", body2);
     }
 
 
-    // I redid this test @line 773 without realizing I tested for this already lol. Found a bug. Did better testing there
+    // I redid this test @line 800 without realizing I tested for this already lol. Found a bug. Did better testing there
     @Test
     void SendRequestAfterStop() throws IOException {
         this.simpleServer.stop();
@@ -746,7 +771,7 @@ public class Stage1Test {
     @Test
     void testTryNewSSOnUnAvailablePort() throws IOException {
         IOException exception = assertThrows(IOException.class, () -> new SimpleServerImpl(9000));
-        System.out.println(exception.getMessage());
+        //System.out.println(exception.getMessage());
     }
 
     @Test
