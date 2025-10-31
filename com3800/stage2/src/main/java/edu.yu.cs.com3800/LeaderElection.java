@@ -1,0 +1,249 @@
+package edu.yu.cs.com3800;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**We are implementing a simplified version of the election algorithm. For the complete version which covers all possible scenarios, see https://github.com/apache/zookeeper/blob/90f8d835e065ea12dddd8ed9ca20872a4412c78a/zookeeper-server/src/main/java/org/apache/zookeeper/server/quorum/FastLeaderElection.java#L913
+ */
+public class LeaderElection {
+    /**
+     * time to wait once we believe we've reached the end of leader election.
+     */
+    private final static int finalizeWait = 3200;
+    private Logger logger;
+    private PeerServer parentServer;
+    private final LinkedBlockingQueue<Message> incomingMessages;
+
+    /**
+     * Upper bound on the amount of time between two consecutive notification checks.
+     * This impacts the amount of time to get the system up again after long partitions. Currently 30 seconds.
+     */
+    private final static int maxNotificationInterval = 30000;
+    private long proposedEpoch;
+    private long proposedLeader;
+
+    public LeaderElection(PeerServer server, LinkedBlockingQueue<Message> incomingMessages, Logger logger) {
+        this.logger = logger;
+        this.parentServer = server;
+        this.incomingMessages = incomingMessages;
+        this.proposedLeader = this.parentServer.getServerId();
+        this.proposedEpoch = 0;
+    }
+
+
+    public static byte[] buildMsgContent(ElectionNotification notification) {
+
+        //long 8 bytes proposedLeaderID
+        //long 8 bytes senderID
+        //long 8 bytes peerEpoch
+        //char 2 byte ServerState
+        //=26 bytes
+
+        int bufferSize = 26;
+        ByteBuffer buffer = ByteBuffer.allocate(bufferSize);
+        buffer.clear();
+        buffer.putLong(notification.getProposedLeaderID());
+        buffer.putLong(notification.getSenderID());
+        buffer.putLong(notification.getPeerEpoch());
+        buffer.putChar(notification.getState().getChar());
+        buffer.flip();
+        return buffer.array();
+
+    }
+
+
+    public static ElectionNotification getNotificationFromMessage(Message received) {
+        byte[] contents = received.getMessageContents();
+        ByteBuffer buffer = ByteBuffer.wrap(contents);
+        buffer.clear();
+        long proposedLeaderID = buffer.getLong();
+        long senderID = buffer.getLong();
+        long peerEpoch = buffer.getLong();
+        PeerServer.ServerState serverState = PeerServer.ServerState.getServerState(buffer.getChar());
+        return new ElectionNotification(proposedLeaderID, serverState, senderID, peerEpoch);
+    }
+
+    /**
+     * Note that the logic in the comments below does NOT cover every last "technical" detail you will need to address to implement the election algorithm.
+     * How you store all the relevant state, etc., are details you will need to work out.
+     * @return the elected leader
+     */
+    public synchronized Vote lookForLeader() {
+        try {
+            //send initial notifications to get things started
+            sendInitialNotifications();
+            //Loop in which we exchange notifications with other servers until we find a leader
+            //int round = 1;
+            //Map<Integer, Map<Long, ElectionNotification>> allElectionVotes = new HashMap<>();
+            Map<Long, ElectionNotification> votesForRound = new HashMap<>();
+            long retryTimeout = 200;
+            while(true){
+                //Remove next notification from queue
+
+                Message message = this.incomingMessages.poll(retryTimeout, TimeUnit.MILLISECONDS);
+
+                if (message == null) {
+                    //If no notifications received...
+                    //...use exponential back-off when notifications not received but no longer than maxNotificationInterval...
+                    //...resend notifications to prompt a reply from others
+                    this.logger.log(Level.FINE, "No message received, waiting: " + retryTimeout + "ms before retrying");
+                    //Thread.sleep(retryTimeout);
+                    //retryTimeout *= 2;
+                    retryTimeout = Math.min(retryTimeout * 2, maxNotificationInterval);
+                    sendInitialNotifications();
+                    continue;
+
+                }
+                retryTimeout = 200;
+
+                this.logger.log(Level.FINE, "Received message from port " + message.getSenderPort() + ", and accepted on port " + message.getReceiverPort());
+                ElectionNotification electionNotification = getNotificationFromMessage(message);
+                this.logger.log(Level.FINE, "Parsed election notification from server " + electionNotification.getSenderID() + ". Vote for " + electionNotification.getProposedLeaderID());
+
+                //if the server state of the reply for the initial response is leading and following, set leader to that server
+                if (electionNotification.getState() == PeerServer.ServerState.FOLLOWING || electionNotification.getState() == PeerServer.ServerState.LEADING) {
+                    this.logger.log(Level.FINE, "Found leader");
+                    return acceptElectionWinner(electionNotification);
+                }
+
+                //TODO fix bug that when we are waiting for a message from a server in the q thats
+                // down eg expecting more servers responding then actual. This will cause the loop to never break
+                /*if (votesForRound.containsKey(electionNotification.getSenderID())) {
+                    //server already voted this round. Add it to the end of queue
+                    this.incomingMessages.offer(message);
+                    continue;
+                }*/
+                votesForRound.put(electionNotification.getSenderID(), electionNotification);
+                boolean supersedes = supersedesCurrentVote(electionNotification.getProposedLeaderID(), electionNotification.getPeerEpoch());
+                // changed vote
+                if (supersedes) {
+                    this.logger.log(Level.FINE, "Received higher vote. Changing vote from " + this.proposedLeader + " to " + electionNotification.getProposedLeaderID());
+                    this.proposedLeader = electionNotification.getProposedLeaderID();
+                    this.proposedEpoch = electionNotification.getPeerEpoch();
+                    this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(
+                            new ElectionNotification(this.proposedLeader, this.parentServer.getPeerState(), this.parentServer.getServerId(), this.proposedEpoch)));
+                }
+
+                Vote proposedVote = new Vote(this.proposedLeader, this.proposedEpoch);
+                boolean hasEnoughVotes = haveEnoughVotes(votesForRound, proposedVote);
+                if (hasEnoughVotes) {
+                    // do a last check to see if there are any new votes for a higher ranked possible leader. If there are, continue in my election "while" loop.
+                    // for the duration of finalize wait keep trying to poll messages off the queue to see if there is a higher vote
+                    long waitUntil = System.currentTimeMillis() + finalizeWait;
+                    boolean higherVoteFound = false;
+                    while (System.currentTimeMillis() < waitUntil) {
+                        Message possibleHigherVote = this.incomingMessages.poll(200, TimeUnit.MILLISECONDS);
+                        if (possibleHigherVote == null) {
+                            continue;
+                        }
+
+                        ElectionNotification notification = getNotificationFromMessage(possibleHigherVote);
+                        if (supersedesCurrentVote(notification.getProposedLeaderID(), notification.getPeerEpoch())) {
+
+                            higherVoteFound = true;
+                            // set proposed leader to new higher message
+                            this.logger.log(Level.FINE, "Found higher vote during leader coronation, Cancelling coronation. Changing vote from " + this.proposedLeader + " to " + notification.getProposedLeaderID());
+                            this.proposedLeader = notification.getProposedLeaderID();
+                            this.proposedEpoch = notification.getPeerEpoch();
+                            this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(
+                                    new ElectionNotification(this.proposedLeader, this.parentServer.getPeerState(), this.parentServer.getServerId(), this.proposedEpoch)));
+                            //Thread.sleep(3000);
+                            break;
+                        }
+                    }
+                    if (!higherVoteFound) {
+                        acceptElectionWinner(electionNotification);
+                        return proposedVote;
+                    }
+                }
+
+
+
+
+                //If we did get a message...
+                    //...if it's for an earlier epoch, or from an observer, ignore it.
+                    //...if the received message has a vote for a leader which supersedes mine, change my vote (and send notifications to all other voters about my new vote).
+                    //(Be sure to keep track of the votes I received and who I received them from.)
+                    //If I have enough votes to declare my currently proposed leader as the leader...
+                        //..do a last check to see if there are any new votes for a higher ranked possible leader. If there are, continue in my election "while" loop.
+                    //If there are no new relevant message from the reception queue, set my own state to either LEADING or FOLLOWING and RETURN the elected leader.
+            }
+        }
+        catch (Exception e) {
+            this.logger.log(Level.SEVERE,"Exception occurred during election; election canceled",e);
+        }
+        this.proposedEpoch++;
+        return null;
+    }
+
+    private synchronized void sendInitialNotifications() {
+        ElectionNotification electionNotification = new ElectionNotification(this.proposedLeader, this.parentServer.getPeerState(), this.parentServer.getServerId(), this.proposedEpoch);
+        this.logger.log(Level.FINE, "Sending Initial vote. Voting for: " + electionNotification.getProposedLeaderID());
+        this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(electionNotification));
+    }
+
+    private Vote acceptElectionWinner(ElectionNotification n) {
+        //set my state to either LEADING or FOLLOWING
+        //clear out the incoming queue before returning
+
+
+        Vote leaderVote = new Vote(n.getProposedLeaderID(), n.getPeerEpoch());
+        //setting in peerServerImpl, not here
+        //this.parentServer.setCurrentLeader(leaderVote);
+        if (n.getProposedLeaderID() == this.parentServer.getServerId()) {
+            this.parentServer.setPeerState(PeerServer.ServerState.LEADING);
+            logger.log(Level.FINE, "Set server state to LEADING");
+        } else {
+            this.parentServer.setPeerState(PeerServer.ServerState.FOLLOWING);
+            logger.log(Level.FINE, "Set server state to FOLLOWING");
+        }
+        this.incomingMessages.clear();
+        this.logger.log(Level.FINE, "Elected " + leaderVote.getProposedLeaderID() + " as leader");
+        return leaderVote;
+
+    }
+
+    /**
+     * We return true if one of the following two cases hold:
+     * 1- New epoch is higher
+     * 2- New epoch is the same as current epoch, but server id is higher.
+     */
+    protected boolean supersedesCurrentVote(long newId, long newEpoch) {
+        return (newEpoch > this.proposedEpoch) || ((newEpoch == this.proposedEpoch) && (newId > this.proposedLeader));
+    }
+
+    /**
+     * Termination predicate. Given a set of votes, determines if we have sufficient support for the proposal to declare the end of the election round.
+     * Who voted for who isn't relevant, we only care that each server has one current vote.
+     */
+    protected boolean haveEnoughVotes(Map<Long, ElectionNotification> votes, Vote proposal) {
+        //TODO: clarify if all servers in quorum or just voting servers
+        //votes should only have this rounds votes
+        //Set<Long> votingServers = votes.keySet();
+        //int totalVotingServers = votingServers.size();
+        //how does each server know how many servers running there are?
+        int quorumSize = this.parentServer.getQuorumSize();
+        /*if (quorumSize != totalVotingServers) {
+            return false;
+        }*/
+        //List<ElectionNotification> allVotes = votes.values().stream().toList();
+        long proposedServerID = proposal.getProposedLeaderID();
+        int count = 0;
+        for (ElectionNotification notification : votes.values()) {
+            if (notification.getProposedLeaderID() == proposedServerID) count++;
+        }
+        return count >= (quorumSize / 2) + 1;
+
+
+
+        //is the number of votes for the proposal > the size of my peer server’s quorum?
+    }
+}
