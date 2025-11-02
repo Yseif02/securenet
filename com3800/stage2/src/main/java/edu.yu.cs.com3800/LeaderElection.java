@@ -84,6 +84,14 @@ public class LeaderElection {
             //int round = 1;
             //Map<Integer, Map<Long, ElectionNotification>> allElectionVotes = new HashMap<>();
             Map<Long, ElectionNotification> votesForRound = new HashMap<>();
+            votesForRound.put(this.parentServer.getServerId(),
+                    new ElectionNotification(this.proposedLeader, this.parentServer.getPeerState(), this.parentServer.getServerId(), this.proposedEpoch));
+
+            Vote oneNode = checkIfOneNodeCluster(votesForRound);
+            if (oneNode != null) {
+                return oneNode;
+            }
+
             long retryTimeout = 200;
             while(true){
                 //Remove next notification from queue
@@ -95,7 +103,7 @@ public class LeaderElection {
                     //...use exponential back-off when notifications not received but no longer than maxNotificationInterval...
                     //...resend notifications to prompt a reply from others
                     this.logger.log(Level.FINE, "No message received, waiting: " + retryTimeout + "ms before retrying");
-                    //Thread.sleep(retryTimeout);
+                    Thread.sleep(retryTimeout);
                     //retryTimeout *= 2;
                     retryTimeout = Math.min(retryTimeout * 2, maxNotificationInterval);
                     sendInitialNotifications();
@@ -121,6 +129,10 @@ public class LeaderElection {
                     this.incomingMessages.offer(message);
                     continue;
                 }*/
+
+                if (electionNotification.getPeerEpoch() < this.proposedEpoch) {
+                    continue;
+                }
                 votesForRound.put(electionNotification.getSenderID(), electionNotification);
                 boolean supersedes = supersedesCurrentVote(electionNotification.getProposedLeaderID(), electionNotification.getPeerEpoch());
                 // changed vote
@@ -160,8 +172,9 @@ public class LeaderElection {
                         }
                     }
                     if (!higherVoteFound) {
-                        acceptElectionWinner(electionNotification);
-                        return proposedVote;
+                        Vote winner = acceptElectionWinner(electionNotification);
+                        votesForRound.clear();
+                        return winner;
                     }
                 }
 
@@ -181,6 +194,39 @@ public class LeaderElection {
             this.logger.log(Level.SEVERE,"Exception occurred during election; election canceled",e);
         }
         this.proposedEpoch++;
+        return null;
+    }
+
+    private Vote checkIfOneNodeCluster(Map<Long, ElectionNotification> votesForRound) throws InterruptedException {
+        Vote initialProposal = new Vote(this.proposedLeader, this.proposedEpoch);
+        if (haveEnoughVotes(votesForRound, initialProposal)) {
+            long waitUntil = System.currentTimeMillis() + finalizeWait;
+            boolean higherVoteFound = false;
+            while (System.currentTimeMillis() < waitUntil) {
+                Message possibleHigher = this.incomingMessages.poll(200, TimeUnit.MILLISECONDS);
+                if (possibleHigher == null) {
+                    continue;
+                }
+                ElectionNotification n = getNotificationFromMessage(possibleHigher);
+                if (supersedesCurrentVote(n.getProposedLeaderID(), n.getPeerEpoch())) {
+                    higherVoteFound = true;
+                    // found higher vote, not a one node cluster
+                    this.proposedLeader = n.getProposedLeaderID();
+                    this.proposedEpoch = n.getPeerEpoch();
+                    this.parentServer.sendBroadcast(
+                            Message.MessageType.ELECTION,
+                            buildMsgContent(new ElectionNotification(this.proposedLeader,
+                                    this.parentServer.getPeerState(), this.parentServer.getServerId(), this.proposedEpoch))
+                    );
+                    break;
+                }
+            }
+            if (!higherVoteFound) {
+                return acceptElectionWinner(new ElectionNotification(
+                        this.proposedLeader, this.parentServer.getPeerState(),
+                        this.parentServer.getServerId(), this.proposedEpoch));
+            }
+        }
         return null;
     }
 
@@ -205,6 +251,17 @@ public class LeaderElection {
             this.parentServer.setPeerState(PeerServer.ServerState.FOLLOWING);
             logger.log(Level.FINE, "Set server state to FOLLOWING");
         }
+
+        try {
+            this.parentServer.setCurrentLeader(leaderVote);
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Error setting current leader", e);
+        }
+
+        ElectionNotification broadcastWinner =
+                new ElectionNotification(leaderVote.getProposedLeaderID(), this.parentServer.getPeerState(), this.parentServer.getServerId(), leaderVote.getPeerEpoch());
+        this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(broadcastWinner));
+
         this.incomingMessages.clear();
         this.logger.log(Level.FINE, "Elected " + leaderVote.getProposedLeaderID() + " as leader");
         return leaderVote;
