@@ -99,6 +99,7 @@ public class SimpleServerImpl implements SimpleServer {
         /*if (!this.on && stopped) {
             try {
                 this.server = HttpServer.create(new InetSocketAddress(this.port), 0);
+                createContext(this.server);
 
             } catch (IOException e) {
                 throw new RuntimeException(e);

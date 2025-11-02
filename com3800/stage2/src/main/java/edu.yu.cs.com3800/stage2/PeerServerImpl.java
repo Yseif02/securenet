@@ -13,7 +13,7 @@ import java.util.logging.Logger;
 public class PeerServerImpl extends Thread implements PeerServer {
     private final InetSocketAddress myAddress;
     private final int myPort;
-    private ServerState state;
+    private volatile ServerState state;
     private volatile boolean shutdown;
     private LinkedBlockingQueue<Message> outgoingMessages;
     private LinkedBlockingQueue<Message> incomingMessages;
@@ -30,6 +30,9 @@ public class PeerServerImpl extends Thread implements PeerServer {
     private UDPMessageReceiver receiverWorker;
 
     public PeerServerImpl(int myPort, long peerEpoch, Long id, Map<Long, InetSocketAddress> peerIDtoAddress) {
+        if (myPort < 0) { throw new IllegalArgumentException("Port must be >= 0");}
+        if (peerIDtoAddress == null) { throw new IllegalArgumentException("PeerIdToAddress is null");}
+        if (id == null || id < 0) {throw new IllegalArgumentException("id must be not null and >= 0");}
         this.id = id;
         LoggingServer serverLogger = new LoggingServer() {
             @Override
@@ -54,11 +57,16 @@ public class PeerServerImpl extends Thread implements PeerServer {
                 return LoggingServer.super.initializeLogging(fileNamePreface);
             }
         };
+        LeaderElection tempLE;
         try {
-            this.leaderElection = new LeaderElection(this, this.incomingMessages, electionLogger.initializeLogging("Server " + this.id + " election logger"));
+            tempLE = new LeaderElection(this, this.incomingMessages, electionLogger.initializeLogging("Server " + this.id + " election logger"));
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            this.serverLogger.log(Level.WARNING, "Error creating election logger", e);
+            Logger logger = Logger.getLogger("Server " + this.id + " election logger");
+            tempLE = new LeaderElection(this, this.incomingMessages, logger);
+            //throw new RuntimeException(e);
         }
+        this.leaderElection = tempLE;
         this.setPeerState(ServerState.LOOKING);
     }
 
@@ -87,13 +95,18 @@ public class PeerServerImpl extends Thread implements PeerServer {
                         //start leader election, set leader to the election winner
                         this.serverLogger.log(Level.FINE, "Looking for leader");
                         Vote newLeader = this.leaderElection.lookForLeader();
-                        //Vote newLeader = null;
-                        /*while (newLeader == null) {
-                            newLeader = this.leaderElection.lookForLeader();
-                            //System.out.println(newLeader);
-                        }*/
-                        this.setCurrentLeader(newLeader);
-                        this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
+                        if (newLeader != null) {
+                            this.serverLogger.log(Level.FINE, "Found leader: " + newLeader.getProposedLeaderID());
+                        } else {
+                            this.serverLogger.log(Level.WARNING, "Election returned null");
+                        }
+                        //this.setCurrentLeader(newLeader);
+                        //this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
+                        break;
+
+                    case LEADING:
+                    case FOLLOWING:
+                        Thread.sleep(50);
                         break;
                 }
             }
@@ -182,7 +195,7 @@ public class PeerServerImpl extends Thread implements PeerServer {
 
     @Override
     public int getQuorumSize() {
-        return this.peerIDtoAddress.size();
+        return this.peerIDtoAddress.size() + 1;
     }
 
 
