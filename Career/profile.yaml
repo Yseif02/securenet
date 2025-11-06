@@ -1,0 +1,9 @@
+student_profile:
+  yuid: 800699054  # Must be a 9-digit number starting with 800
+  graduation_year: 2027  # Must be >= 2026
+  cs_track: DIS  # Options: AI, DIS, BA, None
+  email: aseif@mail.yu.edu
+  yu_email: aseif@mail.yu.edu
+  whatsapp: "+18455874112"  # Cell number hooked up to WhatsApp
+  seeking: INT  # Options: INT, FT, Either, None
+  job_status: No Job  # Options: Awaiting Return Offer, Accepted Return Offer, Have Job, No Job, N/A
