@@ -22,7 +22,14 @@ public class TCPServer extends Thread implements LoggingServer {
     private final ConcurrentHashMap<Long, CompletableFuture<byte[]>> pendingResponses;
     private int tcpPort;
     private String myHost;
-    private final ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    private final ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
+            r -> {
+                Thread thread = new Thread(r);
+                thread.setDaemon(true);
+                thread.setName("TCPServer-Worker-Thread-" + thread.threadId());
+                return thread;
+            }
+    );
     private volatile boolean shutdown;
     PeerServerImpl.IdGenerator idGenerator;
     private ServerSocket serverSocket;
@@ -33,12 +40,12 @@ public class TCPServer extends Thread implements LoggingServer {
         this.pendingResponses = pendingResponses;
         this.tcpPort = tcpPort;
         this.myHost = myHost;
-        this.idGenerator = PeerServerImpl.IdGenerator.getInstance();
+        this.idGenerator = idGenerator;
 
         try {
-            this.mainTcpServerLogger = initializeLogging(this.getClass().getSimpleName() + "-main-logger-");
+            this.mainTcpServerLogger = initializeLogging(this.getClass().getSimpleName() + "-On-TcpPort-" + this.tcpPort);
         } catch (IOException e) {
-            this.mainTcpServerLogger = Logger.getLogger(this.getClass().getSimpleName() + "-main-logger-");
+            this.mainTcpServerLogger = Logger.getLogger(this.getClass().getSimpleName() + "-On-TcpPort-" + this.tcpPort);
         }
 
     }

@@ -50,7 +50,7 @@ public class GatewayServer extends Thread implements LoggingServer {
 
         this.peerIDtoAddress = peerIDtoAddress;
         this.requestCache = new ConcurrentHashMap<>();
-        this.logger = initializeLogging(this.getClass().getSimpleName() + "-" + peerPort);
+        this.logger = initializeLogging(this.getClass().getSimpleName() + "- on port -" + peerPort);
         this.gatewayPeerServer = new GatewayPeerServerImpl(peerPort, peerEpoch, serverID, peerIDtoAddress, serverID, numberOfObservers);
         //this.gatewayPeerServer.start();
         
@@ -77,7 +77,7 @@ public class GatewayServer extends Thread implements LoggingServer {
 
     private void createContext(HttpServer httpServer) {
         httpServer.createContext("/compileandrun", exchange -> {
-            this.logger.log(Level.FINE, "Received request");
+            this.logger.log(Level.FINE, "Received request from client");
             
             if (isBadRequest(exchange)) {
                 return;

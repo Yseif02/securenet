@@ -117,9 +117,9 @@ public class LeaderElection {
                 }
                 retryTimeout = 200;
 
-                this.logger.log(Level.FINE, "Received message from port " + message.getSenderPort() + ", and accepted on port " + message.getReceiverPort());
+                //this.logger.log(Level.FINE, "Received message from port " + message.getSenderPort() + ", and accepted on port " + message.getReceiverPort());
                 ElectionNotification electionNotification = getNotificationFromMessage(message);
-                this.logger.log(Level.FINE, "Parsed election notification from server " + electionNotification.getSenderID() + ". Vote for " + electionNotification.getProposedLeaderID());
+                //this.logger.log(Level.FINE, "Parsed election notification from server " + electionNotification.getSenderID() + ". Vote for " + electionNotification.getProposedLeaderID());
 
                 boolean isSenderObserver = electionNotification.getState() == PeerServer.ServerState.OBSERVER;
                 if (isSenderObserver) continue;
@@ -142,7 +142,7 @@ public class LeaderElection {
                 boolean supersedes = supersedesCurrentVote(electionNotification.getProposedLeaderID(), electionNotification.getPeerEpoch());
                 // changed vote
                 if (supersedes && !isSenderObserver) {
-                    this.logger.log(Level.FINE, "Received higher vote. Changing vote from " + this.proposedLeader + " to " + electionNotification.getProposedLeaderID());
+                    this.logger.log(Level.FINE, "Received higher vote from server " + electionNotification.getSenderID() + ". Changing vote from " + this.proposedLeader + " to " + electionNotification.getProposedLeaderID());
                     this.proposedLeader = electionNotification.getProposedLeaderID();
                     this.proposedEpoch = electionNotification.getPeerEpoch();
                     this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(
@@ -170,7 +170,7 @@ public class LeaderElection {
 
                             higherVoteFound = true;
                             // set proposed leader to new higher message
-                            this.logger.log(Level.FINE, "Found higher vote during leader coronation, Cancelling coronation. Changing vote from " + this.proposedLeader + " to " + notification.getProposedLeaderID());
+                            this.logger.log(Level.FINE, "Found higher vote during leader coronation from server " + notification.getSenderID() +", Cancelling coronation. Changing vote from " + this.proposedLeader + " to " + notification.getProposedLeaderID());
                             this.proposedLeader = notification.getProposedLeaderID();
                             this.proposedEpoch = notification.getPeerEpoch();
                             this.parentServer.sendBroadcast(Message.MessageType.ELECTION, buildMsgContent(

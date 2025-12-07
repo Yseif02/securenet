@@ -140,7 +140,7 @@ class Stage4test {
 
     @Test
     void testManyWorkRequests() throws Exception {
-        localSetup(7, false, 5);
+        localSetup(4, false, 5);
         String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
 
         Client client = new Client("localhost", 8888);
@@ -167,18 +167,37 @@ class Stage4test {
     void testCaching() throws Exception {
         localSetup(3, false, 10);
         String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
-        int req1 = this.client.sendCompileAndRunRequest(validClass);
-        HttpResponse<String> response1 = client.getResponse(req1).get();
-        assertEquals(200, response1.statusCode());
-        assertFalse(booleanValueOf(response1.headers().firstValue("Cached-Response").get()));
+        List<Integer> reqs = new ArrayList<>();
+        for (int i = 1; i <= 20; i++) {
+            String code = validClass.replace("world!", "world! from code version " + i);
+            int reqId = client.sendCompileAndRunRequest(code);
+            reqs.add(reqId);
+        }
+
+        //int req1 = this.client.sendCompileAndRunRequest(validClass);
+        for (Integer reqId : reqs) {
+            HttpResponse<String> response1 = client.getResponse(reqId).get();
+            assertEquals("Hello world! from code version " + reqId, response1.body());
+            assertEquals(200, response1.statusCode());
+            assertFalse(booleanValueOf(response1.headers().firstValue("Cached-Response").get()));
+        }
 
         Thread.sleep(500);
-        int req2 = this.client.sendCompileAndRunRequest(validClass);
-        HttpResponse<String> response2 = client.getResponse(req2).get();
-        assertEquals("Hello world!", response1.body());
-        assertEquals(200, response2.statusCode());
-        assertEquals("Hello world!", response2.body());
-        assertTrue(booleanValueOf(response2.headers().firstValue("Cached-Response").get()));
+        reqs.clear();
+        this.client.clearClientResponses();
+        this.client.resetReqId();
+        for (int j = 1; j <= 20; j++) {
+            String code = validClass.replace("world!", "world! from code version " + j);
+            int reqId = client.sendCompileAndRunRequest(code);
+            reqs.add(reqId);
+        }
+
+        for (Integer reqId : reqs) {
+            HttpResponse<String> response1 = client.getResponse(reqId).get();
+            assertEquals("Hello world! from code version " + reqId, response1.body());
+            assertEquals(200, response1.statusCode());
+            assertTrue(booleanValueOf(response1.headers().firstValue("Cached-Response").get()));
+        }
     }
 
     @Test
@@ -208,6 +227,9 @@ class Stage4test {
     @Test
     void allThreadsShutdown() throws Exception {
         localSetup(3, false, 10);
+
+        String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
+        int req = this.client.sendCompileAndRunRequest(validClass);
 
         for (PeerServerImpl server : this.servers) {
             System.out.println(server.getServerId());
@@ -364,6 +386,15 @@ class Stage4test {
 
         private CompletableFuture<HttpResponse<String>> getResponse(int reqId) {
             return this.clientResponses.get(reqId);
+        }
+
+        private void clearClientResponses() {
+            this.clientResponses.clear();
+        }
+
+        private void resetReqId() {
+            this.clientRequestIdCounter.set(0);
+            this.lastReqId = 0;
         }
 
         private int getLastReqId() {

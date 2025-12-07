@@ -47,10 +47,8 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         if (serverID == null || serverID < 0) {throw new IllegalArgumentException("id must be not null and >= 0");}
         this.id = serverID;
         this.numberOfObservers = numberOfObservers;
-
-        this.serverLogger = initializeLogging(this.getClass().getSimpleName() + " - " + this.id);
-
         this.myPort = udpPort;
+        this.serverLogger = initializeLogging(this.getClass().getSimpleName() + " - with id " + this.id + " on udp port " + this.getUdpPort());
         this.myAddress = new InetSocketAddress("localhost", this.myPort);;
         this.outgoingMessages = new LinkedBlockingQueue<>();
         this.incomingMessages = new LinkedBlockingQueue<>();

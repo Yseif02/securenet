@@ -35,7 +35,7 @@ public class JavaRunnerFollower extends Thread{
         //this.allTasks = new HashMap<>();
         this.logger = LoggingServer.createLogger(
                 "JavaRunnerFollower on " + this.parentServer.getUdpPort(),
-                "JavaRunnerFollower on " + this.parentServer.getUdpPort(), true
+                "JavaRunnerFollower-With-Id-" + this.parentServer.getServerId() +"-on-udpPort-" + this.parentServer.getUdpPort(), true
                 );
     }
 
@@ -71,13 +71,13 @@ public class JavaRunnerFollower extends Thread{
                     byte[] request = inputStream.readAllBytes();
                     workRequest = new Message(request);
                     requestId = workRequest.getRequestID();
-                    this.logger.log(Level.FINE, "Received work request " + requestId + " from master");
+                    this.logger.log(Level.FINER, "Parsed work request " + requestId + " from master");
                     String code = new String(workRequest.getMessageContents());
                     InputStream codeInputStream = new ByteArrayInputStream(code.getBytes());
 
-                    this.logger.log(Level.FINE, "Executing code");
+                    //this.logger.log(Level.FINER, "Executing code");
                     String runnerResponse = javaRunner.compileAndRun(codeInputStream);
-                    this.logger.log(Level.WARNING, "Code output:\n " + runnerResponse);
+                    //this.logger.log(Level.WARNING, "Code output:\n " + runnerResponse);
                     Message response = new Message(Message.MessageType.COMPLETED_WORK, runnerResponse.getBytes(StandardCharsets.UTF_8), this.parentServer.getAddress().getHostString(), this.parentServer.getUdpPort() + 2,
                             client.getInetAddress().getHostName(), client.getPort(), requestId);
                     //for testing
@@ -100,7 +100,7 @@ public class JavaRunnerFollower extends Thread{
                         this.logger.log(Level.FINE, "Exception caught during shutdown. Ignoring");
                         break;
                     }
-                    this.logger.log(Level.WARNING, "Preparing response back to leader");
+                    //this.logger.log(Level.WARNING, "Preparing response back to leader");
                     ByteArrayOutputStream stackTrace = new ByteArrayOutputStream();
                     e.printStackTrace(new PrintStream(stackTrace));
                     String error = e.getMessage() + "\n" + stackTrace.toString();
@@ -113,7 +113,7 @@ public class JavaRunnerFollower extends Thread{
                     byteBuffer.put(response.getNetworkPayload());
                     byte[] responsePayload = byteBuffer.array();
                     try {
-                        this.logger.log(Level.WARNING, "Sending response back to leader");
+                        this.logger.log(Level.WARNING, "Sending Exception response back to leader");
                         OutputStream outputStream = client.getOutputStream();
                         outputStream.write(responsePayload);
                         outputStream.flush();

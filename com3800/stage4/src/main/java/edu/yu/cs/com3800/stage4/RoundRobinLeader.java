@@ -3,6 +3,7 @@ package edu.yu.cs.com3800.stage4;
 import edu.yu.cs.com3800.LoggingServer;
 import edu.yu.cs.com3800.Message;
 import edu.yu.cs.com3800.PeerServer;
+import edu.yu.cs.com3800.Util;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,7 +12,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -22,7 +22,14 @@ public class RoundRobinLeader extends Thread{
     private final LinkedBlockingQueue<Message> incomingMessages;
     private final LinkedBlockingQueue<Message> outgoingMessages;
     private final ConcurrentHashMap<Long, InetSocketAddress> peerIDtoAddress;
-    private final ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    private final ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
+            r -> {
+                Thread thread = new Thread(r);
+                thread.setDaemon(true);
+                thread.setName("RRL-Worker-Thread-" + thread.threadId());
+                return thread;
+            }
+        );
     private volatile boolean shutdown;
     private PeerServerImpl.IdGenerator idGenerator;
     private Logger logger;
@@ -49,7 +56,7 @@ public class RoundRobinLeader extends Thread{
         try {
             this.logger = LoggingServer.createLogger(
                     "RoundRobinLeader-" + parentServer.getServerId(),
-                    "RoundRobinLeader-" + parentServer.getServerId(),
+                    "RoundRobinLeader-With-Id-" + parentServer.getServerId() + "-On-udpPort-" + this.parentServer.getUdpPort(),
                     true
             );
         } catch (IOException e) {
@@ -68,6 +75,7 @@ public class RoundRobinLeader extends Thread{
         LinkedBlockingQueue<Message> workRequests = new LinkedBlockingQueue<>();
         ConcurrentHashMap<Long, CompletableFuture<byte[]>> pendingResponses = new ConcurrentHashMap<>();
         this.tcpServer = new TCPServer(workRequests, pendingResponses, this.parentServer.getUdpPort()+2, this.parentServer.getAddress().getHostName(), idGenerator);
+        this.tcpServer.setDaemon(true);
         this.tcpServer.start();
         //List<Long> serversById = this.peerIDtoAddress.keySet().stream().toList();
         //serversById = Collections.synchronizedList(serversById);
@@ -82,7 +90,7 @@ public class RoundRobinLeader extends Thread{
                 this.threadPool.submit(new Runnable() {
                     @Override
                     public void run() {
-                        logger.log(Level.FINE, "Handing off work request " + workMessage.getRequestID() + "to round robin worker thread");
+                        logger.log(Level.FINE, "Round robin worker thread sending work to follower");
                         /*Logger roundRobinRequestLogger;
                         try {
                             roundRobinRequestLogger = LoggingServer.createLogger(
@@ -95,7 +103,6 @@ public class RoundRobinLeader extends Thread{
                             logger.log(Level.WARNING, "Error creating logger for round robin thread. Using main logger");
                             roundRobinRequestLogger = logger;
                         }*/
-                        logger.log(Level.FINE, "Received work request: " + workMessage.getRequestID() + "from RR work queue");
                         int index = position.getAndIncrement() % followersById.size();
                         long nextServerId = followersById.get(index);
                         InetSocketAddress workerAddress = peerIDtoAddress.get(nextServerId);
@@ -110,7 +117,7 @@ public class RoundRobinLeader extends Thread{
                             long sent = System.currentTimeMillis();
 
                             InputStream inputStream = clientSocket.getInputStream();
-                            byte[] response = inputStream.readAllBytes();
+                            byte[] response = Util.readAllBytesFromNetwork(inputStream);
                             long received = System.currentTimeMillis();
                             logger.log(Level.FINE, "Received response for request " + workMessage.getRequestID() + " from follower. Time waited " + (received - sent) + "ms");
                             ByteBuffer buffer = ByteBuffer.wrap(response);
@@ -144,7 +151,23 @@ public class RoundRobinLeader extends Thread{
 
     }
 
-    private class Request {
+    public void shutdown() {
+        if (this.shutdown) {
+            return;
+        }
+        this.logger.log(Level.FINE, "Shutting down RoundRobinLeader");
+        this.shutdown = true;
+
+        if (this.tcpServer != null) {
+            this.tcpServer.shutdown();
+        }
+
+        this.threadPool.shutdown();
+
+        this.interrupt();
+    }
+
+    /*private class Request {
         //InetSocketAddress clientSocket;
         Message clientRequest;
         Message workRequest;
@@ -168,23 +191,5 @@ public class RoundRobinLeader extends Thread{
 
     private Message.MessageType getMessageType(Message message) {
         return message.getMessageType();
-    }
-
-    public void shutdown() {
-        if (this.shutdown) {
-            return;
-        }
-        this.logger.log(Level.FINE, "Shutting down RoundRobinLeader");
-        this.shutdown = true;
-
-        if (this.tcpServer != null) {
-            this.tcpServer.shutdown();
-        }
-
-        this.threadPool.shutdown();
-
-        this.interrupt();
-    }
-
-
+    }*/
 }
