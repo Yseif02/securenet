@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,13 +45,14 @@ class Stage4test {
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws InterruptedException {
         for (PeerServerImpl server : this.servers) {
             server.shutdown();
             server = null;
         }
 
         this.gatewayServer.shutdown();
+        this.gatewayServer.join();
         this.gatewayServer = null;
     }
 
@@ -70,6 +72,7 @@ class Stage4test {
         peerIDtoAddress.put(gatewayId, new InetSocketAddress("localhost", gatewayPort));
         this.portToId.put(gatewayPort, gatewayId);
         this.gatewayServer = new GatewayServer(8888, gatewayPort,0, gatewayId, new ConcurrentHashMap<>(peerIDtoAddress), 1);
+        this.gatewayServer.start();
         this.servers.add(this.gatewayServer.getGatewayPeerServer());
         for (Map.Entry<Long, InetSocketAddress> entry : peerIDtoAddress.entrySet()) {
             if (entry.getKey().equals(gatewayId)) {
@@ -123,6 +126,7 @@ class Stage4test {
         }
     }
 
+
     @Test
     void sendWorkAndReceiveGoodResponse() throws Exception {
         localSetup(3, false, 10);
@@ -132,6 +136,31 @@ class Stage4test {
         assertEquals(200, response.statusCode());
         assertEquals("Hello world!", response.body());
 
+    }
+
+    @Test
+    void testManyWorkRequests() throws Exception {
+        localSetup(7, false, 5);
+        String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
+
+        Client client = new Client("localhost", 8888);
+
+        List<Integer> reqs = new ArrayList<>();
+        //int lastReq = client.getLastReqId();
+        for (int i = 1; i <= 50; i++) {
+            String code = validClass.replace("world!", "world! from code version " + i);
+            int reqId = client.sendCompileAndRunRequest(code);
+
+            reqs.add(reqId);
+            Thread.sleep(0);
+        }
+
+        for (Integer reqId : reqs) {
+            HttpResponse<String> response = client.getResponse(reqId).get();
+            String expected = "Hello world! from code version " + reqId;
+            assertEquals(expected, response.body());
+            System.out.println(response.body());
+        }
     }
 
     @Test
@@ -205,6 +234,8 @@ class Stage4test {
 
         assertFalse(this.gatewayServer.getGatewayPeerServer().isAlive());
         this.gatewayServer.shutdown();
+        this.gatewayServer.join();
+        assertFalse(this.gatewayServer.isAlive());
 
         //HttpServer httpServer = (HttpServer) getPrivateField((GatewayServer) this.gatewayServer, "httpServer");
         //assertFalse(httpServer.);

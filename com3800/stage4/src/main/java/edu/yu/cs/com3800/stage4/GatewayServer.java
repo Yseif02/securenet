@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import edu.yu.cs.com3800.LoggingServer;
 import edu.yu.cs.com3800.Message;
+import edu.yu.cs.com3800.Util;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -13,12 +14,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class GatewayServer implements LoggingServer {
+public class GatewayServer extends Thread implements LoggingServer {
     private final HttpServer httpServer;
     private final ExecutorService threadPool;
     private final GatewayPeerServerImpl gatewayPeerServer;
@@ -27,13 +29,21 @@ public class GatewayServer implements LoggingServer {
     private final Logger logger;
     private long leaderId;
     private volatile boolean shutdown = false;
+    private final CountDownLatch shutdownLatch = new CountDownLatch(1);
 
 
 
     public GatewayServer(int httpPort, int peerPort, long peerEpoch, Long serverID,
                          ConcurrentHashMap<Long, InetSocketAddress> peerIDtoAddress, int numberOfObservers) throws IOException
     {
-        this.threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        this.threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
+            r -> {
+                Thread thread = new Thread(r);
+                thread.setDaemon(true);
+                thread.setName("Gateway-Worker-Thread-" + threadId());
+                return thread;
+            }
+        );
         this.httpServer = HttpServer.create(new InetSocketAddress(httpPort), 0);
         createContext(this.httpServer);
         this.httpServer.setExecutor(this.threadPool);
@@ -44,9 +54,25 @@ public class GatewayServer implements LoggingServer {
         this.gatewayPeerServer = new GatewayPeerServerImpl(peerPort, peerEpoch, serverID, peerIDtoAddress, serverID, numberOfObservers);
         //this.gatewayPeerServer.start();
         
+        /*this.httpServer.start();
+        this.logger.log(Level.FINE, "Started HTTP server");*/
+
+    }
+
+    /**
+     * Runs this operation.
+     */
+    @Override
+    public void run() {
         this.httpServer.start();
         this.logger.log(Level.FINE, "Started HTTP server");
-
+        try {
+            this.shutdownLatch.await();
+        } catch (InterruptedException e) {
+            this.logger.log(Level.SEVERE, "Gateway Server interrupted");
+            Thread.currentThread().interrupt();
+        }
+        this.logger.log(Level.FINE, "Exiting gateway server run");
     }
 
     private void createContext(HttpServer httpServer) {
@@ -56,7 +82,7 @@ public class GatewayServer implements LoggingServer {
             if (isBadRequest(exchange)) {
                 return;
             }
-            byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+            byte[] requestBytes = Util.readAllBytesFromNetwork(exchange.getRequestBody());
             CachedResponse cachedResponse;
             cachedResponse = this.requestCache.get(Arrays.hashCode(requestBytes));
 
@@ -90,7 +116,7 @@ public class GatewayServer implements LoggingServer {
     }
 
     private void sendTCPServerResponseToClient(HttpExchange exchange, byte[] requestBytes, Socket clientSocket) throws IOException {
-        byte[] fullResponse = clientSocket.getInputStream().readAllBytes();
+        byte[] fullResponse = Util.readAllBytesFromNetwork(clientSocket.getInputStream());
         this.logger.log(Level.FINE, "Received response from TCP Server");
         ByteBuffer buffer = ByteBuffer.wrap(fullResponse);
         int statusCode = buffer.getInt();
@@ -184,27 +210,11 @@ public class GatewayServer implements LoggingServer {
             this.threadPool.shutdownNow();
             this.logger.log(Level.FINE, "threadpool shutdown");
         }
-
+        this.shutdownLatch.countDown();
         this.logger.log(Level.FINE, "Finished shutdown");
     }
 
-    private class CachedResponse {
-        private final int statusCode;
-        private final byte[] body;
 
-        private CachedResponse(int statusCode, byte[] body) {
-            this.statusCode = statusCode;
-            this.body = body;
-        }
-
-        private int getStatusCode() {
-            return statusCode;
-        }
-
-        private byte[] getBody() {
-            return body;
-        }
+    private record CachedResponse(int statusCode, byte[] body) {
     }
-
-
 }

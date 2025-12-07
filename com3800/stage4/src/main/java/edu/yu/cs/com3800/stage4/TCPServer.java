@@ -2,6 +2,7 @@ package edu.yu.cs.com3800.stage4;
 
 import edu.yu.cs.com3800.LoggingServer;
 import edu.yu.cs.com3800.Message;
+import edu.yu.cs.com3800.Util;
 
 import java.io.File;
 import java.io.IOException;
@@ -86,7 +87,8 @@ public class TCPServer extends Thread implements LoggingServer {
             CompletableFuture<byte[]> futureResponse = new CompletableFuture<>();
             pendingResponses.put(requestId, futureResponse);
 
-            Message workRequest = new Message(Message.MessageType.WORK, inputStream.readAllBytes(), clientSocket.getInetAddress().getHostName(), clientSocket.getPort(),
+            byte[] bytes = Util.readAllBytesFromNetwork(inputStream);
+            Message workRequest = new Message(Message.MessageType.WORK, bytes, clientSocket.getInetAddress().getHostName(), clientSocket.getPort(),
                     myHost, tcpPort, requestId);
 
             workRequests.put(workRequest);
