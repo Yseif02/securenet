@@ -68,29 +68,19 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     public void run() {
         //step 1: create and run thread that sends broadcast messages
         //step 2: create and run thread that listens for messages sent to this server
-        this.serverLogger.log(Level.FINE, "Started main thread");
-        this.setPeerState(ServerState.LOOKING);
-        this.leaderElection =  new LeaderElection(this, this.incomingMessages, this.serverLogger);
-        startUDPWorkers();
-        this.serverLogger.log(Level.FINE, "Started worker threads");
+        startThreads();
+        if (this.getPeerState() == null) {
+            this.setPeerState(ServerState.LOOKING);
+        }
         //step 3: main server loop
         try {
             while (!this.shutdown) {
                 switch (getPeerState()) {
                     case LOOKING:
-                        //start leader election, set leader to the election winner
-                        this.serverLogger.log(Level.FINE, "Looking for leader");
-                        Vote newLeader = leaderElection.lookForLeader();
-                        if (newLeader != null) {
-                            this.serverLogger.log(Level.FINE, "Found leader: " + newLeader.getProposedLeaderID());
-                        } else {
-                            this.serverLogger.log(Level.WARNING, "Election returned null");
-                        }
-                        //this.setCurrentLeader(newLeader);
-                        //this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
+                        doLooking();
                         break;                                                                                                          //In this stage using a clone of peerIDs may work but for
-                                                                                                                                          //future stages where a peer goes down, I should probably
-                    case LEADING:                                                                                                 //use the actual mutable map.
+                                                                                                                                        //future stages where a peer goes down, I should probably
+                    case LEADING:                                                                                                       //use the actual mutable map.
                         if (this.javaRunnerFollower != null) {
                             this.javaRunnerFollower.interrupt();
                             this.javaRunnerFollower = null;
@@ -124,9 +114,8 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                         }
                         Thread.sleep(50);
                         break;
-
                     case OBSERVER:
-
+                        Thread.sleep(50);
                 }
             }
 
@@ -137,6 +126,27 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             return;
             //code...
         }
+    }
+
+    private void startThreads() {
+        this.serverLogger.log(Level.FINE, "Started main thread");
+        this.leaderElection =  new LeaderElection(this, this.incomingMessages, this.serverLogger);
+        startUDPWorkers();
+        this.serverLogger.log(Level.FINE, "Started worker threads");
+    }
+
+    private void doLooking() {
+        //start leader election, set leader to the election winner
+        this.serverLogger.log(Level.FINE, "Looking for leader");
+        Vote newLeader = leaderElection.lookForLeader();
+        if (newLeader != null) {
+            this.serverLogger.log(Level.FINE, "Found leader: " + newLeader.getProposedLeaderID());
+        } else {
+            this.serverLogger.log(Level.WARNING, "Election returned null");
+        }
+        //this.setCurrentLeader(newLeader);
+        //this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
+        return;
     }
 
     private CopyOnWriteArrayList<Long> getFollowers(ConcurrentHashMap<Long, ServerState> serverStates) {

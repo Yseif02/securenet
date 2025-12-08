@@ -1,19 +1,13 @@
 package edu.yu.cs.com3800.stage4;
 
 import edu.yu.cs.com3800.*;
-import edu.yu.cs.com3800.stage4.PeerServerImpl;
 
 import java.io.*;
-import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -44,19 +38,9 @@ public class JavaRunnerFollower extends Thread{
     public void run() {
         long retryTimeout = 200;
         JavaRunner javaRunner;
-        try {
-            javaRunner = new JavaRunner();
-        } catch (IOException e) {
-            this.logger.log(Level.SEVERE, "Error while initializing JavaRunner, trying again", e);
-            try {
-                javaRunner = new JavaRunner();
-            } catch (IOException ex) {
-                this.logger.log(Level.SEVERE, "Fatal error while attempting 2nd initializing. Shutting down follower", e);
-                shutdown();
-                return;
-            }
-        }
-        this.logger.log(Level.FINE, "Creating Java runner");
+        javaRunner = initJavaRunner();
+        if (javaRunner == null) return;
+        this.logger.log(Level.FINE, "Initialized Java runner");
         try {
             this.serverSocket = new ServerSocket(this.parentServer.getUdpPort() + 2);
             this.logger.log(Level.FINE, "Follower listening on TCP port " + serverSocket.getLocalPort());
@@ -75,14 +59,9 @@ public class JavaRunnerFollower extends Thread{
                     String code = new String(workRequest.getMessageContents());
                     InputStream codeInputStream = new ByteArrayInputStream(code.getBytes());
 
-                    //this.logger.log(Level.FINER, "Executing code");
                     String runnerResponse = javaRunner.compileAndRun(codeInputStream);
-                    //this.logger.log(Level.WARNING, "Code output:\n " + runnerResponse);
                     Message response = new Message(Message.MessageType.COMPLETED_WORK, runnerResponse.getBytes(StandardCharsets.UTF_8), this.parentServer.getAddress().getHostString(), this.parentServer.getUdpPort() + 2,
                             client.getInetAddress().getHostName(), client.getPort(), requestId);
-                    //for testing
-                    //System.out.println(new String(response.getMessageContents()));
-                    //this.logger.log(Level.WARNING, "Response: \n" + Arrays.toString(response.getMessageContents()));
                     ByteBuffer byteBuffer = ByteBuffer.allocate(response.getNetworkPayload().length + 4);
                     byteBuffer.putInt(200);
                     byteBuffer.put(response.getNetworkPayload());
@@ -101,27 +80,8 @@ public class JavaRunnerFollower extends Thread{
                         break;
                     }
                     //this.logger.log(Level.WARNING, "Preparing response back to leader");
-                    ByteArrayOutputStream stackTrace = new ByteArrayOutputStream();
-                    e.printStackTrace(new PrintStream(stackTrace));
-                    String error = e.getMessage() + "\n" + stackTrace.toString();
-                    Message response = new Message(Message.MessageType.COMPLETED_WORK, error.getBytes(StandardCharsets.UTF_8), this.parentServer.getAddress().getHostString(), this.parentServer.getUdpPort() + 2,
-                            client.getInetAddress().getHostName(), client.getPort(), requestId, true);
-                    //Task task = new Task(workRequest, response, Status.ERROR_OCCURRED);
-                    //this.allTasks.put(requestId, task);
-                    ByteBuffer byteBuffer = ByteBuffer.allocate(response.getNetworkPayload().length + 4);
-                    byteBuffer.putInt(400);
-                    byteBuffer.put(response.getNetworkPayload());
-                    byte[] responsePayload = byteBuffer.array();
-                    try {
-                        this.logger.log(Level.WARNING, "Sending Exception response back to leader");
-                        OutputStream outputStream = client.getOutputStream();
-                        outputStream.write(responsePayload);
-                        outputStream.flush();
-                        client.shutdownOutput();
-                        this.logger.log(Level.FINE, "Response sent to leader");
-                    } catch (IOException ex) {
-                        this.logger.log(Level.SEVERE, "IO Error sending error work " + requestId +" response back to leader", ex);
-                    }
+
+                    handleException(e, client, requestId);
                 }
             }
         } catch (IOException e) {
@@ -132,6 +92,45 @@ public class JavaRunnerFollower extends Thread{
                 serverSocket.close();
             } catch (IOException ignored) {}
         }
+    }
+
+    private void handleException(Exception e, Socket client, long requestId) {
+        ByteArrayOutputStream stackTrace = new ByteArrayOutputStream();
+        e.printStackTrace(new PrintStream(stackTrace));
+        String error = e.getMessage() + "\n" + stackTrace.toString();
+        Message response = new Message(Message.MessageType.COMPLETED_WORK, error.getBytes(StandardCharsets.UTF_8), this.parentServer.getAddress().getHostString(), this.parentServer.getUdpPort() + 2,
+                client.getInetAddress().getHostName(), client.getPort(), requestId, true);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(response.getNetworkPayload().length + 4);
+        byteBuffer.putInt(400);
+        byteBuffer.put(response.getNetworkPayload());
+        byte[] responsePayload = byteBuffer.array();
+        try {
+            this.logger.log(Level.WARNING, "Sending Exception response back to leader");
+            OutputStream outputStream = client.getOutputStream();
+            outputStream.write(responsePayload);
+            outputStream.flush();
+            client.shutdownOutput();
+            this.logger.log(Level.FINE, "Response sent to leader");
+        } catch (IOException ex) {
+            this.logger.log(Level.SEVERE, "IO Error sending error work " + requestId +" response back to leader", ex);
+        }
+    }
+
+    private JavaRunner initJavaRunner() {
+        JavaRunner javaRunner;
+        try {
+            javaRunner = new JavaRunner();
+        } catch (IOException e) {
+            this.logger.log(Level.SEVERE, "Error while initializing JavaRunner, trying again", e);
+            try {
+                javaRunner = new JavaRunner();
+            } catch (IOException ex) {
+                this.logger.log(Level.SEVERE, "Fatal error while attempting 2nd initializing. Shutting down follower", e);
+                shutdown();
+                return null;
+            }
+        }
+        return javaRunner;
     }
 
     public void shutdown() {
@@ -146,9 +145,9 @@ public class JavaRunnerFollower extends Thread{
         }
     }
 
-    private Message.MessageType getMessageType(Message message) {
+    /*private Message.MessageType getMessageType(Message message) {
         return message.getMessageType();
-    }
+    }*/
 
     /*private class Task {
         Message taskFromMaster;

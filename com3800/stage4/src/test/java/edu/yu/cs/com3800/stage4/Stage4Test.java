@@ -1,6 +1,5 @@
 package edu.yu.cs.com3800.stage4;
 
-import com.sun.net.httpserver.HttpServer;
 import edu.yu.cs.com3800.PeerServer;
 import edu.yu.cs.com3800.UDPMessageReceiver;
 import edu.yu.cs.com3800.UDPMessageSender;
@@ -22,15 +21,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class Stage4test {
+class Stage4Test {
 
-    //public Stage4test() throws Exception {}
+    //public Stage4Test() throws Exception {}
 
     private int[] ports = {8010, 8020, 8030, 8040};
     private ArrayList<PeerServerImpl> servers;
@@ -126,7 +125,6 @@ class Stage4test {
         }
     }
 
-
     @Test
     void sendWorkAndReceiveGoodResponse() throws Exception {
         localSetup(3, false, 10);
@@ -146,7 +144,6 @@ class Stage4test {
         Client client = new Client("localhost", 8888);
 
         List<Integer> reqs = new ArrayList<>();
-        //int lastReq = client.getLastReqId();
         for (int i = 1; i <= 50; i++) {
             String code = validClass.replace("world!", "world! from code version " + i);
             int reqId = client.sendCompileAndRunRequest(code);
@@ -202,13 +199,12 @@ class Stage4test {
 
     @Test
     void testLotsOfWorkFewNodes() throws Exception {
-        localSetup(10, false, 5);
+        localSetup(4, false, 5);
         String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
 
         Client client = new Client("localhost", 8888);
 
         List<Integer> reqs = new ArrayList<>();
-        //int lastReq = client.getLastReqId();
         for (int i = 1; i <= 100; i++) {
             String code = validClass.replace("world!", "world! from code version " + i);
             int reqId = client.sendCompileAndRunRequest(code);
@@ -340,8 +336,80 @@ class Stage4test {
             //if (server instanceof GatewayPeerServerImpl) continue;
             server.shutdown();
         }
+    }
 
+    @Test
+    void testElectCorrectLeaderWithMultipleObservers() throws URISyntaxException, IOException, InterruptedException, ExecutionException {
+        ConcurrentHashMap<Long, InetSocketAddress> peerIDtoAddress = new ConcurrentHashMap<>(8);
+        this.portToId = new HashMap<>();
+        for (int i = 1; i <= 6; i++) {
+            peerIDtoAddress.put(Integer.valueOf(i).longValue(), new InetSocketAddress("localhost", 8000 + (i * 10)));
+            this.portToId.put(8000 + (i * 10), Integer.valueOf(i).longValue());
+        }
+        this.client = new Client("localhost", 8888);
+        this.servers = new ArrayList<>(3);
 
+        //observer
+        int gatewayPort = 7999;
+        Long gatewayId = 10000L;
+        peerIDtoAddress.put(gatewayId, new InetSocketAddress("localhost", gatewayPort));
+        this.portToId.put(gatewayPort, gatewayId);
+        this.gatewayServer = new GatewayServer(8888, gatewayPort,0, gatewayId, new ConcurrentHashMap<>(peerIDtoAddress), 2);
+        this.gatewayServer.start();
+        this.servers.add(this.gatewayServer.getGatewayPeerServer());
+        for (Map.Entry<Long, InetSocketAddress> entry : peerIDtoAddress.entrySet()) {
+            if (entry.getKey().equals(gatewayId)) {
+                continue;
+            }
+            ConcurrentHashMap<Long, InetSocketAddress> map = new ConcurrentHashMap<>(peerIDtoAddress);
+            map.remove(entry.getKey());
+
+            PeerServerImpl server =
+                    new PeerServerImpl(entry.getValue().getPort(), 0, entry.getKey(), map, gatewayId, 2) ;
+            this.servers.add(server);
+            //server.start();
+        }
+        //this.gatewayServer.getGatewayPeerServer().start();
+        boolean first = false;
+        for (PeerServerImpl server : this.servers) {
+            if (!first && !(server instanceof GatewayPeerServerImpl)) {
+                server.setPeerState(PeerServer.ServerState.OBSERVER);
+                first = true;
+            }
+            server.start();
+        }
+        try {
+            Thread.sleep(5000);
+        }
+        catch (InterruptedException ignored) {
+        }
+
+        for (PeerServer server : this.servers) {
+            Vote leader = server.getCurrentLeader();
+            if (leader != null) {
+                Long serverLeaderFromPort = this.portToId.get(8000 + 6 * 10);
+                assertEquals(serverLeaderFromPort, leader.getProposedLeaderID());
+            }
+        }
+
+        Client client = new Client("localhost", 8888);
+
+        List<Integer> reqs = new ArrayList<>();
+        String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
+        for (int i = 1; i <= 15; i++) {
+            String code = validClass.replace("world!", "world! from code version " + i);
+            int reqId = client.sendCompileAndRunRequest(code);
+
+            reqs.add(reqId);
+            Thread.sleep(0);
+        }
+
+        for (Integer reqId : reqs) {
+            HttpResponse<String> response = client.getResponse(reqId).get();
+            String expected = "Hello world! from code version " + reqId;
+            assertEquals(expected, response.body());
+            System.out.println(response.body());
+        }
     }
 
     private boolean booleanValueOf(String s) {

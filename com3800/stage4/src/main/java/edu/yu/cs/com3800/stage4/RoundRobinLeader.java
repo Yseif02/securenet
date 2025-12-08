@@ -85,61 +85,7 @@ public class RoundRobinLeader extends Thread{
         //Map<Long, Request> requests = new HashMap<>();
         while (!this.shutdown && !this.isInterrupted()) {
             try {
-                Message workMessage = workRequests.take();
-                this.logger.log(Level.FINE, "Received next work request from TCP server");
-                this.threadPool.submit(new Runnable() {
-                    @Override
-                    public void run() {
-                        logger.log(Level.FINE, "Round robin worker thread sending work to follower");
-                        /*Logger roundRobinRequestLogger;
-                        try {
-                            roundRobinRequestLogger = LoggingServer.createLogger(
-                                    "RRLeader-" + parentServer.getServerId() + "-WorkRequest-" + workMessage.getRequestID(),
-                                    "RRLeader-" + parentServer.getServerId() + "-WorkRequest-" + workMessage.getRequestID(),
-                                    true
-
-                            );
-                        } catch (IOException e) {
-                            logger.log(Level.WARNING, "Error creating logger for round robin thread. Using main logger");
-                            roundRobinRequestLogger = logger;
-                        }*/
-                        int index = position.getAndIncrement() % followersById.size();
-                        long nextServerId = followersById.get(index);
-                        InetSocketAddress workerAddress = peerIDtoAddress.get(nextServerId);
-                        logger.log(Level.FINE, "Picked next follower with serverId " + nextServerId + ". Attempting to connect to follower");
-                        try(Socket clientSocket = new Socket(workerAddress.getHostString(), workerAddress.getPort() + 2)) {
-                            logger.log(Level.FINE, "Connection with follower established. Sending work request");
-                            OutputStream outputStream = clientSocket.getOutputStream();
-                            outputStream.write(workMessage.getNetworkPayload());
-                            outputStream.flush();
-                            clientSocket.shutdownOutput();
-                            logger.log(Level.FINE, "Work request " + workMessage.getRequestID() + " sent to follower. Waiting for response");
-                            long sent = System.currentTimeMillis();
-
-                            InputStream inputStream = clientSocket.getInputStream();
-                            byte[] response = Util.readAllBytesFromNetwork(inputStream);
-                            long received = System.currentTimeMillis();
-                            logger.log(Level.FINE, "Received response for request " + workMessage.getRequestID() + " from follower. Time waited " + (received - sent) + "ms");
-                            ByteBuffer buffer = ByteBuffer.wrap(response);
-                            int statusCode = buffer.getInt();
-                            byte[] messageBytes = new byte[response.length - 4];
-                            buffer.get(messageBytes);
-                            Message responseMessage = new Message(messageBytes);
-
-                            //for testing
-                            //roundRobinRequestLogger.log(Level.WARNING, "Response from worker: \n" + new String(responseMessage.getMessageContents()));
-
-                            CompletableFuture<byte[]> responseFuture = pendingResponses.get(responseMessage.getRequestID());
-                            responseFuture.complete(response);
-
-                        } catch (IOException e) {
-                            logger.log(Level.WARNING,
-                                    "IO error while communicating with follower " + nextServerId, e);
-                            logger.log(Level.WARNING, "Re-queueing work requests");
-                            workRequests.offer(workMessage);
-                        }
-                    }
-                });
+                doNextWork(workRequests, pendingResponses);
             } catch (InterruptedException e) {
                 this.logger.log(Level.WARNING, "Interrupted while waiting for work", e);
                 shutdown();
@@ -149,6 +95,68 @@ public class RoundRobinLeader extends Thread{
 
         }
 
+    }
+
+    private void doNextWork(LinkedBlockingQueue<Message> workRequests, ConcurrentHashMap<Long, CompletableFuture<byte[]>> pendingResponses) throws InterruptedException {
+        Message workMessage = workRequests.take();
+        this.logger.log(Level.FINE, "Received next work request from TCP server");
+        this.threadPool.submit(new Runnable() {
+            @Override
+            public void run() {
+                logger.log(Level.FINE, "Round robin worker thread sending work to follower");
+                /*Logger roundRobinRequestLogger;
+                try {
+                    roundRobinRequestLogger = LoggingServer.createLogger(
+                            "RRLeader-" + parentServer.getServerId() + "-WorkRequest-" + workMessage.getRequestID(),
+                            "RRLeader-" + parentServer.getServerId() + "-WorkRequest-" + workMessage.getRequestID(),
+                            true
+
+                    );
+                } catch (IOException e) {
+                    logger.log(Level.WARNING, "Error creating logger for round robin thread. Using main logger");
+                    roundRobinRequestLogger = logger;
+                }*/
+                int index = position.getAndIncrement() % followersById.size();
+                long nextServerId = followersById.get(index);
+                InetSocketAddress workerAddress = peerIDtoAddress.get(nextServerId);
+                logger.log(Level.FINE, "Picked next follower with serverId " + nextServerId + ". Attempting to connect to follower");
+                connectAndWorkWithFollower(workerAddress, nextServerId);
+            }
+
+            private void connectAndWorkWithFollower(InetSocketAddress workerAddress, long nextServerId) {
+                try(Socket clientSocket = new Socket(workerAddress.getHostString(), workerAddress.getPort() + 2)) {
+                    logger.log(Level.FINE, "Connection with follower established. Sending work request");
+                    OutputStream outputStream = clientSocket.getOutputStream();
+                    outputStream.write(workMessage.getNetworkPayload());
+                    outputStream.flush();
+                    clientSocket.shutdownOutput();
+                    logger.log(Level.FINE, "Work request " + workMessage.getRequestID() + " sent to follower. Waiting for response");
+                    long sent = System.currentTimeMillis();
+
+                    InputStream inputStream = clientSocket.getInputStream();
+                    byte[] response = Util.readAllBytesFromNetwork(inputStream);
+                    long received = System.currentTimeMillis();
+                    logger.log(Level.FINE, "Received response for request " + workMessage.getRequestID() + " from follower. Time waited " + (received - sent) + "ms");
+                    ByteBuffer buffer = ByteBuffer.wrap(response);
+                    int statusCode = buffer.getInt();
+                    byte[] messageBytes = new byte[response.length - 4];
+                    buffer.get(messageBytes);
+                    Message responseMessage = new Message(messageBytes);
+
+                    //for testing
+                    //roundRobinRequestLogger.log(Level.WARNING, "Response from worker: \n" + new String(responseMessage.getMessageContents()));
+
+                    CompletableFuture<byte[]> responseFuture = pendingResponses.get(responseMessage.getRequestID());
+                    responseFuture.complete(response);
+
+                } catch (IOException e) {
+                    logger.log(Level.WARNING,
+                            "IO error while communicating with follower " + nextServerId, e);
+                    logger.log(Level.WARNING, "Re-queueing work requests");
+                    workRequests.offer(workMessage);
+                }
+            }
+        });
     }
 
     public void shutdown() {

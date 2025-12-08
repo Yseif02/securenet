@@ -106,12 +106,13 @@ public class GatewayServer extends Thread implements LoggingServer {
             //accept response from TCPServer
             sendTCPServerResponseToClient(exchange, requestBytes, clientSocket);
         } catch (IOException e) {
-             this.logger.log(Level.WARNING, "Gateway server couldn't connect to leader: " + e.getMessage());
-             String errorMsg = "Leader unavailable.";
-             byte[] msgBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
-             exchange.sendResponseHeaders(503, msgBytes.length);
-             exchange.getResponseBody().write(msgBytes);
-             exchange.close();
+            this.logger.log(Level.WARNING, "Gateway server couldn't connect to leader: " + e.getMessage());
+            String errorMsg = "Leader unavailable.";
+            byte[] msgBytes = errorMsg.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Cached-Response", "false");
+            exchange.sendResponseHeaders(503, msgBytes.length);
+            exchange.getResponseBody().write(msgBytes);
+            exchange.close();
         }
     }
 
