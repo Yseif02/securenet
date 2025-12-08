@@ -92,7 +92,7 @@ public class GatewayPeerServerImpl extends PeerServerImpl implements Runnable {
     }
 
     @Override
-    public Vote getCurrentLeader() {
+    public synchronized Vote getCurrentLeader() {
         return (this.currentLeader == null) ? null : this.currentLeader;
     }
 

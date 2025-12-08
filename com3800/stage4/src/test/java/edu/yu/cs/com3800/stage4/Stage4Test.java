@@ -378,6 +378,7 @@ class Stage4Test {
             }
             server.start();
         }
+
         try {
             Thread.sleep(5000);
         }
@@ -410,6 +411,118 @@ class Stage4Test {
             assertEquals(expected, response.body());
             System.out.println(response.body());
         }
+    }
+
+    @Test
+    void testSendRequestBeforeClusterStarts() throws Exception {
+        ConcurrentHashMap<Long, InetSocketAddress> peerIDtoAddress = new ConcurrentHashMap<>(8);
+        this.portToId = new HashMap<>();
+        for (int i = 1; i <= 3; i++) {
+            peerIDtoAddress.put(Integer.valueOf(i).longValue(), new InetSocketAddress("localhost", 8000 + (i * 10)));
+            this.portToId.put(8000 + (i * 10), Integer.valueOf(i).longValue());
+        }
+        this.client = new Client("localhost", 8888);
+        this.servers = new ArrayList<>(3);
+
+        //observer
+        int gatewayPort = 7999;
+        Long gatewayId = 10000L;
+        peerIDtoAddress.put(gatewayId, new InetSocketAddress("localhost", gatewayPort));
+        this.portToId.put(gatewayPort, gatewayId);
+        this.gatewayServer = new GatewayServer(8888, gatewayPort,0, gatewayId, new ConcurrentHashMap<>(peerIDtoAddress), 1);
+        this.gatewayServer.start();
+        this.servers.add(this.gatewayServer.getGatewayPeerServer());
+        for (Map.Entry<Long, InetSocketAddress> entry : peerIDtoAddress.entrySet()) {
+            if (entry.getKey().equals(gatewayId)) {
+                continue;
+            }
+            ConcurrentHashMap<Long, InetSocketAddress> map = new ConcurrentHashMap<>(peerIDtoAddress);
+            map.remove(entry.getKey());
+
+            PeerServerImpl server =
+                    new PeerServerImpl(entry.getValue().getPort(), 0, entry.getKey(), map, gatewayId, 1) ;
+            this.servers.add(server);
+            //server.start();
+
+        }
+        for (PeerServerImpl server : this.servers) {
+            server.start();
+        }
+
+        List<Integer> reqs = new ArrayList<>();
+        String validClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String run()\n    {\n        return \"Hello world!\";\n    }\n}\n";
+        for (int i = 1; i <= 1; i++) {
+            String code = validClass.replace("world!", "world! from code version " + i);
+            int reqId = client.sendCompileAndRunRequest(code);
+
+            reqs.add(reqId);
+            Thread.sleep(5000);
+        }
+
+        for (Integer reqId : reqs) {
+            HttpResponse<String> response = client.getResponse(reqId).get();
+            String expected = "Leader unavailable.";
+            assertEquals(expected, response.body());
+            assertEquals(503, response.statusCode());
+            System.out.println(response.body());
+        }
+
+
+    }
+
+    @Test
+    void wrongHeader() throws Exception {
+        localSetup(3, false, 10);
+        HttpClient client = HttpClient.newHttpClient();
+        String validClass3 = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld3\n{\n    public String run()\n    {\n        return \"Hello world! 3\";\n    }\n}\n";
+
+        URI uri = new URI("http", null, "localhost", 8888, "/compileandrun", null, null);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(uri)
+                .header("Content-Type", "binary-data")
+                .POST(HttpRequest.BodyPublishers.ofString(validClass3))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String expectedResponse = "Content-Type must be \"text/x-java-source\"";
+        int expectedCode = 400;
+        assertEquals(expectedResponse, response.body());
+        assertEquals(expectedCode, response.statusCode());
+
+
+    }
+
+    @Test
+    void wrongType() throws Exception{
+        localSetup(3, false, 10);
+        HttpClient client = HttpClient.newHttpClient();
+        String validClass3 = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld3\n{\n    public String run()\n    {\n        return \"Hello world! 3\";\n    }\n}\n";
+
+        URI uri = new URI("http", null, "localhost", 8888, "/compileandrun", null, null);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(uri)
+                .header("Content-Type", "text/x-java-source")
+                .DELETE()
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String expectedResponse = "Method not allowed DELETE. Only POST allowed.";
+        int expectedCode = 405;
+        assertEquals(expectedResponse, response.body());
+        assertEquals(expectedCode, response.statusCode());
+
+    }
+
+    @Test
+    void testBadCode() throws Exception{
+        localSetup(3, false, 10);
+        String invalidClass = "package edu.yu.cs.fall2019.com3800.stage1;\n\npublic class HelloWorld\n{\n    public String Run()\n    {\n        return \"Hello world2!\";\n    }\n}\n";
+
+        int req = client.sendCompileAndRunRequest(invalidClass);
+        CompletableFuture<HttpResponse<String>> completableFuture = client.clientResponses.get(req);
+        HttpResponse<String> response = completableFuture.get();
+        assertTrue(response.body().startsWith("Could not create and run instance of class"));
+        assertEquals(400, response.statusCode());
     }
 
     private boolean booleanValueOf(String s) {

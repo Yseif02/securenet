@@ -1,6 +1,7 @@
 package edu.yu.cs.com3800;
 
 import edu.yu.cs.com3800.stage4.GatewayPeerServerImpl;
+import edu.yu.cs.com3800.stage4.PeerServerImpl;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -98,7 +99,7 @@ public class LeaderElection {
             }
 
             long retryTimeout = 200;
-            while(true){
+            while(true) {
                 //Remove next notification from queue
 
                 Message message = this.incomingMessages.poll(retryTimeout, TimeUnit.MILLISECONDS);
@@ -117,24 +118,22 @@ public class LeaderElection {
                 }
                 retryTimeout = 200;
 
-                //this.logger.log(Level.FINE, "Received message from port " + message.getSenderPort() + ", and accepted on port " + message.getReceiverPort());
+
                 ElectionNotification electionNotification = getNotificationFromMessage(message);
-                //this.logger.log(Level.FINE, "Parsed election notification from server " + electionNotification.getSenderID() + ". Vote for " + electionNotification.getProposedLeaderID());
 
                 boolean isSenderObserver = electionNotification.getState() == PeerServer.ServerState.OBSERVER;
                 if (isSenderObserver) continue;
-                //this.logger.log(Level.WARNING, "Received vote from server " + electionNotification.getSenderID() + " : " + electionNotification.getState());
 
-                //if the server state of the reply for the initial response is leading and following, set leader to that server
+                if (electionNotification.getPeerEpoch() < this.proposedEpoch) {
+                    continue;
+                }
+
                 if (electionNotification.getState() == PeerServer.ServerState.FOLLOWING || electionNotification.getState() == PeerServer.ServerState.LEADING) {
                     this.logger.log(Level.FINE, "Found leader");
                     return acceptElectionWinner(electionNotification, votesForRound);
                 }
 
 
-                if (electionNotification.getPeerEpoch() < this.proposedEpoch) {
-                    continue;
-                }
 
                 if (!isSenderObserver) {
                     votesForRound.put(electionNotification.getSenderID(), electionNotification);
@@ -186,22 +185,17 @@ public class LeaderElection {
                     }
                 }
 
-
-
-
-                //If we did get a message...
-                    //...if it's for an earlier epoch, or from an observer, ignore it.
-                    //...if the received message has a vote for a leader which supersedes mine, change my vote (and send notifications to all other voters about my new vote).
-                    //(Be sure to keep track of the votes I received and who I received them from.)
-                    //If I have enough votes to declare my currently proposed leader as the leader...
-                        //..do a last check to see if there are any new votes for a higher ranked possible leader. If there are, continue in my election "while" loop.
-                    //If there are no new relevant message from the reception queue, set my own state to either LEADING or FOLLOWING and RETURN the elected leader.
             }
         }
-        catch (Exception e) {
-            this.logger.log(Level.SEVERE,"Exception occurred during election; election canceled",e);
+        catch (InterruptedException e) {
+            logger.log(Level.WARNING, "Election interrupted, continuing election");
+            //Thread.currentThread().interrupt();
+
         }
-        this.proposedEpoch++;
+        catch (Exception e) {
+            logger.log(Level.SEVERE, "Unexpected exception in leader election", e);
+        }
+
         return null;
     }
 

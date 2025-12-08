@@ -77,7 +77,10 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             while (!this.shutdown) {
                 switch (getPeerState()) {
                     case LOOKING:
-                        doLooking();
+                        Vote vote =  doLooking();
+                        if (vote != null) {
+                            this.peerEpoch++;
+                        }
                         break;                                                                                                          //In this stage using a clone of peerIDs may work but for
                                                                                                                                         //future stages where a peer goes down, I should probably
                     case LEADING:                                                                                                       //use the actual mutable map.
@@ -135,7 +138,7 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         this.serverLogger.log(Level.FINE, "Started worker threads");
     }
 
-    private void doLooking() {
+    private Vote doLooking() {
         //start leader election, set leader to the election winner
         this.serverLogger.log(Level.FINE, "Looking for leader");
         Vote newLeader = leaderElection.lookForLeader();
@@ -143,10 +146,11 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             this.serverLogger.log(Level.FINE, "Found leader: " + newLeader.getProposedLeaderID());
         } else {
             this.serverLogger.log(Level.WARNING, "Election returned null");
+            return null;
         }
         //this.setCurrentLeader(newLeader);
         //this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
-        return;
+        return newLeader;
     }
 
     private CopyOnWriteArrayList<Long> getFollowers(ConcurrentHashMap<Long, ServerState> serverStates) {
@@ -271,6 +275,10 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         }
         this.receiverWorker.start();
         this.senderWorker.start();
+    }
+
+    public boolean isShutdown() {
+        return this.shutdown;
     }
 
 

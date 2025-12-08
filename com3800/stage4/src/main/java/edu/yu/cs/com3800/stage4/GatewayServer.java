@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer;
 import edu.yu.cs.com3800.LoggingServer;
 import edu.yu.cs.com3800.Message;
 import edu.yu.cs.com3800.Util;
+import edu.yu.cs.com3800.Vote;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -98,13 +99,20 @@ public class GatewayServer extends Thread implements LoggingServer {
 
     private void handleRequest(HttpExchange exchange, byte[] requestBytes) throws IOException {
         this.logger.log(Level.FINE, "Response not cached. Sending request to TCP server");
-        try(Socket clientSocket = new Socket("localhost",
-                this.peerIDtoAddress.get(this.gatewayPeerServer.getCurrentLeader().getProposedLeaderID()).getPort() + 2)) {
-            //send message to leader using TCP
-            sendRequestToTCPServer(requestBytes, clientSocket);
+        try {
+            Vote leader = this.gatewayPeerServer.getCurrentLeader();
+            if (leader == null) {
+                throw new IOException("Couldn't connect to leader");
+            }
+            long leaderId = leader.getProposedLeaderID();
+            try (Socket clientSocket = new Socket("localhost",
+                    this.peerIDtoAddress.get(leaderId).getPort() + 2)) {
+                //send message to leader using TCP
+                sendRequestToTCPServer(requestBytes, clientSocket);
 
-            //accept response from TCPServer
-            sendTCPServerResponseToClient(exchange, requestBytes, clientSocket);
+                //accept response from TCPServer
+                sendTCPServerResponseToClient(exchange, requestBytes, clientSocket);
+            }
         } catch (IOException e) {
             this.logger.log(Level.WARNING, "Gateway server couldn't connect to leader: " + e.getMessage());
             String errorMsg = "Leader unavailable.";
