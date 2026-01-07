@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+#Worked with eitan markovitz
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,8 +15,8 @@ echo
 
 echo "== Step 1: mvn test =="
 cd "$SCRIPT_DIR"
-mvn -q test
-#mvn clean compile
+mvn clean compile
+#mvn -q test
 echo "mvn test: OK"
 echo
 
@@ -188,15 +188,19 @@ for i in {10..18}; do
 
   (
     REQUEST_BODY=$(cat <<EOF
-package edu.yu.cs.com3800.stage5;
+  package edu.yu.cs.com3800.stage5;
 
-public class HelloWorld {
-    public String run() {
-        return "Hello from request $i";
-    }
-}
-EOF
-)
+  public class HelloWorld {
+      public String run() {
+          return "Hello from request $i";
+      }
+  }
+  EOF
+  )
+
+    echo "---- Background Request $i ----"
+    echo "$REQUEST_BODY"
+    echo
 
     RESPONSE=$(curl -s \
       -X POST \

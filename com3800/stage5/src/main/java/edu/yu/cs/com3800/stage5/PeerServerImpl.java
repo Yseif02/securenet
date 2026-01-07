@@ -68,6 +68,9 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     protected LinkedBlockingQueue<Message> gossipMessages;
     protected final AtomicLong timeOfLastElection = new AtomicLong(0);
     private LinkedBlockingQueue<byte[]> finishedWork = null;
+    // log filename prefaces (must match LoggingServer.createLogger arguments)
+    private final String summaryLogPreface;
+    private final String verboseLogPreface;
 
 
     public PeerServerImpl(int udpPort, long peerEpoch, Long serverID, Map<Long, InetSocketAddress>  peerIDtoAddress, Long gatewayID, int numberOfObservers) throws IOException {
@@ -103,11 +106,12 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         this.javaRunnerFollower = null;
         this.followersIfLeader = null;
 
-        this.summaryLogger = LoggingServer.createLogger("Server " + this.id + " Summary Logger", "Server " + this.id + " Summary Logger", true);
-        this.verboseLogger = LoggingServer.createLogger("Server " + this.id + " Verbose Logger", "Server " + this.id + " Verbose Logger", true);
+        this.summaryLogPreface = "Server " + this.id + " Summary Logger";
+        this.verboseLogPreface = "Server " + this.id + " Verbose Logger";
 
-
-        int httpPort = this.myPort + 1000;
+        this.summaryLogger = LoggingServer.createLogger(this.summaryLogPreface, this.summaryLogPreface, true);
+        this.verboseLogger = LoggingServer.createLogger(this.verboseLogPreface, this.verboseLogPreface, true);
+        int httpPort = this.myPort + 3;
         this.httpServer = HttpServer.create(new InetSocketAddress(httpPort), 0);
         createSummaryLogContext(this.httpServer);
         createVerboseContext(this.httpServer);
@@ -124,16 +128,26 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             if (!exchange.getRequestMethod().equals("GET")) {
                 exchange.sendResponseHeaders(405, -1);
                 exchange.close();
+                return;
             }
 
-            String logFileName = this.serverLogger.getName();
-            File logFile = new File(logFileName);
+            String fileName = summaryLogPreface + "-Log.txt";
+            File logsDir = findLogsDirContainingFile(fileName);
+
+            if (logsDir == null) {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+
+            File logFile = new File(logsDir, fileName);
 
             if (!logFile.exists()) {
                 byte[] response = "Summary log file not found".getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(404, response.length);
                 exchange.getResponseBody().write(response);
                 exchange.close();
+                return;
             }
 
             byte[] summaryLogs = Files.readAllBytes(logFile.toPath());
@@ -150,9 +164,16 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                 exchange.close();
             }
 
-            String logFileName = this.verboseLogger.getName();
-            File logFile = new File(logFileName);
+            String fileName = verboseLogPreface + "-Log.txt";
+            File logsDir = findLogsDirContainingFile(fileName);
 
+            if (logsDir == null) {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+
+            File logFile = new File(logsDir, fileName);
             if (!logFile.exists()) {
                 byte[] response = "Verbose log file not found".getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(404, response.length);
@@ -165,6 +186,28 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             exchange.getResponseBody().write(verboseLogs);
             exchange.close();
         });
+    }
+
+    private File findLogsDirContainingFile(String fileName) {
+        File cwd = new File(".");
+        File[] dirs = cwd.listFiles(f ->
+                f.isDirectory() && f.getName().startsWith("logs-")
+        );
+
+        if (dirs == null || dirs.length == 0) {
+            return null;
+        }
+
+        Arrays.sort(dirs, Comparator.comparingLong(File::lastModified).reversed());
+
+        for (File dir : dirs) {
+            File candidate = new File(dir, fileName);
+            if (candidate.exists() && candidate.isFile()) {
+                return dir;
+            }
+        }
+
+        return null;
     }
 
     @Override

@@ -44,6 +44,8 @@ public class RoundRobinLeader extends Thread{
     private final LinkedBlockingQueue<Message> workRequests = new LinkedBlockingQueue<>();
     private final ConcurrentHashMap<Long, byte[]> oldWork = new ConcurrentHashMap<>();
     private final LinkedBlockingQueue<AbstractMap.SimpleEntry<Long, byte[]>> responseQueue = new LinkedBlockingQueue<>();
+    private final ConcurrentHashMap<Long, CopyOnWriteArrayList<Long>> assignmentHistory = new ConcurrentHashMap<>();
+    private Thread finishRequestThread;
 
     public RoundRobinLeader(PeerServer parentServer, ConcurrentHashMap<Long, InetSocketAddress> peerIDtoAddress, CopyOnWriteArrayList<Long> followersById, long gatewayId) {
         if (parentServer == null) { throw new IllegalArgumentException("ParentServer can't be null"); }
@@ -118,7 +120,7 @@ public class RoundRobinLeader extends Thread{
                 }
             }
         };
-        Thread finishRequestThread = new Thread(finishRequests);
+        finishRequestThread = new Thread(finishRequests);
         finishRequestThread.setDaemon(true);
         finishRequestThread.setName("RRL-FinishRequest-Thread-" + this.parentServer.getServerId());
         return finishRequestThread;
@@ -244,6 +246,9 @@ public class RoundRobinLeader extends Thread{
 
 
             private boolean connectAndWorkWithFollower(InetSocketAddress workerAddress, long nextServerId) {
+                assignmentHistory
+                        .computeIfAbsent(requestId, id -> new CopyOnWriteArrayList<>())
+                        .add(nextServerId);
                 //System.out.println("Connecting to follower " + nextServerId);
                 try(Socket clientSocket = new Socket(workerAddress.getHostString(), workerAddress.getPort() + 2)) {
                     //System.out.println("Connection established");
@@ -352,6 +357,8 @@ public class RoundRobinLeader extends Thread{
         if (this.tcpServer != null) {
             this.tcpServer.shutdown();
         }
+
+        this.finishRequestThread.interrupt();
 
         this.threadPool.shutdown();
 

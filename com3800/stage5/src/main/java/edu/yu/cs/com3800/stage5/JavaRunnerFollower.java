@@ -95,8 +95,8 @@ public class JavaRunnerFollower extends Thread{
                     }
                     requestId = workRequest.getRequestID();
                     this.logger.log(Level.FINER, "Parsed work request " + requestId + " from master");
-                    code = new String(workRequest.getMessageContents());
-                    codeInputStream = new ByteArrayInputStream(code.getBytes());
+                    byte[] srcBytes = workRequest.getMessageContents();
+                    codeInputStream = new ByteArrayInputStream(srcBytes);
 
                     //System.out.println("Follower " + this.parentServer.getServerId() + " now executing work-" + requestId);
 
