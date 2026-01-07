@@ -16,7 +16,7 @@ echo
 echo "== Step 1: mvn test =="
 cd "$SCRIPT_DIR"
 mvn clean compile
-#mvn -q test
+mvn -q test
 echo "mvn test: OK"
 echo
 
