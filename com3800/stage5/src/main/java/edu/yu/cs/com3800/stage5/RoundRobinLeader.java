@@ -5,6 +5,7 @@ import edu.yu.cs.com3800.Message;
 import edu.yu.cs.com3800.PeerServer;
 import edu.yu.cs.com3800.Util;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -77,7 +78,7 @@ public class RoundRobinLeader extends Thread{
         this.tcpServer.start();
 
         if (this.parentServer.getPeerEpoch() > 0) {
-            System.out.println("[RRL-" + this.parentServer.getServerId() + "]: New leader getting old work");
+            //System.out.println("[RRL-" + this.parentServer.getServerId() + "]: New leader getting old work");
             getOldWorkFromFollowers(this.oldWork);
         }
         readyForWork.countDown();
@@ -109,8 +110,7 @@ public class RoundRobinLeader extends Thread{
                             pendingResponses.computeIfAbsent(requestId, id -> new CompletableFuture<>());
                     completableFuture.complete(responseBytes);
                     pendingResponses.remove(requestId);
-                    System.out.println("RRL completed req " + requestId);
-
+                    //System.out.println("RRL completed req " + requestId);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     shutdown();
@@ -125,6 +125,7 @@ public class RoundRobinLeader extends Thread{
     }
 
     private void getOldWorkFromFollowers(ConcurrentHashMap<Long, byte[]> oldWork) {
+        this.logger.log(Level.FINE, "Requesting old work from followers");
         this.followersById.forEach(serverId -> {
             if (serverId == this.gatewayId) {
                 return;
@@ -139,30 +140,31 @@ public class RoundRobinLeader extends Thread{
             this.threadPool.submit(new Runnable() {
                 @Override
                 public void run() {
-                    System.out.println("[RRL-" + parentServer.getServerId() + "]: Sending old work request to follower " + serverId);
+                    //System.out.println("[RRL-" + parentServer.getServerId() + "]: Sending old work request to follower " + serverId);
                     try(Socket clientSocket = new Socket(follower.getHostString(), follower.getPort() + 2)) {
                         try {
-                            System.out.println("[RRL-" + parentServer.getServerId() + "]: Connection established with follower " + serverId + ". Attempting send");
-                            logger.log(Level.FINE, "Connection with follower established. Getting completed work");
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: Connection established with follower " + serverId + ". Attempting send");
+                            logger.log(Level.FINE, "Connection with follower " + serverId + " established. Getting completed work");
                             OutputStream outputStream = clientSocket.getOutputStream();
                             outputStream.write(requestOldWorkMessage.getNetworkPayload());
                             outputStream.flush();
                             clientSocket.shutdownOutput();
-                            System.out.println("[RRL-" + parentServer.getServerId() + "]: Send success");
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: Send success");
                         } catch (IOException e) {
-                            System.out.println("[RRL-" + parentServer.getServerId() + "]: error connecting to follower " + serverId);
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: error connecting to follower " + serverId);
                         }
 
-                        try {System.out.println("[RRL-" + parentServer.getServerId() + "]: Getting response from follower " + serverId);
+                        try {
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: Getting response from follower " + serverId);
                             InputStream inputStream = clientSocket.getInputStream();
                             byte[] response = inputStream.readAllBytes();
-                            System.out.println("[RRL-" + parentServer.getServerId() + "]: received response from follower " + serverId + ". Completing old work");
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: received response from follower " + serverId + ". Completing old work");
                             handleOldWork(response);
                         } catch (IOException e) {
-                            System.out.println("[RRL-" + parentServer.getServerId() + "]: Error receiving old work from follower " + serverId);
+                            //System.out.println("[RRL-" + parentServer.getServerId() + "]: Error receiving old work from follower " + serverId);
                         }
                     } catch (IOException e) {
-                        System.out.println("[RRL-" + parentServer.getServerId() + "]: Client socket error communicating with follower " + serverId);
+                        //System.out.println("[RRL-" + parentServer.getServerId() + "]: Client socket error communicating with follower " + serverId);
                         return;
                         // error comm with follower \_o_/
                         //                            |
@@ -174,15 +176,19 @@ public class RoundRobinLeader extends Thread{
                     ByteBuffer buffer = ByteBuffer.wrap(response);
                     int numWork = buffer.getInt();
                     if (numWork == 0) {
-                        System.out.println("[RRL-" + parentServer.getServerId() + "]: No work from " + serverId);
+                        //System.out.println("[RRL-" + parentServer.getServerId() + "]: No work from " + serverId);
+                        logger.log(Level.FINE, "Follower " + serverId + " had no completed work");
                         return;
                     }
                     if (numWork == 1) {
-                        System.out.println("[RRL-" + parentServer.getServerId() + "]: Follower " + serverId + " has old work. Updating responses");
+                        //System.out.println("[RRL-" + parentServer.getServerId() + "]: Follower " + serverId + " has old work. Updating responses");
+                        logger.log(Level.FINE, "Follower " + serverId + " sent completed work. Updating responses");
+
                         int statusCode = buffer.getInt();
                         byte[] workResponse = new byte[response.length - 8];
                         updatePendingResponses(buffer, workResponse, statusCode);
                     } else {
+                        logger.log(Level.FINE, "Follower " + serverId + " sent completed work. Updating responses");
                         for (int i = 0; i < numWork; i++) {
                             int lenOfWork = buffer.getInt();
                             int statusCode = buffer.getInt();
@@ -211,7 +217,7 @@ public class RoundRobinLeader extends Thread{
         Message workMessage = this.workRequests.take();
         final long requestId = workMessage.getRequestID();
         this.logger.log(Level.FINE, "Received next work request from TCP server");
-        System.out.println("Received next work request. Handing off to next follower");
+        //System.out.println("Received next work request. Handing off to next follower");
         this.threadPool.submit(new Runnable() {
             @Override
             public void run() {
@@ -238,15 +244,15 @@ public class RoundRobinLeader extends Thread{
 
 
             private boolean connectAndWorkWithFollower(InetSocketAddress workerAddress, long nextServerId) {
-                System.out.println("Connecting to follower " + nextServerId);
+                //System.out.println("Connecting to follower " + nextServerId);
                 try(Socket clientSocket = new Socket(workerAddress.getHostString(), workerAddress.getPort() + 2)) {
-                    System.out.println("Connection established");
-                    logger.log(Level.FINE, "Connection with follower established. Sending work request");
+                    //System.out.println("Connection established");
+                    logger.log(Level.FINE, "Connection with follower " + nextServerId + " established. Sending work request");
                     OutputStream outputStream = clientSocket.getOutputStream();
                     outputStream.write(workMessage.getNetworkPayload());
                     outputStream.flush();
                     clientSocket.shutdownOutput();
-                    System.out.println("Sent work " + workMessage.getRequestID() + " to server-" + nextServerId);
+                    //System.out.println("Sent work " + workMessage.getRequestID() + " to server-" + nextServerId);
                     //System.out.println("Sent work to server-" + nextServerId);
                     logger.log(Level.FINE, "Work request " + workMessage.getRequestID() + " sent to follower. Waiting for response");
                     //long sent = System.currentTimeMillis();
@@ -262,7 +268,7 @@ public class RoundRobinLeader extends Thread{
                         throw new IOException("Partial response from follower");
                     }
                     ByteBuffer buffer = ByteBuffer.wrap(response);
-                    buffer.getInt(); //moves pointer
+                    int statusCode = buffer.getInt(); //moves pointer
                     byte[] messageBytes = new byte[response.length - 4];
                     buffer.get(messageBytes);
                     Message responseMessage;
@@ -275,16 +281,14 @@ public class RoundRobinLeader extends Thread{
 
                     //System.out.println("Completing responseFuture for TCPServer worker thread waiting");
                     long requestId = responseMessage.getRequestID();
-                    //CompletableFuture<byte[]> responseFuture = pendingResponses.get(requestId);
-                    /*ResponseQueue responseQueue =
-                            pendingResponses.computeIfAbsent(
-                                    requestId,
-                                    id -> new ResponseQueue()
-                            );*/
+                    InetSocketAddress gatewayAddress = peerIDtoAddress.get(gatewayId);
+                    Message msgFromRRLToTCPServer = new Message(Message.MessageType.COMPLETED_WORK, responseMessage.getMessageContents(), parentServer.getAddress().getHostString(), parentServer.getUdpPort() + 2,
+                            gatewayAddress.getHostString(), gatewayAddress.getPort() + 2, requestId, responseMessage.getErrorOccurred());
+                    ByteBuffer newMsgBuffer = ByteBuffer.allocate(4 + msgFromRRLToTCPServer.getNetworkPayload().length);
+                    newMsgBuffer.putInt(statusCode);
+                    newMsgBuffer.put(msgFromRRLToTCPServer.getNetworkPayload());
 
-                    logger.log(Level.FINE, "Delivering response for request " + requestId + " from follower " + nextServerId);
-
-                    responseQueue.offer(new AbstractMap.SimpleEntry<>(requestId, response));
+                    responseQueue.offer(new AbstractMap.SimpleEntry<>(requestId, newMsgBuffer.array()));
 
 
 

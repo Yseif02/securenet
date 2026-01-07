@@ -36,7 +36,7 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     private final ConcurrentHashMap<String, Long> peerAddressesToId = new ConcurrentHashMap<>();
     //private final LeaderElection leaderElection;
     protected Logger serverLogger;
-    private int numberOfObservers;
+    private final int numberOfObservers;
     protected LeaderElection leaderElection;
 
 
@@ -45,8 +45,8 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     private JavaRunnerFollower javaRunnerFollower;
 
     //stage5
-    static final int GOSSIP = 1000;
-    static final int FAIL = GOSSIP * 10;
+    static final int GOSSIP = 500;
+    static final int FAIL = GOSSIP * 20;
     static final int CLEANUP = FAIL * 2;
 
     protected final LinkedBlockingQueue<Long> processFailedNodes = new LinkedBlockingQueue<>();
@@ -56,17 +56,18 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     // map of each servers last known heartbeat sequence
     protected final ConcurrentHashMap<Long, Long> heartbeatSequences = new ConcurrentHashMap<>();
     protected final ConcurrentHashMap<Long, Long> cleanupMap = new ConcurrentHashMap<>();
+    protected final ConcurrentHashMap<Long, Long> timeOfFailedNodes = new ConcurrentHashMap<>();
     protected CopyOnWriteArrayList<Long> followersIfLeader;
     protected ConcurrentHashMap<Long, ServerState> knownStates;
-    private HttpServer httpServer;
+    private final HttpServer httpServer;
     //private long myHeartbeatSeq;
     protected Logger summaryLogger;
     protected Logger verboseLogger;
-    private long gatewayId;
-    private AtomicInteger failedObservers = new AtomicInteger(0);
-    private LinkedBlockingQueue<Message> gossipMessages;
-    private AtomicLong timeOfLastElection = new AtomicLong(0);
-    LinkedBlockingQueue<byte[]> finishedWork = null;
+    private final long gatewayId;
+    private final AtomicInteger failedObservers = new AtomicInteger(0);
+    protected LinkedBlockingQueue<Message> gossipMessages;
+    protected final AtomicLong timeOfLastElection = new AtomicLong(0);
+    private LinkedBlockingQueue<byte[]> finishedWork = null;
 
 
     public PeerServerImpl(int udpPort, long peerEpoch, Long serverID, Map<Long, InetSocketAddress>  peerIDtoAddress, Long gatewayID, int numberOfObservers) throws IOException {
@@ -86,18 +87,11 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         long now = System.currentTimeMillis();
         this.heartbeatSequences.put(this.id, 0L);
         this.allPeers = new CopyOnWriteArrayList<>();
+
         this.peerIDtoAddress.forEach((id,address) -> {
             this.allPeers.add(id);
-            //System.out.println("added " + id + " to all peers");
-
             this.heartbeats.put(id, now);
-            /*System.out.println("added " + id + "with time 0L" + " to heartbeats");
-            System.out.println(this.heartbeats.containsKey(id));*/
-
             this.heartbeatSequences.put(id, 0L);
-            /*System.out.println("added " + id + "with seq num 0L" + " to heartbeat seqs");
-            System.out.println(this.heartbeatSequences.containsKey(id));*/
-
             this.peerAddressesToId.put(address.getHostString() + ":" + address.getPort(), id);
         });
         this.allPeers.remove(this.id);
@@ -202,7 +196,6 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                             this.followersIfLeader = getFollowers();
                         }
                         if (this.roundRobinLeader == null) {
-                            //System.out.println("PSI: followers size: " + this.followersIfLeader.size());
                             this.serverLogger.log(Level.FINE, "\n\n\n\n Server in leading state");
                             this.roundRobinLeader = new RoundRobinLeader(this, this.peerIDtoAddress, this.followersIfLeader, this.gatewayId);
                             this.roundRobinLeader.setDaemon(true);
@@ -296,7 +289,7 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                             continue;
                         }
                         long seqNum = buffer.getLong();
-                        this.verboseLogger.log(Level.FINE, "Received gossip message from server " + senderId + ".\tSequence number: " + seqNum + ".\tTime received: " + now);
+                        //this.verboseLogger.log(Level.FINE, "Received gossip message from server " + senderId + ".\tSequence number: " + seqNum + ".\tTime received: " + now);
                         gossipMessages.offer(message);
                     }
                 } catch (InterruptedException e) {
@@ -322,9 +315,6 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         }
 
         this.serverLogger.log(Level.FINE, "Found leader: " + newLeader.getProposedLeaderID());
-        //System.out.println("Server " + this.id + " found leader " + newLeader.getProposedLeaderID());
-        //this.setCurrentLeader(newLeader);
-        //this.serverLogger.log(Level.FINE, "Found leader: " + getCurrentLeader().getProposedLeaderID());
         this.gossipMessages.clear();
         this.timeOfLastElection.set(System.currentTimeMillis());
         if (this.knownStates == null) {
@@ -394,20 +384,14 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                   break;
               }
 
-              if (serverId.equals(this.id)) {
-                  return;
-              }
 
-              if (this.failedNodes.contains(serverId)) {
-                  continue;
-              }
               if (this.leaderElection.getServerStates().get(serverId) == null) {
                   this.failedObservers.getAndIncrement();
               }
               this.failedNodes.add(serverId);
+              this.timeOfFailedNodes.put(serverId, System.currentTimeMillis());
               this.allPeers.remove(serverId);
-              this.summaryLogger.log(Level.SEVERE, "[" + this.id + "]: no heartbeat from server " + serverId + " - SERVER FAILED");
-              System.out.println("[" + this.id + "] no heartbeat from server " + serverId + " - SERVER FAILED");
+
 
               //leader went down
               Vote leader = this.currentLeader;
@@ -419,12 +403,7 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                   ServerState oldState = this.getPeerState();
                   this.peerEpoch++;
                   this.setPeerState(ServerState.LOOKING);
-                  //System.out.println("New epoch " + this.peerEpoch);
                   this.leaderElection = new LeaderElection(this, electionMessages, this.serverLogger);
-                  //System.out.println("Server " + this.id + " failing leader: " + serverId);
-                  //System.out.println("Set state to looking and starting new election");
-                  this.summaryLogger.log(Level.FINE, "[" + this.id + "] switching from " + oldState + " to " + this.getPeerState());
-                  System.out.println("[" + this.id + "] switching from " + oldState + " to " + this.getPeerState());
               } else if (this.id == this.currentLeader.getProposedLeaderID()) {
                   this.followersIfLeader.remove(serverId);
               }
@@ -454,20 +433,19 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
                         continue;
                     }
 
+
                     ByteBuffer buffer = ByteBuffer.wrap(message.getMessageContents());
                     long senderId = buffer.getLong();
                     if (this.isPeerDead(senderId)) {
                         continue;
                     }
 
-                    Map<Long, Long> allHeartbeats = getHeartbeatMapFromPayload(message.getMessageContents());
+                    ConcurrentHashMap<Long, Long> allHeartbeats = getHeartbeatMapFromPayload(message.getMessageContents());
+                    logMessage(message, allHeartbeats, senderId);
 
-                    allHeartbeats.forEach((serverId,seqNum) -> {
+                    allHeartbeats.forEach(1L, (serverId,seqNum) -> {
                         updateHeartbeats(serverId, seqNum, senderId);
-
                     });
-                    /*this.summaryLogger.log(Level.FINE, this.id + ": updated " + senderId + "'s heartbeat sequence to " +
-                            heartbeatSeq + " based on message from " + senderId + " at node time " + System.currentTimeMillis());*/
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -477,6 +455,15 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         Thread updateHeartbeatsThread = new Thread(updateHeartbeats);
         updateHeartbeatsThread.setDaemon(true);
         return updateHeartbeatsThread;
+    }
+
+    private void logMessage(Message message, Map<Long, Long> allHeartbeats, long senderId) {
+        String logMsg =
+                "Sender Id: " + senderId + "\n" +
+                "Message contents: " + message.toString() + "\n"+
+                "Heartbeat map: " + allHeartbeats.toString() + "\n" +
+                "Time received: " + System.currentTimeMillis() + "\n";
+        this.verboseLogger.log(Level.FINE, logMsg);
     }
 
     private void updateHeartbeats(Long serverId, Long seqNum, long senderId) {
@@ -509,13 +496,12 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
             if (currentSeqNum < seqNum) {
                 this.heartbeatSequences.put(serverId, seqNum);
                 this.heartbeats.put(serverId, now);
-                this.summaryLogger.log(Level.FINE, this.id + ": updated " + serverId + "'s heartbeat sequence to " +
+                this.summaryLogger.log(Level.FINE, "[" + this.id + "]: updated " + serverId + "'s heartbeat sequence to " +
                         seqNum + " based on message from " + senderId + " at node time " + now);
             }
         // heartbeat received out of time frame. Could be dead
         } else {
             boolean inCleanup = this.cleanupMap.containsKey(serverId);
-            // is already in cleanup and last heartbeat was more than cleanup time ago. Node is dead
             reportFailedPeer(serverId);
             if (inCleanup && (now - oldHeartbeat > CLEANUP)) {
                 long nowL = System.currentTimeMillis();
@@ -533,13 +519,13 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
         }
     }
 
-    private Map<Long, Long> getHeartbeatMapFromPayload(byte[] messageContents) {
+    private ConcurrentHashMap<Long, Long> getHeartbeatMapFromPayload(byte[] messageContents) {
         ByteBuffer buffer = ByteBuffer.wrap(messageContents);
         //move needle over
         long senderId = buffer.getLong();
         //System.out.println("building map sent from " + senderId + " to " + this.id);
         int count = buffer.getInt();
-        Map<Long,Long> heartbeatMap = new HashMap<>();
+        ConcurrentHashMap<Long,Long> heartbeatMap = new ConcurrentHashMap<>();
         for (int i = 0; i < count; i++) {
             long serverId = buffer.getLong();
             long seqNum = buffer.getLong();
@@ -666,7 +652,10 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
 
     @Override
     public void setPeerState(ServerState newState) {
+        ServerState oldState = this.state;
         this.state = newState;
+        this.summaryLogger.log(Level.FINE, "[" + this.id + "]: switching from " + oldState + " to " + this.getPeerState());
+        System.out.println("[" + this.id + "]: switching from " + oldState + " to " + this.getPeerState());
     }
 
     @Override
@@ -681,7 +670,6 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
 
     @Override
     public InetSocketAddress getAddress() {
-        //System.out.println(this.myAddress);
         return this.myAddress;
     }
 
@@ -729,6 +717,12 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     public void reportFailedPeer(long peerID){
         if (peerID == this.id) {
             return;
+        }
+        if (!this.failedNodes.contains(peerID)) {
+            this.knownStates.remove(peerID);
+            this.failedNodes.add(peerID);
+            this.summaryLogger.log(Level.SEVERE, "[" + this.id + "]: no heartbeat from server " + peerID + " - SERVER FAILED");
+            System.out.println("[" + this.id + "]: no heartbeat from server " + peerID + " - SERVER FAILED");
         }
         this.processFailedNodes.offer(peerID);
     }

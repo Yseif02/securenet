@@ -34,14 +34,15 @@ public class GatewayPeerServerImpl extends PeerServerImpl implements Runnable {
     public void run() {
         startThreads();
         while (!this.shutdown && !this.isInterrupted()) {
-            if (this.currentLeader == null) {
-                this.currentLeader = this.leaderElection.lookForLeader();
-            }
-            try {
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                shutdown();
-                Thread.currentThread().interrupt();
+            Vote v = this.leaderElection.lookForLeader();
+            if (v != null && !this.isPeerDead(v.getProposedLeaderID())) {
+                this.currentLeader = v;
+
+                if (this.knownStates == null) {
+                    this.knownStates = this.leaderElection.getServerStates();
+                }
+
+                this.timeOfLastElection.set(System.currentTimeMillis());
             }
         }
     }
@@ -79,7 +80,10 @@ public class GatewayPeerServerImpl extends PeerServerImpl implements Runnable {
     @Override
     public void setPeerState(ServerState newState) {
         if (newState == ServerState.OBSERVER) {
+            ServerState oldState = this.state;
             this.state = ServerState.OBSERVER;
+            this.summaryLogger.log(Level.FINE, "[" + this.getPeerServer().getServerId() + "]: switching from " + oldState + " to " + this.getPeerState());
+            System.out.println("[" + this.getPeerServer().getServerId() + "]: switching from " + oldState + " to " + this.getPeerState());
         }
     }
 }

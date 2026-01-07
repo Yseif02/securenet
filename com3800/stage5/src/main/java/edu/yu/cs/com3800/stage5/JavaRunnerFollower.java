@@ -47,7 +47,7 @@ public class JavaRunnerFollower extends Thread{
         this.logger.log(Level.FINE, "Initialized Java runner");
         try {
             this.serverSocket = new ServerSocket(this.parentServer.getUdpPort() + 2);
-            System.out.println("Follower " + this.parentServer.getServerId() + " waiting for work");
+            //System.out.println("Follower " + this.parentServer.getServerId() + " waiting for work");
             this.logger.log(Level.FINE, "Follower listening on TCP port " + serverSocket.getLocalPort());
             while (!this.shutdown && !this.isInterrupted()) {
                 //Socket client = null;
@@ -62,7 +62,7 @@ public class JavaRunnerFollower extends Thread{
                 try (Socket client = serverSocket.accept();) {
                     //client
                     this.logger.log(Level.FINE, "Accepted connection from " + client.getInetAddress().getHostName() + ":" + client.getPort());
-                    System.out.println("Accepted connection from leader");
+                    //System.out.println("Accepted connection from leader");
                     InputStream inputStream = client.getInputStream();
                     request = inputStream.readAllBytes();
                     /*try {
@@ -79,11 +79,17 @@ public class JavaRunnerFollower extends Thread{
                         continue;
                     }
 
-                    workRequest = new Message(request);
+                    try {
+                        workRequest = new Message(request);
+                    } catch (Exception e) {
+                        this.logger.log(Level.WARNING, "[JRF-"+ this.parentServer.getServerId() + "]: Received malformed message, ignoring.");
+                        continue;
+                    }
+
                     // new leader
                     if (workRequest.getMessageType().equals(Message.MessageType.NEW_LEADER_GETTING_LAST_WORK)) {
 
-                        System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Received new leader work request. Sending completed work");
+                        //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Received new leader work request. Sending completed work");
                         sendOldWorkToLeader(client, workRequest);
                         continue;
                     }
@@ -92,7 +98,7 @@ public class JavaRunnerFollower extends Thread{
                     code = new String(workRequest.getMessageContents());
                     codeInputStream = new ByteArrayInputStream(code.getBytes());
 
-                    System.out.println("Follower " + this.parentServer.getServerId() + " now executing work-" + requestId);
+                    //System.out.println("Follower " + this.parentServer.getServerId() + " now executing work-" + requestId);
 
                     long start = System.currentTimeMillis();
                     String runnerResponse = null;
@@ -106,15 +112,15 @@ public class JavaRunnerFollower extends Thread{
                             continue;
                         }
                     } catch (IOException | ReflectiveOperationException | IllegalArgumentException e) {
-                        System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error in code while executing code. Queueing response for leader");
+                        //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error in code while executing code. Queueing response for leader");
                         byte[] responsePayload = getErrorResponse(e, client, requestId);
                         sendErrorToLeaderOrQueue(client, requestId, responsePayload);
                         continue;
                     }
 
-                    System.out.println("Follower " + this.parentServer.getServerId() + " ran work-" + requestId +
-                            " in " + (System.currentTimeMillis() - start) + "ms");
-                    System.out.println("Code executed normally");
+                    //System.out.println("Follower " + this.parentServer.getServerId() + " ran work-" + requestId +
+                    //        " in " + (System.currentTimeMillis() - start) + "ms");
+                    //System.out.println("Code executed normally");
                     response = new Message(Message.MessageType.COMPLETED_WORK, runnerResponse.getBytes(), this.parentServer.getAddress().getHostString(), this.parentServer.getUdpPort() + 2,
                             client.getInetAddress().getHostName(), client.getPort(), requestId);
                     finishedExecuting = true;
@@ -135,10 +141,10 @@ public class JavaRunnerFollower extends Thread{
                         deadLeaderTimeout.start();
 
 
-                        System.out.println("Work done by server-" + this.parentServer.getServerId());
+                        //System.out.println("Work done by server-" + this.parentServer.getServerId());
                         this.logger.log(Level.FINE, "Response set to leader. \nWaiting for next work");
                     } catch (IOException e) {
-                        System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Exception thrown while sending response for req" + requestId + " back to leader");
+                        //.println("[JRF-" + this.parentServer.getServerId() + "]: Exception thrown while sending response for req" + requestId + " back to leader");
                         this.logger.log(Level.WARNING, "Exception caught");
 
                         if (Thread.currentThread().isInterrupted() || this.shutdown) {
@@ -160,7 +166,7 @@ public class JavaRunnerFollower extends Thread{
                 }
             }
         } catch (IOException e) {
-            System.out.println("Server Socket error");
+            //System.out.println("Server Socket error");
             this.logger.log(Level.SEVERE, "IO error while connecting to ServerSocket");
             shutdown();
         } finally {
@@ -174,20 +180,20 @@ public class JavaRunnerFollower extends Thread{
         Thread pollLeaderThread = new Thread(() -> {
             try {
                 //poll leader periodically every half second for fail time
-                long until = System.currentTimeMillis() + 11000;
+                long until = System.currentTimeMillis() + 10000;
                 Vote leader = this.parentServer.getCurrentLeader();
                 if (leader == null) {
                     this.queuedCompletedWork.offer(responsePayload);
-                    System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Discovered dead leader within FAIL + 1 (10 Seconds + 1) since sending work " + requestId + " response. " +
-                            "Queuing completed work for new Leader");
+                    //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Discovered dead leader within FAIL + 1 (10 Seconds + 1) since sending work " + requestId + " response. " +
+                    //        "Queuing completed work for new Leader");
                     return;
                 }
                 while (System.currentTimeMillis() < until) {
                     Thread.sleep(500);
                     if (this.parentServer.isPeerDead(leader.getProposedLeaderID())) {
                         this.queuedCompletedWork.offer(responsePayload);
-                        System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Discovered dead leader within FAIL + 1 (10 Seconds + 1) since sending work " + requestId + " response. " +
-                                "Queuing completed work for new Leader");
+                        //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Discovered dead leader within FAIL + 1 (10 Seconds + 1) since sending work " + requestId + " response. " +
+                        //        "Queuing completed work for new Leader");
                         break;
                     }
                 }
@@ -215,12 +221,12 @@ public class JavaRunnerFollower extends Thread{
                 outputStream.flush();
                 client.shutdownOutput();
             } catch (IOException ignored) {}
-            System.out.println("[JRF-" + this.parentServer.getServerId() + "]: No old work sending 0 to leader");
+            //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: No old work sending 0 to leader");
             return;
         }
         int numOldWork = this.queuedCompletedWork.size();
         if (numOldWork == 1) {
-            System.out.println("[JRF-" + this.parentServer.getServerId() + "]: getting old work from completed response queue");
+            //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: getting old work from completed response queue");
             byte[] completedWork = null;
             try {
                 completedWork = this.queuedCompletedWork.take();
@@ -228,23 +234,23 @@ public class JavaRunnerFollower extends Thread{
                 Thread.currentThread().interrupt();
                 return;
             }
-            System.out.println("[JRF-" + this.parentServer.getServerId() + "]: got old work from queue");
+            //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: got old work from queue");
             ByteBuffer buffer = ByteBuffer.allocate(4 + completedWork.length);
             buffer.putInt(1);
             buffer.put(completedWork);
 
             OutputStream outputStream = null;
             try {
-                System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Attempting to send response to leader");
+                //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Attempting to send response to leader");
                 outputStream = client.getOutputStream();
                 outputStream.write(buffer.array());
                 outputStream.flush();
                 client.shutdownOutput();
                 completedWork = null;
                 this.queuedCompletedWork.clear();
-                System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Sent Work to leader");
+                //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Sent Work to leader");
             } catch (IOException e) {
-                System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error connecting to leader to send response. Queueing completed work for next leader");
+                //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error connecting to leader to send response. Queueing completed work for next leader");
                 // error sending old work to leader. requeue for next leader
                 this.queuedCompletedWork.offer(completedWork);
             }
@@ -282,7 +288,7 @@ public class JavaRunnerFollower extends Thread{
     //send the error to the leader or add to the work queue if IOE during comm with leader
     private void sendErrorToLeaderOrQueue(Socket client, long requestId, byte[] responsePayload) {
         try {
-            System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Attempting to send response to leader");
+            //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Attempting to send response to leader");
             this.logger.log(Level.WARNING, "Sending Exception response back to leader");
             OutputStream outputStream = client.getOutputStream();
             outputStream.write(responsePayload);
@@ -294,7 +300,7 @@ public class JavaRunnerFollower extends Thread{
             this.logger.log(Level.FINE, "Response sent to leader");
         } catch (IOException ex) {
             // error during tcp comm with leader. queue result
-            System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error connecting to leader to send response. Queueing completed work for next leader");
+            //System.out.println("[JRF-" + this.parentServer.getServerId() + "]: Error connecting to leader to send response. Queueing completed work for next leader");
             this.queuedCompletedWork.offer(responsePayload);
             this.logger.log(Level.SEVERE, "IO Error sending error work " + requestId + " response back to leader", ex);
         }

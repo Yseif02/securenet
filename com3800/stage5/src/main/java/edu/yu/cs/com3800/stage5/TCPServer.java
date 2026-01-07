@@ -64,7 +64,7 @@ public class TCPServer extends Thread implements LoggingServer {
             while (!this.shutdown && !Thread.currentThread().isInterrupted()) {
                 try {
                     Socket clientSocket = serverSocket.accept();
-                    System.out.println("Accepted request from Gateway. Handing off to pool worker");
+                    //System.out.println("Accepted request from Gateway. Handing off to pool worker");
                     threadPool.submit(() -> handleClient(clientSocket));
                 } catch (IOException e) {
                    if (this.shutdown) {
@@ -103,7 +103,7 @@ public class TCPServer extends Thread implements LoggingServer {
                     outputStream.write(responseBytes);
                     outputStream.flush();
                     this.mainTcpServerLogger.log(Level.FINE, "Response sent back to the gateway");
-                    System.out.println("Work was sent by previous leader");
+                    //System.out.println("Work was sent by previous leader");
                     return;
                 }
             }
@@ -117,18 +117,14 @@ public class TCPServer extends Thread implements LoggingServer {
             }
            CompletableFuture<byte[]> futureResponse =
                     pendingResponses.computeIfAbsent(requestId, id -> new CompletableFuture<>());
-            System.out.println("Adding request-" + requestId + " to work queue");
+            //System.out.println("Adding request-" + requestId + " to work queue");
             this.workRequests.put(workRequest);
             this.mainTcpServerLogger.log(Level.FINE, "Work sent to RoundRobinLeader.\nWaiting for response...");
 
             try {
-                System.out.println("Waiting on response from RRL");
+                //System.out.println("Waiting on response from RRL");
                 byte[] response = futureResponse.get();
-                System.out.println("TCPServer Received response from RRL");
-                ByteBuffer responseBuffer = ByteBuffer.wrap(response);
-                int statusCode = responseBuffer.getInt();
-                byte[] messageBytes = new byte[response.length - 4];
-                responseBuffer.get(messageBytes);
+                //System.out.println("TCPServer Received response from RRL");
 
                 this.mainTcpServerLogger.log(Level.FINE, "Received response, (" + response.length + ") bytes.\nNow sending response to gateway");
                 OutputStream outputStream = clientSocket.getOutputStream();
@@ -148,7 +144,7 @@ public class TCPServer extends Thread implements LoggingServer {
 
             }
         } catch (IOException e) {
-            System.out.println("Error in TCPServer: Socket error between gateway request and TCPServer");
+            //System.out.println("Error in TCPServer: Socket error between gateway request and TCPServer");
             this.mainTcpServerLogger.log(Level.WARNING, "TCP IO error for request " + requestId, e);
 
         } catch (InterruptedException e) {
