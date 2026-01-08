@@ -157,7 +157,7 @@ echo "Killing follower serverId=$KILLED_PEER_ID (PID=$KILLED_PID)"
 kill -9 "$KILLED_PID"
 
 echo "Waiting for failure detection ..."
-sleep 15
+sleep 20
 
 echo
 echo "Cluster state after killing follower $KILLED_PEER_ID:"
