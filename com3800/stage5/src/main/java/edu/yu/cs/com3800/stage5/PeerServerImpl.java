@@ -189,9 +189,9 @@ public class PeerServerImpl extends Thread implements PeerServer, LoggingServer 
     }
 
     private File findLogsDirContainingFile(String fileName) {
-        File cwd = new File(".");
-        File[] dirs = cwd.listFiles(f ->
-                f.isDirectory() && f.getName().startsWith("logs-")
+        File file = new File(".");
+        File[] dirs = file.listFiles(nestedFile ->
+                nestedFile.isDirectory() && nestedFile.getName().startsWith("logs-")
         );
 
         if (dirs == null || dirs.length == 0) {

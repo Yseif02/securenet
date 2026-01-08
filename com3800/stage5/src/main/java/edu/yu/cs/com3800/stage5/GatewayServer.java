@@ -177,7 +177,7 @@ public class GatewayServer extends Thread implements LoggingServer {
             buffer.put(requestBytes);
             //8 bytes for reqId + request
             //System.out.println("Gateway handling request-" + requestId);
-            handleRequest(exchange, buffer.array(), requestId);
+            handleRequest(exchange, buffer.array(), requestId, requestBytes);
         });
     }
 
@@ -284,7 +284,7 @@ public class GatewayServer extends Thread implements LoggingServer {
     }
 
 
-    private void handleRequest(HttpExchange exchange, byte[] requestBytes, long requestId) {
+    private void handleRequest(HttpExchange exchange, byte[] requestBytes, long requestId, byte[] fullRequestNoReqId) {
         this.logger.log(FINE, "Response not cached. Sending request to TCP server");
         CompletableFuture<byte[]> responseFuture = new CompletableFuture<>();
         this.clientRequests.put(requestId, responseFuture);
@@ -391,27 +391,31 @@ public class GatewayServer extends Thread implements LoggingServer {
         this.logger.log(FINE, "Gateway completed future for req " + requestId);
 
         //add to cache
-        addToCache(requestBytes, fullResponse);
+        byte[] clientRequest = new byte[requestBytes.length - 8];
+        ByteBuffer.wrap(requestBytes).getLong();
+        ByteBuffer.wrap(requestBytes, 8, clientRequest.length).get(clientRequest);
+
+        addToCache(clientRequest, fullResponse);
 
     }
 
-    private void addToCache(byte[] requestBytes, byte[] fullResponse) {
-        try {
-            byte[] clientRequest = new byte[requestBytes.length - 8];
-            ByteBuffer clientReqBuf = ByteBuffer.wrap(requestBytes);
-            clientReqBuf.getLong();
-            clientReqBuf.get(clientRequest);
 
+    private void addToCache(byte[] clientRequest, byte[] fullResponse) {
+        try {
             ByteBuffer responseBuffer = ByteBuffer.wrap(fullResponse);
             int statusCode = responseBuffer.getInt();
             byte[] body = new byte[fullResponse.length - 4];
             responseBuffer.get(body);
-            Message responseMsg = new Message(body);
-            String runnerResponse = new String(responseMsg.getMessageContents());
 
-            this.requestCache.put(Arrays.hashCode(clientRequest), new CachedResponse(statusCode, runnerResponse.getBytes(StandardCharsets.UTF_8)));
-            this.logger.log(FINE, "Cached requests-response");
-            //System.out.println("added to cache");
+            Message responseMsg = new Message(body);
+            byte[] runnerResponse = responseMsg.getMessageContents();
+
+            this.requestCache.put(
+                    Arrays.hashCode(clientRequest),
+                    new CachedResponse(statusCode, runnerResponse)
+            );
+
+            this.logger.log(FINE, "Cached request-response");
         } catch (Exception e) {
             this.logger.log(Level.WARNING, "Failed to cache response", e);
         }
