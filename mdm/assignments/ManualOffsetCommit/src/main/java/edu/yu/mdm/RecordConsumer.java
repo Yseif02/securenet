@@ -13,12 +13,12 @@ public class RecordConsumer implements Runnable{
     private static final String GROUP_ID = "no-auto-commit-application";
     private static final int BATCH_SIZE = 25;
 
-    private final String topic;
     private volatile boolean running;
     private final KafkaConsumer<String, String> consumer;
     private final AssignmentLogger logger;
     private final LinkedBlockingQueue<BatchInfo> batchQueue;
     private final LinkedBlockingQueue<Map<TopicPartition, OffsetAndMetadata>> commitQueue = new LinkedBlockingQueue<>();
+    private volatile boolean entryLogged = false;
 
 
     public RecordConsumer(String bootstrapServers, LinkedBlockingQueue<BatchInfo> batchQueue, String topic) {
@@ -32,9 +32,41 @@ public class RecordConsumer implements Runnable{
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, BATCH_SIZE);
 
-        this.topic = topic;
         this.consumer = new KafkaConsumer<>(properties);
-        this.consumer.subscribe(Collections.singletonList(topic));
+        consumer.subscribe(
+                Collections.singletonList(topic),
+                new ConsumerRebalanceListener() {
+
+                    @Override
+                    public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+
+                        Map<TopicPartition, OffsetAndMetadata> committed =
+                                consumer.committed(new HashSet<>(partitions));
+
+                        // REQUIRED LOG — must be exactly this format
+                        if (!entryLogged) {
+                            log(String.format(
+                                    "runConsumer At entry, the committed offset is %s",
+                                    committed
+                            ));
+                            entryLogged = true;
+                        }
+
+                        for (TopicPartition p : partitions) {
+                            OffsetAndMetadata meta = committed.get(p);
+
+                            if (meta != null) {
+                                consumer.seek(p, meta.offset());
+                            } else {
+                                consumer.seekToBeginning(Collections.singleton(p));
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onPartitionsRevoked(Collection<TopicPartition> partitions) {}
+                }
+        );
         this.batchQueue = batchQueue;
         this.running = true;
         this.logger = AssignmentLogger.getInstance();
@@ -47,7 +79,7 @@ public class RecordConsumer implements Runnable{
     public void run() {
         log("Starting runConsumer");
 
-        logCommitedOffset();
+        //logCommitedOffset();
 
         try {
             while (this.running && !Thread.currentThread().isInterrupted()) {
@@ -79,9 +111,20 @@ public class RecordConsumer implements Runnable{
         } catch (InterruptedException e) {
             log("runConsumer Consumer interrupted");
         } finally {
+            Map<TopicPartition, OffsetAndMetadata> offsets;
+            while ((offsets = this.commitQueue.poll()) != null) {
+                try {
+                    this.consumer.commitSync(offsets);
+                    log(String.format("runConsumer Final commit of offsets %s", offsets));
+                } catch (Exception e) {
+                    log("runConsumer Error in final commit: " + e.getMessage());
+                }
+            }
             if (this.consumer != null) {
                 try {
+                    Thread.interrupted();
                     this.consumer.close();
+                    log("runConsumer runConsumer closed correctly");
                 } catch (Exception e) {
                     log("runConsumer Error closing consumer: " + e.getMessage());
                 }
@@ -104,16 +147,20 @@ public class RecordConsumer implements Runnable{
 
     private void logCommitedOffset() {
         try {
-            Set<TopicPartition> assignment = this.consumer.assignment();
+            Set<TopicPartition> assignment;
 
-            if (assignment.isEmpty()) {
+            do {
                 this.consumer.poll(Duration.ofMillis(100));
                 assignment = this.consumer.assignment();
-            }
+            } while (assignment.isEmpty());
 
-            Map<TopicPartition, OffsetAndMetadata> committed = this.consumer.committed(assignment);
+            Map<TopicPartition, OffsetAndMetadata> committed =
+                    this.consumer.committed(assignment);
 
-            log(String.format("runConsumer At entry, the committed offset is %s", committed));
+            log(String.format(
+                    "runConsumer At entry, the committed offset is %s",
+                    committed
+            ));
         } catch (Exception e) {
             log("runConsumer Error getting committed offset: " + e.getMessage());
         }

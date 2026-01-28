@@ -6,6 +6,7 @@ import org.apache.kafka.common.TopicPartition;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class RecordProcessor implements Runnable{
     private final LinkedBlockingQueue<BatchInfo> batchQueue;
@@ -29,15 +30,21 @@ public class RecordProcessor implements Runnable{
         log(("Starting processRecords"));
         try {
             while (this.running && ! Thread.currentThread().isInterrupted()) {
-                BatchInfo batchInfo = batchQueue.take();
+                BatchInfo batchInfo = batchQueue.poll(100, TimeUnit.MILLISECONDS);
+                if (batchInfo == null) continue;
                 for (SalesRecord record : batchInfo.records()) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        log("processRecords Interrupted during batch processing");
+                        throw new InterruptedException("Interrupted during processing");
+                    }
                     processRecord(record);
                 }
-
                 this.consumer.commitBatch(batchInfo.offsetsToCommit());
             }
         } catch (InterruptedException e) {
             log("processRecords Processor interrupted");
+        } finally {
+            log("processRecords stopped");
         }
     }
 

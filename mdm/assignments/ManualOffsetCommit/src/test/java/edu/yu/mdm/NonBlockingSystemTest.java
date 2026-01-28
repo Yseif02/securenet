@@ -12,8 +12,6 @@ public class NonBlockingSystemTest {
         KafkaTopicManager topicManager = new KafkaTopicManager("localhost:9092");
         topicManager.resetTopic(TOPIC);
 
-        System.out.println("Phase 1: Running for 15 seconds");
-        System.out.println();
 
         LinkedBlockingQueue<BatchInfo> phase1BatchQueue = new LinkedBlockingQueue<>();
 
@@ -31,17 +29,30 @@ public class NonBlockingSystemTest {
 
         // === Phase 1 ===
         try {
-            Thread.sleep(15000);
+            System.out.println("Phase 1: Running for 35 seconds");
+            System.out.println();
+            Thread.sleep(35000);
 
-            System.out.println("\n==== Phase 1 complete ====\n Stopping Consumer and Processor");
+            System.out.println("\n==== Phase 1 complete ====\nStopping Consumer and Processor");
 
             phase1Consumer.shutdown();
             phase1Processor.shutdown();
 
-            phase1ConsumerThread.join(5000);
-            phase1ProcessorThread.join(5000);
+            //phase1ConsumerThread.interrupt();
+            phase1ProcessorThread.interrupt();
+
+            phase1ConsumerThread.join(10000);
+            phase1ProcessorThread.join(10000);
+
+            if (phase1ConsumerThread.isAlive()) {
+                System.err.println("WARNING: Consumer thread still running!");
+            }
+            if (phase1ProcessorThread.isAlive()) {
+                System.err.println("WARNING: Processor thread still running!");
+            }
 
             System.out.println("Consumer and Processor stopped");
+            //Thread.sleep(2000);
         } catch (InterruptedException e) {
             System.err.println("Test interrupted: " + e.getMessage());
             Thread.currentThread().interrupt();
@@ -49,6 +60,7 @@ public class NonBlockingSystemTest {
 
         // === Wait 30 Seconds ===
         try {
+            System.out.println("Waiting 30 seconds");
             Thread.sleep(30000);
         } catch (InterruptedException e) {
             throw new RuntimeException("Interrupted while waiting between phase 1 and 2", e);
@@ -68,7 +80,7 @@ public class NonBlockingSystemTest {
         phase2ProcessorThread.start();
 
         try {
-            Thread.sleep(30000);
+            Thread.sleep(35000);
 
             System.out.println("==== Phase 2 complete ====");
 
@@ -79,6 +91,8 @@ public class NonBlockingSystemTest {
             phase2Consumer.shutdown();
             phase2Processor.shutdown();
 
+            //producerThread.interrupt();
+            //phase2ConsumerThread.interrupt();
             phase2ProcessorThread.interrupt();
 
             producerThread.join(5000);
@@ -86,6 +100,7 @@ public class NonBlockingSystemTest {
             phase2ProcessorThread.join(10000);
 
             System.out.println("All threads stopped");
+            Thread.sleep(1000);
         } catch (InterruptedException e) {
             System.err.println("Test interrupted: " + e.getMessage());
             Thread.currentThread().interrupt();
