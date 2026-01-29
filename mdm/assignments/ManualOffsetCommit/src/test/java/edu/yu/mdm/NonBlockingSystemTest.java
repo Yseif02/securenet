@@ -5,7 +5,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class NonBlockingSystemTest {
     public static void main(String[] args) {
-        String TOPIC = "sales-records";
+        String TOPIC = "no-auto-commit-application";
 
         System.out.println("==== Non-Blocking System Test ====");
         System.out.println("==== Cleaning up Kafka topic ====");

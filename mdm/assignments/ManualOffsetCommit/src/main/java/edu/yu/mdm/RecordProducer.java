@@ -75,7 +75,7 @@ public class RecordProducer implements Runnable{
         String name = RandomDataGenerator.randomName();
         long timeSinceEpoch = System.currentTimeMillis() - this.startTime;
         long id = this.idGen.getAndIncrement();
-        return new SalesRecord(product, quantity, totalPrice, timeSinceEpoch, id, name);
+        return new SalesRecord(product, quantity, totalPrice, System.currentTimeMillis(), id, name);
     }
 
     private void sendRecord(SalesRecord record) {
