@@ -6,8 +6,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,7 +18,7 @@ public class RecordProducer implements Runnable{
     private final AtomicLong idGen;
     private final Random random;
     private volatile boolean running;
-    private final long startTime = System.currentTimeMillis();
+    //private final long startTime = System.currentTimeMillis();
     private final AssignmentLogger logger;
 
 
@@ -73,7 +71,7 @@ public class RecordProducer implements Runnable{
         int quantity = random.nextInt(101);
         double totalPrice = unitPrice * quantity;
         String name = RandomDataGenerator.randomName();
-        long timeSinceEpoch = System.currentTimeMillis() - this.startTime;
+        //long timeSinceEpoch = System.currentTimeMillis() - this.startTime;
         long id = this.idGen.getAndIncrement();
         return new SalesRecord(product, quantity, totalPrice, System.currentTimeMillis(), id, name);
     }
@@ -106,9 +104,9 @@ public class RecordProducer implements Runnable{
         logger.log(message);
     }
 
-    public String getTopicName() {
+    /*public String getTopicName() {
         return topic;
-    }
+    }*/
 
 
 }

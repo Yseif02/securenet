@@ -2,7 +2,6 @@ package edu.yu.mdm;
 
 import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.protocol.types.Field;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 import java.time.Duration;
@@ -22,15 +21,7 @@ public class RecordConsumer implements Runnable{
 
 
     public RecordConsumer(String bootstrapServers, LinkedBlockingQueue<BatchInfo> batchQueue, String topic) {
-        Properties properties = new Properties();
-
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
-        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
-        properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, BATCH_SIZE);
+        Properties properties = getProperties(bootstrapServers);
 
         this.consumer = new KafkaConsumer<>(properties);
         consumer.subscribe(
@@ -70,6 +61,19 @@ public class RecordConsumer implements Runnable{
         this.batchQueue = batchQueue;
         this.running = true;
         this.logger = AssignmentLogger.getInstance();
+    }
+
+    private static Properties getProperties(String bootstrapServers) {
+        Properties properties = new Properties();
+
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        //properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, BATCH_SIZE);
+        return properties;
     }
 
     /**
@@ -133,6 +137,10 @@ public class RecordConsumer implements Runnable{
     }
 
     private Map<TopicPartition, OffsetAndMetadata> buildOffsetMap(ConsumerRecords<String, String> records) {
+        return getTopicPartitionOffsetAndMetadataMap(records);
+    }
+
+    static Map<TopicPartition, OffsetAndMetadata> getTopicPartitionOffsetAndMetadataMap(ConsumerRecords<String, String> records) {
         Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
 
         for (TopicPartition partition : records.partitions()) {
@@ -145,7 +153,7 @@ public class RecordConsumer implements Runnable{
         return offsets;
     }
 
-    private void logCommitedOffset() {
+    /*private void logCommitedOffset() {
         try {
             Set<TopicPartition> assignment;
 
@@ -164,7 +172,7 @@ public class RecordConsumer implements Runnable{
         } catch (Exception e) {
             log("runConsumer Error getting committed offset: " + e.getMessage());
         }
-    }
+    }*/
 
     public void shutdown() {
         log("Stopping runConsumer");
