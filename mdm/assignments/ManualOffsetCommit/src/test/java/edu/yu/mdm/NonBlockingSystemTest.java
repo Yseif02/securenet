@@ -23,8 +23,13 @@ public class NonBlockingSystemTest {
         Thread phase1ConsumerThread = new Thread(phase1Consumer, "phase1ConsumerThread");
         Thread phase1ProcessorThread = new Thread(phase1Processor, "phase1ProcessorThread");
 
-        producerThread.start();
         phase1ConsumerThread.start();
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        producerThread.start();
         phase1ProcessorThread.start();
 
         // === Phase 1 ===
@@ -37,10 +42,11 @@ public class NonBlockingSystemTest {
 
             phase1Consumer.shutdown();
             phase1Processor.shutdown();
-
+            producer.shutdown();
             //phase1ConsumerThread.interrupt();
             phase1ProcessorThread.interrupt();
 
+            producerThread.join(5000);
             phase1ConsumerThread.join(10000);
             phase1ProcessorThread.join(10000);
 
@@ -87,7 +93,7 @@ public class NonBlockingSystemTest {
             // === Shutdown ===
             System.out.println("\n==== Final Shutdown ====");
 
-            producer.shutdown();
+
             phase2Consumer.shutdown();
             phase2Processor.shutdown();
 
@@ -95,7 +101,6 @@ public class NonBlockingSystemTest {
             //phase2ConsumerThread.interrupt();
             phase2ProcessorThread.interrupt();
 
-            producerThread.join(5000);
             phase2ConsumerThread.join(10000);
             phase2ProcessorThread.join(10000);
 
