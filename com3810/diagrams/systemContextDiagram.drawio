@@ -1,0 +1,101 @@
+<mxfile host="65bd71144e">
+    <diagram name="System Context" id="system-context">
+        <mxGraphModel dx="1293" dy="973" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="SecureNet System Context Diagram" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="225" y="30" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="securenet-system" value="&lt;b&gt;SecureNet Platform&lt;/b&gt;&lt;br&gt;[Software System]&lt;br&gt;&lt;br&gt;Cloud-based smart home security and automation platform that enables homeowners to monitor and control IoT devices." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=12;spacingTop=10;spacingBottom=10;spacingLeft=10;spacingRight=10;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="280" width="250" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="homeowner" value="&lt;b&gt;Homeowner&lt;/b&gt;&lt;br&gt;[Person]&lt;br&gt;&lt;br&gt;Monitors home security,&lt;br&gt;controls devices, configures&lt;br&gt;automation rules." style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="150" width="60" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="ops-team" value="&lt;b&gt;SecureNet Ops Team&lt;/b&gt;&lt;br&gt;[Person]&lt;br&gt;&lt;br&gt;Manages device fleet,&lt;br&gt;deploys firmware,&lt;br&gt;monitors health." style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="735" y="150" width="60" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="wifi" value="&lt;b&gt;Home WiFi Network&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;Network connectivity for&lt;br&gt;IoT devices." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="480" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="push-services" value="&lt;b&gt;Push Notification&lt;br&gt;Services&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;APNs and FCM for&lt;br&gt;real-time alerts." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="480" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="cloud-infra" value="&lt;b&gt;Cloud Infrastructure&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;Provides computing, storage,&lt;br&gt;and networking resources." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="480" width="230" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge-homeowner-securenet" value="Monitors and controls&lt;br&gt;devices via mobile/web app&lt;br&gt;[HTTPS/WebSocket]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="homeowner" target="securenet-system" edge="1">
+                    <mxGeometry x="0.1" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="200" y="210"/>
+                            <mxPoint x="200" y="310"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-ops-securenet" value="Manages device fleet&lt;br&gt;via manufacturer portal&lt;br&gt;[HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="ops-team" target="securenet-system" edge="1">
+                    <mxGeometry x="0.1" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="650" y="210"/>
+                            <mxPoint x="650" y="310"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-wifi-securenet" value="IoT devices connect&lt;br&gt;to cloud services&lt;br&gt;[WiFi/MQTT/HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="wifi" target="securenet-system" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="270" y="505"/>
+                            <mxPoint x="270" y="370"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-securenet-push" value="Sends push notifications&lt;br&gt;for alerts and events&lt;br&gt;[HTTPS/HTTP2]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="securenet-system" target="push-services" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="580" y="370"/>
+                            <mxPoint x="580" y="505"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-securenet-cloud" value="Hosted on cloud&lt;br&gt;infrastructure&lt;br&gt;[Cloud APIs]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;endArrow=classic;endFill=1;dashed=1;dashPattern=8 8;" parent="1" source="securenet-system" target="cloud-infra" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;opacity=60;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="630" width="770" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-title" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="50" y="640" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-person" value="" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="660" width="20" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-person-text" value="Person" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="667" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-system" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="665" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-system-text" value="Software System" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="667" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-external" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="430" y="665" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-external-text" value="External System" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="667" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-dashed" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;dashed=1;dashPattern=8 8;" parent="1" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="660" y="677" as="sourcePoint"/>
+                        <mxPoint x="720" y="677" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend-dashed-text" value="Deployment" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="730" y="667" width="70" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
