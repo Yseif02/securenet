@@ -1,0 +1,581 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_06sv8z6" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.8.0">
+  <bpmn:collaboration id="Collaboration_18sebsq">
+    <bpmn:participant id="Participant_Homeowner" name="Homeowner" processRef="Process_Homeowner" />
+    <bpmn:participant id="Participant_ClientApp" name="Client Application" processRef="Process_ClientApp" />
+    <bpmn:participant id="Participant_APIGateway" name="API Gateway" processRef="Process_APIGateway" />
+    <bpmn:participant id="Participant_UserMgmt" name="User Management Service" processRef="Process_UserMgmt" />
+    <bpmn:participant id="Participant_DeviceMgmt" name="Device Management Service" processRef="Process_DeviceMgmt" />
+    <bpmn:participant id="Participant_IoTFirmware" name="IoT Device Firmware" processRef="Process_IoTFirmware" />
+    <bpmn:participant id="Participant_DataStorage" name="Data Storage Layer" processRef="Process_DataStorage" />
+    <bpmn:messageFlow id="Flow_HomeownerToApp" sourceRef="Activity_DownloadApp" targetRef="Activity_AppLaunches" />
+    <bpmn:messageFlow id="Flow_HomeownerScanToApp" sourceRef="Activity_ScanQR" targetRef="Activity_ValidateQR" />
+    <bpmn:messageFlow id="Flow_AppToGateway" sourceRef="Activity_SendRegistration" targetRef="Activity_ReceiveRequest" />
+    <bpmn:messageFlow id="Flow_GatewayToUserMgmt" sourceRef="Activity_AuthenticateUser" targetRef="Activity_ValidateToken" />
+    <bpmn:messageFlow id="Flow_UserMgmtToGateway" sourceRef="Activity_ReturnAuthResult" targetRef="Activity_ReceiveAuthResult" />
+    <bpmn:messageFlow id="Flow_GatewayToDeviceMgmt" sourceRef="Activity_RouteToDeviceMgmt" targetRef="Activity_CreateDevice" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtToStorage1" sourceRef="Activity_StoreDevice" targetRef="Activity_PersistDevice" />
+    <bpmn:messageFlow id="Flow_StorageToDeviceMgmt" sourceRef="Activity_ReturnDeviceID" targetRef="Activity_ReceiveDeviceID" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtToGateway" sourceRef="Activity_ReturnSuccess" targetRef="Activity_ReceiveSuccess" />
+    <bpmn:messageFlow id="Flow_GatewayToApp" sourceRef="Activity_ForwardToClient" targetRef="Activity_ReceiveDeviceIDApp" />
+    <bpmn:messageFlow id="Flow_AppToHomeowner" sourceRef="Activity_GuideWiFi" targetRef="Activity_ConnectWifi" />
+    <bpmn:messageFlow id="Flow_FirmwareToDeviceMgmt" sourceRef="Activity_RegisterWithCloud" targetRef="Activity_AcceptRegistration" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtToFirmware" sourceRef="Activity_SendCredentials" targetRef="Activity_ReceiveCredentials" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtToStorage2" sourceRef="Activity_MarkOnline" targetRef="Activity_UpdateStatus" />
+    <bpmn:messageFlow id="Flow_FirmwareToApp" sourceRef="Activity_ConfirmOnline" targetRef="Activity_DisplayDashboard" />
+    <bpmn:messageFlow id="Flow_0lnzao6" sourceRef="Activity_CreateAccount" targetRef="Activity_PromptScan" />
+    <bpmn:messageFlow id="Flow_1h9yaf3" sourceRef="Activity_15qv5f1" targetRef="Activity_ValidateToken" />
+    <bpmn:messageFlow id="Flow_0r9dcqt" sourceRef="Activity_ConnectWifi" targetRef="Activity_PowerOn" />
+    <bpmn:textAnnotation id="TextAnnotation_Title">
+      <bpmn:text>Device Onboarding Workflow</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_Title" sourceRef="Participant_Homeowner" targetRef="TextAnnotation_Title" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Homeowner" isExecutable="false">
+    <bpmn:startEvent id="Event_Start" name="Homeowner purchases device">
+      <bpmn:outgoing>Flow_H1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_DownloadApp" name="Open Client App">
+      <bpmn:incoming>Flow_H1</bpmn:incoming>
+      <bpmn:outgoing>Flow_H2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ScanQR" name="Scan Device QR Code">
+      <bpmn:incoming>Flow_H3</bpmn:incoming>
+      <bpmn:outgoing>Flow_H4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ConnectWifi" name="Connect Device to WiFi">
+      <bpmn:incoming>Flow_H4</bpmn:incoming>
+      <bpmn:outgoing>Flow_H5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_End" name="Device appears in dashboard">
+      <bpmn:incoming>Flow_H5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_H1" sourceRef="Event_Start" targetRef="Activity_DownloadApp" />
+    <bpmn:sequenceFlow id="Flow_H2" sourceRef="Activity_DownloadApp" targetRef="Activity_CreateAccount" />
+    <bpmn:sequenceFlow id="Flow_H4" sourceRef="Activity_ScanQR" targetRef="Activity_ConnectWifi" />
+    <bpmn:sequenceFlow id="Flow_H5" sourceRef="Activity_ConnectWifi" targetRef="Event_End" />
+    <bpmn:task id="Activity_CreateAccount" name="Click add device">
+      <bpmn:incoming>Flow_H2</bpmn:incoming>
+      <bpmn:outgoing>Flow_H3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_H3" sourceRef="Activity_CreateAccount" targetRef="Activity_ScanQR" />
+  </bpmn:process>
+  <bpmn:process id="Process_ClientApp" isExecutable="false">
+    <bpmn:task id="Activity_AppLaunches" name="App Launches" />
+    <bpmn:task id="Activity_PromptScan" name="Prompt User to Scan QR">
+      <bpmn:outgoing>Flow_CA2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ValidateQR" name="Validate QR Code Format">
+      <bpmn:incoming>Flow_CA2</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SendRegistration" name="Send Device Registration Request">
+      <bpmn:incoming>Flow_CA3</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveDeviceIDApp" name="Receive Device ID">
+      <bpmn:incoming>Flow_CA4</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_GuideWiFi" name="Guide User Through WiFi Setup">
+      <bpmn:incoming>Flow_CA5</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_DisplayDashboard" name="Display Device in Dashboard">
+      <bpmn:incoming>Flow_CA6</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_CA2" sourceRef="Activity_PromptScan" targetRef="Activity_ValidateQR" />
+    <bpmn:sequenceFlow id="Flow_CA3" sourceRef="Activity_ValidateQR" targetRef="Activity_SendRegistration" />
+    <bpmn:sequenceFlow id="Flow_CA4" sourceRef="Activity_SendRegistration" targetRef="Activity_ReceiveDeviceIDApp" />
+    <bpmn:sequenceFlow id="Flow_CA5" sourceRef="Activity_ReceiveDeviceIDApp" targetRef="Activity_GuideWiFi" />
+    <bpmn:sequenceFlow id="Flow_CA6" sourceRef="Activity_GuideWiFi" targetRef="Activity_DisplayDashboard" />
+  </bpmn:process>
+  <bpmn:process id="Process_APIGateway" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveRequest" name="Receive Registration Request">
+      <bpmn:outgoing>Flow_AG1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_AuthenticateUser" name="Authenticate User">
+      <bpmn:incoming>Flow_AG1</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveAuthResult" name="Receive Auth Result">
+      <bpmn:incoming>Flow_AG2</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RouteToDeviceMgmt" name="Route to Device Management">
+      <bpmn:incoming>Flow_AG3</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveSuccess" name="Receive Success Response">
+      <bpmn:incoming>Flow_AG4</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ForwardToClient" name="Forward Response to Client">
+      <bpmn:incoming>Flow_AG5</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_AG1" sourceRef="Activity_ReceiveRequest" targetRef="Activity_AuthenticateUser" />
+    <bpmn:sequenceFlow id="Flow_AG2" sourceRef="Activity_AuthenticateUser" targetRef="Activity_ReceiveAuthResult" />
+    <bpmn:sequenceFlow id="Flow_AG3" sourceRef="Activity_ReceiveAuthResult" targetRef="Activity_RouteToDeviceMgmt" />
+    <bpmn:sequenceFlow id="Flow_AG4" sourceRef="Activity_RouteToDeviceMgmt" targetRef="Activity_ReceiveSuccess" />
+    <bpmn:sequenceFlow id="Flow_AG5" sourceRef="Activity_ReceiveSuccess" targetRef="Activity_ForwardToClient" />
+  </bpmn:process>
+  <bpmn:process id="Process_UserMgmt" isExecutable="false">
+    <bpmn:task id="Activity_ValidateToken" name="Validate Auth Token">
+      <bpmn:outgoing>Flow_UM1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReturnAuthResult" name="Return Auth Result">
+      <bpmn:incoming>Flow_UM1</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_UM1" sourceRef="Activity_ValidateToken" targetRef="Activity_ReturnAuthResult" />
+  </bpmn:process>
+  <bpmn:process id="Process_DeviceMgmt" isExecutable="false">
+    <bpmn:task id="Activity_CreateDevice" name="Create Device Record">
+      <bpmn:outgoing>Flow_DM1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_GenerateCredentials" name="Generate Credentials">
+      <bpmn:incoming>Flow_DM1</bpmn:incoming>
+      <bpmn:outgoing>Flow_DM2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_StoreDevice" name="Store Device in DB">
+      <bpmn:incoming>Flow_DM2</bpmn:incoming>
+      <bpmn:outgoing>Flow_DM3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveDeviceID" name="Receive Device ID">
+      <bpmn:incoming>Flow_DM3</bpmn:incoming>
+      <bpmn:outgoing>Flow_DM4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReturnSuccess" name="Return Device ID to Gateway">
+      <bpmn:incoming>Flow_DM4</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_AcceptRegistration" name="Accept Device Registration">
+      <bpmn:outgoing>Flow_DM5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SendCredentials" name="Send Connection Credentials">
+      <bpmn:incoming>Flow_DM5</bpmn:incoming>
+      <bpmn:outgoing>Flow_DM6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_MarkOnline" name="Mark Device as Online">
+      <bpmn:incoming>Flow_DM6</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_DM1" sourceRef="Activity_CreateDevice" targetRef="Activity_GenerateCredentials" />
+    <bpmn:sequenceFlow id="Flow_DM2" sourceRef="Activity_GenerateCredentials" targetRef="Activity_StoreDevice" />
+    <bpmn:sequenceFlow id="Flow_DM3" sourceRef="Activity_StoreDevice" targetRef="Activity_ReceiveDeviceID" />
+    <bpmn:sequenceFlow id="Flow_DM4" sourceRef="Activity_ReceiveDeviceID" targetRef="Activity_ReturnSuccess" />
+    <bpmn:sequenceFlow id="Flow_DM5" sourceRef="Activity_AcceptRegistration" targetRef="Activity_SendCredentials" />
+    <bpmn:sequenceFlow id="Flow_DM6" sourceRef="Activity_SendCredentials" targetRef="Activity_MarkOnline" />
+  </bpmn:process>
+  <bpmn:process id="Process_IoTFirmware" isExecutable="false">
+    <bpmn:task id="Activity_RegisterWithCloud" name="Register with Cloud">
+      <bpmn:incoming>Flow_IOT1</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveCredentials" name="Receive Credentials">
+      <bpmn:incoming>Flow_IOT2</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ConnectMQTT" name="Connect to Broker">
+      <bpmn:incoming>Flow_IOT3</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_DownloadFirmware" name="Download Latest Firmware">
+      <bpmn:incoming>Flow_IOT4</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ConfirmOnline" name="Confirm Online Status">
+      <bpmn:incoming>Flow_IOT5</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_BeginOperation" name="Begin Normal Operation">
+      <bpmn:incoming>Flow_IOT6</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_IOT1" sourceRef="Activity_PowerOn" targetRef="Activity_RegisterWithCloud" />
+    <bpmn:sequenceFlow id="Flow_IOT2" sourceRef="Activity_RegisterWithCloud" targetRef="Activity_ReceiveCredentials" />
+    <bpmn:sequenceFlow id="Flow_IOT3" sourceRef="Activity_ReceiveCredentials" targetRef="Activity_ConnectMQTT" />
+    <bpmn:sequenceFlow id="Flow_IOT4" sourceRef="Activity_ConnectMQTT" targetRef="Activity_DownloadFirmware" />
+    <bpmn:sequenceFlow id="Flow_IOT5" sourceRef="Activity_DownloadFirmware" targetRef="Activity_ConfirmOnline" />
+    <bpmn:sequenceFlow id="Flow_IOT6" sourceRef="Activity_ConfirmOnline" targetRef="Activity_BeginOperation" />
+    <bpmn:task id="Activity_PowerOn" name="Power On, Connect to WiFi">
+      <bpmn:outgoing>Flow_IOT1</bpmn:outgoing>
+    </bpmn:task>
+  </bpmn:process>
+  <bpmn:process id="Process_DataStorage" isExecutable="false">
+    <bpmn:task id="Activity_UpdateStatus" name="Update Device Status to &#39;Online&#39;" />
+    <bpmn:task id="Activity_ReturnDeviceID" name="Return Device ID" />
+    <bpmn:task id="Activity_PersistDevice" name="Persist Device Record" />
+    <bpmn:task id="Activity_15qv5f1" name="Validate user" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_18sebsq">
+      <bpmndi:BPMNShape id="Participant_Homeowner_di" bpmnElement="Participant_Homeowner" isHorizontal="true">
+        <dc:Bounds x="160" y="140" width="1200" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_Start_di" bpmnElement="Event_Start">
+        <dc:Bounds x="212" y="197" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="197" y="240" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DownloadApp_di" bpmnElement="Activity_DownloadApp">
+        <dc:Bounds x="300" y="175" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_CreateAccount_di" bpmnElement="Activity_CreateAccount">
+        <dc:Bounds x="450" y="175" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ScanQR_di" bpmnElement="Activity_ScanQR">
+        <dc:Bounds x="600" y="175" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ConnectWifi_di" bpmnElement="Activity_ConnectWifi">
+        <dc:Bounds x="1050" y="175" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_End_di" bpmnElement="Event_End">
+        <dc:Bounds x="1272" y="197" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1252" y="240" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_H1_di" bpmnElement="Flow_H1">
+        <di:waypoint x="248" y="215" />
+        <di:waypoint x="300" y="215" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H2_di" bpmnElement="Flow_H2">
+        <di:waypoint x="400" y="215" />
+        <di:waypoint x="450" y="215" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H3_di" bpmnElement="Flow_H3">
+        <di:waypoint x="550" y="215" />
+        <di:waypoint x="600" y="215" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H4_di" bpmnElement="Flow_H4">
+        <di:waypoint x="700" y="215" />
+        <di:waypoint x="1050" y="215" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H5_di" bpmnElement="Flow_H5">
+        <di:waypoint x="1150" y="215" />
+        <di:waypoint x="1272" y="215" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_ClientApp_di" bpmnElement="Participant_ClientApp" isHorizontal="true">
+        <dc:Bounds x="160" y="310" width="1200" height="150" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AppLaunches_di" bpmnElement="Activity_AppLaunches">
+        <dc:Bounds x="300" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_PromptScan_di" bpmnElement="Activity_PromptScan">
+        <dc:Bounds x="450" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ValidateQR_di" bpmnElement="Activity_ValidateQR">
+        <dc:Bounds x="600" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SendRegistration_di" bpmnElement="Activity_SendRegistration">
+        <dc:Bounds x="750" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveDeviceIDApp_di" bpmnElement="Activity_ReceiveDeviceIDApp">
+        <dc:Bounds x="900" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GuideWiFi_di" bpmnElement="Activity_GuideWiFi">
+        <dc:Bounds x="1050" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DisplayDashboard_di" bpmnElement="Activity_DisplayDashboard">
+        <dc:Bounds x="1200" y="345" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_CA2_di" bpmnElement="Flow_CA2">
+        <di:waypoint x="550" y="385" />
+        <di:waypoint x="600" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA3_di" bpmnElement="Flow_CA3">
+        <di:waypoint x="700" y="385" />
+        <di:waypoint x="750" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA4_di" bpmnElement="Flow_CA4">
+        <di:waypoint x="850" y="385" />
+        <di:waypoint x="900" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA5_di" bpmnElement="Flow_CA5">
+        <di:waypoint x="1000" y="385" />
+        <di:waypoint x="1050" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA6_di" bpmnElement="Flow_CA6">
+        <di:waypoint x="1150" y="385" />
+        <di:waypoint x="1200" y="385" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_APIGateway_di" bpmnElement="Participant_APIGateway" isHorizontal="true">
+        <dc:Bounds x="160" y="480" width="1200" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveRequest_di" bpmnElement="Activity_ReceiveRequest">
+        <dc:Bounds x="300" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AuthenticateUser_di" bpmnElement="Activity_AuthenticateUser">
+        <dc:Bounds x="450" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveAuthResult_di" bpmnElement="Activity_ReceiveAuthResult">
+        <dc:Bounds x="600" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RouteToDeviceMgmt_di" bpmnElement="Activity_RouteToDeviceMgmt">
+        <dc:Bounds x="750" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveSuccess_di" bpmnElement="Activity_ReceiveSuccess">
+        <dc:Bounds x="900" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ForwardToClient_di" bpmnElement="Activity_ForwardToClient">
+        <dc:Bounds x="1050" y="505" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_AG1_di" bpmnElement="Flow_AG1">
+        <di:waypoint x="400" y="540" />
+        <di:waypoint x="450" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG2_di" bpmnElement="Flow_AG2">
+        <di:waypoint x="550" y="540" />
+        <di:waypoint x="600" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG3_di" bpmnElement="Flow_AG3">
+        <di:waypoint x="700" y="540" />
+        <di:waypoint x="750" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG4_di" bpmnElement="Flow_AG4">
+        <di:waypoint x="850" y="540" />
+        <di:waypoint x="900" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG5_di" bpmnElement="Flow_AG5">
+        <di:waypoint x="1000" y="540" />
+        <di:waypoint x="1050" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_UserMgmt_di" bpmnElement="Participant_UserMgmt" isHorizontal="true">
+        <dc:Bounds x="160" y="620" width="540" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ValidateToken_di" bpmnElement="Activity_ValidateToken">
+        <dc:Bounds x="300" y="640" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReturnAuthResult_di" bpmnElement="Activity_ReturnAuthResult">
+        <dc:Bounds x="450" y="640" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_UM1_di" bpmnElement="Flow_UM1">
+        <di:waypoint x="400" y="670" />
+        <di:waypoint x="450" y="670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_DeviceMgmt_di" bpmnElement="Participant_DeviceMgmt" isHorizontal="true">
+        <dc:Bounds x="160" y="740" width="1200" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_CreateDevice_di" bpmnElement="Activity_CreateDevice">
+        <dc:Bounds x="300" y="770" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GenerateCredentials_di" bpmnElement="Activity_GenerateCredentials">
+        <dc:Bounds x="450" y="770" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StoreDevice_di" bpmnElement="Activity_StoreDevice">
+        <dc:Bounds x="600" y="770" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveDeviceID_di" bpmnElement="Activity_ReceiveDeviceID">
+        <dc:Bounds x="750" y="770" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReturnSuccess_di" bpmnElement="Activity_ReturnSuccess">
+        <dc:Bounds x="900" y="770" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AcceptRegistration_di" bpmnElement="Activity_AcceptRegistration">
+        <dc:Bounds x="300" y="860" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SendCredentials_di" bpmnElement="Activity_SendCredentials">
+        <dc:Bounds x="450" y="860" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_MarkOnline_di" bpmnElement="Activity_MarkOnline">
+        <dc:Bounds x="600" y="860" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_DM1_di" bpmnElement="Flow_DM1">
+        <di:waypoint x="400" y="800" />
+        <di:waypoint x="450" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM2_di" bpmnElement="Flow_DM2">
+        <di:waypoint x="550" y="800" />
+        <di:waypoint x="600" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM3_di" bpmnElement="Flow_DM3">
+        <di:waypoint x="700" y="800" />
+        <di:waypoint x="750" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM4_di" bpmnElement="Flow_DM4">
+        <di:waypoint x="850" y="800" />
+        <di:waypoint x="900" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM5_di" bpmnElement="Flow_DM5">
+        <di:waypoint x="400" y="890" />
+        <di:waypoint x="450" y="890" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM6_di" bpmnElement="Flow_DM6">
+        <di:waypoint x="550" y="890" />
+        <di:waypoint x="600" y="890" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_DataStorage_di" bpmnElement="Participant_DataStorage" isHorizontal="true">
+        <dc:Bounds x="160" y="1130" width="1200" height="100" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_UpdateStatus_di" bpmnElement="Activity_UpdateStatus">
+        <dc:Bounds x="630" y="1155" width="100" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReturnDeviceID_di" bpmnElement="Activity_ReturnDeviceID">
+        <dc:Bounds x="480" y="1155" width="100" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_PersistDevice_di" bpmnElement="Activity_PersistDevice">
+        <dc:Bounds x="350" y="1155" width="100" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0499urq" bpmnElement="Activity_15qv5f1">
+        <dc:Bounds x="220" y="1155" width="100" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_IoTFirmware_di" bpmnElement="Participant_IoTFirmware" isHorizontal="true">
+        <dc:Bounds x="160" y="970" width="1200" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_PowerOn_di" bpmnElement="Activity_PowerOn">
+        <dc:Bounds x="210" y="1000" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RegisterWithCloud_di" bpmnElement="Activity_RegisterWithCloud">
+        <dc:Bounds x="350" y="1000" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveCredentials_di" bpmnElement="Activity_ReceiveCredentials">
+        <dc:Bounds x="500" y="1000" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ConnectMQTT_di" bpmnElement="Activity_ConnectMQTT">
+        <dc:Bounds x="650" y="1000" width="100" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DownloadFirmware_di" bpmnElement="Activity_DownloadFirmware">
+        <dc:Bounds x="800" y="1000" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ConfirmOnline_di" bpmnElement="Activity_ConfirmOnline">
+        <dc:Bounds x="950" y="1000" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_BeginOperation_di" bpmnElement="Activity_BeginOperation">
+        <dc:Bounds x="1100" y="1000" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_IOT1_di" bpmnElement="Flow_IOT1">
+        <di:waypoint x="310" y="1030" />
+        <di:waypoint x="350" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT2_di" bpmnElement="Flow_IOT2">
+        <di:waypoint x="450" y="1030" />
+        <di:waypoint x="500" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT3_di" bpmnElement="Flow_IOT3">
+        <di:waypoint x="600" y="1030" />
+        <di:waypoint x="650" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT4_di" bpmnElement="Flow_IOT4">
+        <di:waypoint x="750" y="1030" />
+        <di:waypoint x="800" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT5_di" bpmnElement="Flow_IOT5">
+        <di:waypoint x="900" y="1030" />
+        <di:waypoint x="950" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT6_di" bpmnElement="Flow_IOT6">
+        <di:waypoint x="1050" y="1030" />
+        <di:waypoint x="1100" y="1030" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Title_di" bpmnElement="Association_Title">
+        <di:waypoint x="260" y="140" />
+        <di:waypoint x="260" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TextAnnotation_Title_di" bpmnElement="TextAnnotation_Title">
+        <dc:Bounds x="170" y="80" width="180" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_HomeownerToApp_di" bpmnElement="Flow_HomeownerToApp">
+        <di:waypoint x="350" y="255" />
+        <di:waypoint x="350" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_HomeownerScanToApp_di" bpmnElement="Flow_HomeownerScanToApp">
+        <di:waypoint x="650" y="255" />
+        <di:waypoint x="650" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToHomeowner_di" bpmnElement="Flow_AppToHomeowner">
+        <di:waypoint x="1100" y="345" />
+        <di:waypoint x="1100" y="255" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToGateway_di" bpmnElement="Flow_AppToGateway">
+        <di:waypoint x="800" y="425" />
+        <di:waypoint x="800" y="470" />
+        <di:waypoint x="350" y="470" />
+        <di:waypoint x="350" y="505" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToApp_di" bpmnElement="Flow_GatewayToApp">
+        <di:waypoint x="1100" y="505" />
+        <di:waypoint x="1100" y="470" />
+        <di:waypoint x="950" y="470" />
+        <di:waypoint x="950" y="425" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareToApp_di" bpmnElement="Flow_FirmwareToApp">
+        <di:waypoint x="1020" y="1000" />
+        <di:waypoint x="1020" y="700" />
+        <di:waypoint x="1250" y="700" />
+        <di:waypoint x="1250" y="425" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToUserMgmt_di" bpmnElement="Flow_GatewayToUserMgmt">
+        <di:waypoint x="500" y="575" />
+        <di:waypoint x="500" y="610" />
+        <di:waypoint x="350" y="610" />
+        <di:waypoint x="350" y="640" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_UserMgmtToGateway_di" bpmnElement="Flow_UserMgmtToGateway">
+        <di:waypoint x="520" y="640" />
+        <di:waypoint x="520" y="610" />
+        <di:waypoint x="650" y="610" />
+        <di:waypoint x="650" y="575" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToDeviceMgmt_di" bpmnElement="Flow_GatewayToDeviceMgmt">
+        <di:waypoint x="800" y="575" />
+        <di:waypoint x="800" y="730" />
+        <di:waypoint x="350" y="730" />
+        <di:waypoint x="350" y="770" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtToGateway_di" bpmnElement="Flow_DeviceMgmtToGateway">
+        <di:waypoint x="950" y="770" />
+        <di:waypoint x="950" y="575" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtToStorage1_di" bpmnElement="Flow_DeviceMgmtToStorage1">
+        <di:waypoint x="700" y="810" />
+        <di:waypoint x="720" y="810" />
+        <di:waypoint x="720" y="950" />
+        <di:waypoint x="470" y="950" />
+        <di:waypoint x="470" y="1100" />
+        <di:waypoint x="400" y="1100" />
+        <di:waypoint x="400" y="1155" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_StorageToDeviceMgmt_di" bpmnElement="Flow_StorageToDeviceMgmt">
+        <di:waypoint x="530" y="1155" />
+        <di:waypoint x="530" y="1080" />
+        <di:waypoint x="780" y="1080" />
+        <di:waypoint x="780" y="840" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareToDeviceMgmt_di" bpmnElement="Flow_FirmwareToDeviceMgmt">
+        <di:waypoint x="380" y="1000" />
+        <di:waypoint x="380" y="920" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtToFirmware_di" bpmnElement="Flow_DeviceMgmtToFirmware">
+        <di:waypoint x="530" y="920" />
+        <di:waypoint x="530" y="1000" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtToStorage2_di" bpmnElement="Flow_DeviceMgmtToStorage2">
+        <di:waypoint x="640" y="920" />
+        <di:waypoint x="640" y="1155" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0lnzao6_di" bpmnElement="Flow_0lnzao6">
+        <di:waypoint x="500" y="255" />
+        <di:waypoint x="500" y="345" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1h9yaf3_di" bpmnElement="Flow_1h9yaf3">
+        <di:waypoint x="220" y="1180" />
+        <di:waypoint x="200" y="1180" />
+        <di:waypoint x="200" y="928" />
+        <di:waypoint x="260" y="928" />
+        <di:waypoint x="260" y="670" />
+        <di:waypoint x="300" y="670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0r9dcqt_di" bpmnElement="Flow_0r9dcqt">
+        <di:waypoint x="1150" y="230" />
+        <di:waypoint x="1180" y="230" />
+        <di:waypoint x="1180" y="300" />
+        <di:waypoint x="230" y="300" />
+        <di:waypoint x="230" y="1000" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

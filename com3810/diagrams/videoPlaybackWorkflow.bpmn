@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_VideoPlayback" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0">
+  <bpmn:collaboration id="Collaboration_VideoPlayback">
+    <bpmn:participant id="Participant_Homeowner" name="Homeowner" processRef="Process_Homeowner" />
+    <bpmn:participant id="Participant_ClientApp" name="Client Application" processRef="Process_ClientApp" />
+    <bpmn:participant id="Participant_APIGateway" name="API Gateway" processRef="Process_APIGateway" />
+    <bpmn:participant id="Participant_VideoService" name="Video Streaming Service" processRef="Process_VideoService" />
+    <bpmn:participant id="Participant_DataStorage" name="Data Storage Layer" processRef="Process_DataStorage" />
+    <bpmn:messageFlow id="Flow_HomeownerToApp" sourceRef="Activity_SelectTimeRange" targetRef="Activity_ReceiveSelection" />
+    <bpmn:messageFlow id="Flow_AppToGateway" sourceRef="Activity_RequestVideo" targetRef="Activity_ReceiveVideoRequest" />
+    <bpmn:messageFlow id="Flow_GatewayToVideo" sourceRef="Activity_RouteToVideo" targetRef="Activity_ReceiveRequest" />
+    <bpmn:messageFlow id="Flow_VideoToStorage" sourceRef="Activity_QueryArchive" targetRef="Activity_FindVideos" />
+    <bpmn:messageFlow id="Flow_StorageToVideo" sourceRef="Activity_ReturnFiles" targetRef="Activity_ReceiveFiles" />
+    <bpmn:messageFlow id="Flow_VideoToGateway" sourceRef="Activity_ReturnStreamURL" targetRef="Activity_ReceiveURL" />
+    <bpmn:messageFlow id="Flow_GatewayToApp" sourceRef="Activity_ForwardURL" targetRef="Activity_ReceiveStreamURL" />
+    <bpmn:messageFlow id="Flow_AppToStorage" sourceRef="Activity_RequestChunks" targetRef="Activity_StreamChunks" />
+    <bpmn:messageFlow id="Flow_StorageToApp" sourceRef="Activity_DeliverChunks" targetRef="Activity_ReceiveChunks" />
+    <bpmn:messageFlow id="Flow_0cwfywv" sourceRef="Activity_RenderVideo" targetRef="Activity_WatchVideo" />
+    <bpmn:textAnnotation id="TextAnnotation_Title">
+      <bpmn:text>Video Playback Workflow</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_Title" sourceRef="Participant_Homeowner" targetRef="TextAnnotation_Title" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Homeowner" isExecutable="false">
+    <bpmn:startEvent id="Event_Start" name="User wants to review footage">
+      <bpmn:outgoing>Flow_H1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_OpenApp" name="Open Mobile/Web App">
+      <bpmn:incoming>Flow_H1</bpmn:incoming>
+      <bpmn:outgoing>Flow_H2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SelectCamera" name="Select Camera">
+      <bpmn:incoming>Flow_H2</bpmn:incoming>
+      <bpmn:outgoing>Flow_H3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_NavigateHistory" name="Navigate to History">
+      <bpmn:incoming>Flow_H3</bpmn:incoming>
+      <bpmn:outgoing>Flow_H4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SelectTimeRange" name="Select Time Range">
+      <bpmn:incoming>Flow_H4</bpmn:incoming>
+      <bpmn:outgoing>Flow_H5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_WatchVideo" name="Watch Video">
+      <bpmn:incoming>Flow_H5</bpmn:incoming>
+      <bpmn:outgoing>Flow_H6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_End" name="Footage reviewed">
+      <bpmn:incoming>Flow_H6</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_H1" sourceRef="Event_Start" targetRef="Activity_OpenApp" />
+    <bpmn:sequenceFlow id="Flow_H2" sourceRef="Activity_OpenApp" targetRef="Activity_SelectCamera" />
+    <bpmn:sequenceFlow id="Flow_H3" sourceRef="Activity_SelectCamera" targetRef="Activity_NavigateHistory" />
+    <bpmn:sequenceFlow id="Flow_H4" sourceRef="Activity_NavigateHistory" targetRef="Activity_SelectTimeRange" />
+    <bpmn:sequenceFlow id="Flow_H5" sourceRef="Activity_SelectTimeRange" targetRef="Activity_WatchVideo" />
+    <bpmn:sequenceFlow id="Flow_H6" sourceRef="Activity_WatchVideo" targetRef="Event_End" />
+  </bpmn:process>
+  <bpmn:process id="Process_ClientApp" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveSelection" name="Receive Selection">
+      <bpmn:outgoing>Flow_CA1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ShowLoading" name="Show Loading">
+      <bpmn:incoming>Flow_CA1</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RequestVideo" name="Request Video">
+      <bpmn:incoming>Flow_CA2</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveStreamURL" name="Receive Stream URL">
+      <bpmn:incoming>Flow_CA3</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_InitPlayer" name="Initialize Player">
+      <bpmn:incoming>Flow_CA4</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RequestChunks" name="Request Chunks">
+      <bpmn:incoming>Flow_CA5</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveChunks" name="Receive Chunks">
+      <bpmn:incoming>Flow_CA6</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RenderVideo" name="Render Video">
+      <bpmn:incoming>Flow_CA7</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_CA1" sourceRef="Activity_ReceiveSelection" targetRef="Activity_ShowLoading" />
+    <bpmn:sequenceFlow id="Flow_CA2" sourceRef="Activity_ShowLoading" targetRef="Activity_RequestVideo" />
+    <bpmn:sequenceFlow id="Flow_CA3" sourceRef="Activity_RequestVideo" targetRef="Activity_ReceiveStreamURL" />
+    <bpmn:sequenceFlow id="Flow_CA4" sourceRef="Activity_ReceiveStreamURL" targetRef="Activity_InitPlayer" />
+    <bpmn:sequenceFlow id="Flow_CA5" sourceRef="Activity_InitPlayer" targetRef="Activity_RequestChunks" />
+    <bpmn:sequenceFlow id="Flow_CA6" sourceRef="Activity_RequestChunks" targetRef="Activity_ReceiveChunks" />
+    <bpmn:sequenceFlow id="Flow_CA7" sourceRef="Activity_ReceiveChunks" targetRef="Activity_RenderVideo" />
+  </bpmn:process>
+  <bpmn:process id="Process_APIGateway" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveVideoRequest" name="Receive Request">
+      <bpmn:outgoing>Flow_AG1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_AuthenticateUser" name="Authenticate User">
+      <bpmn:incoming>Flow_AG1</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RouteToVideo" name="Route to Video Service">
+      <bpmn:incoming>Flow_AG2</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveURL" name="Receive URL">
+      <bpmn:incoming>Flow_AG3</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ForwardURL" name="Forward URL">
+      <bpmn:incoming>Flow_AG4</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_AG1" sourceRef="Activity_ReceiveVideoRequest" targetRef="Activity_AuthenticateUser" />
+    <bpmn:sequenceFlow id="Flow_AG2" sourceRef="Activity_AuthenticateUser" targetRef="Activity_RouteToVideo" />
+    <bpmn:sequenceFlow id="Flow_AG3" sourceRef="Activity_RouteToVideo" targetRef="Activity_ReceiveURL" />
+    <bpmn:sequenceFlow id="Flow_AG4" sourceRef="Activity_ReceiveURL" targetRef="Activity_ForwardURL" />
+  </bpmn:process>
+  <bpmn:process id="Process_VideoService" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveRequest" name="Receive Request">
+      <bpmn:outgoing>Flow_VS1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ValidateParams" name="Validate Parameters">
+      <bpmn:incoming>Flow_VS1</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_QueryArchive" name="Query Archive">
+      <bpmn:incoming>Flow_VS2</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveFiles" name="Receive Files">
+      <bpmn:incoming>Flow_VS3</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Found" name="Video Found?">
+      <bpmn:incoming>Flow_VS4</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS5_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_VS5_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_GenerateManifest" name="Generate Manifest">
+      <bpmn:incoming>Flow_VS5_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_NotFound" name="Error: Not Found">
+      <bpmn:incoming>Flow_VS5_No</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Activity_GenerateURLs" name="Generate Signed URLs">
+      <bpmn:incoming>Flow_VS6</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReturnStreamURL" name="Return Stream URL">
+      <bpmn:incoming>Flow_VS7</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_VS1" sourceRef="Activity_ReceiveRequest" targetRef="Activity_ValidateParams" />
+    <bpmn:sequenceFlow id="Flow_VS2" sourceRef="Activity_ValidateParams" targetRef="Activity_QueryArchive" />
+    <bpmn:sequenceFlow id="Flow_VS3" sourceRef="Activity_QueryArchive" targetRef="Activity_ReceiveFiles" />
+    <bpmn:sequenceFlow id="Flow_VS4" sourceRef="Activity_ReceiveFiles" targetRef="Gateway_Found" />
+    <bpmn:sequenceFlow id="Flow_VS5_Yes" name="Yes" sourceRef="Gateway_Found" targetRef="Activity_GenerateManifest" />
+    <bpmn:sequenceFlow id="Flow_VS5_No" name="No" sourceRef="Gateway_Found" targetRef="Event_NotFound" />
+    <bpmn:sequenceFlow id="Flow_VS6" sourceRef="Activity_GenerateManifest" targetRef="Activity_GenerateURLs" />
+    <bpmn:sequenceFlow id="Flow_VS7" sourceRef="Activity_GenerateURLs" targetRef="Activity_ReturnStreamURL" />
+  </bpmn:process>
+  <bpmn:process id="Process_DataStorage" isExecutable="false">
+    <bpmn:task id="Activity_StreamChunks" name="Receive Chunk Request">
+      <bpmn:outgoing>Flow_DS2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_DeliverChunks" name="Stream Chunks">
+      <bpmn:incoming>Flow_DS2</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReturnFiles" name="Return File Keys">
+      <bpmn:incoming>Flow_DS1</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_FindVideos" name="Query Video Archive">
+      <bpmn:outgoing>Flow_DS1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_DS2" sourceRef="Activity_StreamChunks" targetRef="Activity_DeliverChunks" />
+    <bpmn:sequenceFlow id="Flow_DS1" sourceRef="Activity_FindVideos" targetRef="Activity_ReturnFiles" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_VideoPlayback">
+      <bpmndi:BPMNShape id="Participant_Homeowner_di" bpmnElement="Participant_Homeowner" isHorizontal="true">
+        <dc:Bounds x="160" y="140" width="1300" height="140" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_Start_di" bpmnElement="Event_Start">
+        <dc:Bounds x="222" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="204" y="235" width="72" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_OpenApp_di" bpmnElement="Activity_OpenApp">
+        <dc:Bounds x="320" y="170" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SelectCamera_di" bpmnElement="Activity_SelectCamera">
+        <dc:Bounds x="520" y="170" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_NavigateHistory_di" bpmnElement="Activity_NavigateHistory">
+        <dc:Bounds x="720" y="170" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SelectTimeRange_di" bpmnElement="Activity_SelectTimeRange">
+        <dc:Bounds x="940" y="170" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_WatchVideo_di" bpmnElement="Activity_WatchVideo">
+        <dc:Bounds x="1160" y="170" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_End_di" bpmnElement="Event_End">
+        <dc:Bounds x="1362" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1336" y="235" width="88" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_H1_di" bpmnElement="Flow_H1">
+        <di:waypoint x="258" y="210" />
+        <di:waypoint x="320" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H2_di" bpmnElement="Flow_H2">
+        <di:waypoint x="460" y="210" />
+        <di:waypoint x="520" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H3_di" bpmnElement="Flow_H3">
+        <di:waypoint x="660" y="210" />
+        <di:waypoint x="720" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H4_di" bpmnElement="Flow_H4">
+        <di:waypoint x="880" y="210" />
+        <di:waypoint x="940" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H5_di" bpmnElement="Flow_H5">
+        <di:waypoint x="1100" y="210" />
+        <di:waypoint x="1160" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H6_di" bpmnElement="Flow_H6">
+        <di:waypoint x="1300" y="210" />
+        <di:waypoint x="1362" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_ClientApp_di" bpmnElement="Participant_ClientApp" isHorizontal="true">
+        <dc:Bounds x="160" y="300" width="1600" height="140" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveSelection_di" bpmnElement="Activity_ReceiveSelection">
+        <dc:Bounds x="240" y="330" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ShowLoading_di" bpmnElement="Activity_ShowLoading">
+        <dc:Bounds x="440" y="330" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestVideo_di" bpmnElement="Activity_RequestVideo">
+        <dc:Bounds x="620" y="330" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveStreamURL_di" bpmnElement="Activity_ReceiveStreamURL">
+        <dc:Bounds x="810" y="330" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_InitPlayer_di" bpmnElement="Activity_InitPlayer">
+        <dc:Bounds x="1020" y="330" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestChunks_di" bpmnElement="Activity_RequestChunks">
+        <dc:Bounds x="1210" y="330" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveChunks_di" bpmnElement="Activity_ReceiveChunks">
+        <dc:Bounds x="1400" y="330" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RenderVideo_di" bpmnElement="Activity_RenderVideo">
+        <dc:Bounds x="1590" y="330" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_CA1_di" bpmnElement="Flow_CA1">
+        <di:waypoint x="380" y="370" />
+        <di:waypoint x="440" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA2_di" bpmnElement="Flow_CA2">
+        <di:waypoint x="560" y="370" />
+        <di:waypoint x="620" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA3_di" bpmnElement="Flow_CA3">
+        <di:waypoint x="750" y="370" />
+        <di:waypoint x="810" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA4_di" bpmnElement="Flow_CA4">
+        <di:waypoint x="960" y="370" />
+        <di:waypoint x="1020" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA5_di" bpmnElement="Flow_CA5">
+        <di:waypoint x="1150" y="370" />
+        <di:waypoint x="1210" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA6_di" bpmnElement="Flow_CA6">
+        <di:waypoint x="1340" y="370" />
+        <di:waypoint x="1400" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA7_di" bpmnElement="Flow_CA7">
+        <di:waypoint x="1530" y="370" />
+        <di:waypoint x="1590" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_APIGateway_di" bpmnElement="Participant_APIGateway" isHorizontal="true">
+        <dc:Bounds x="160" y="460" width="1060" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveVideoRequest_di" bpmnElement="Activity_ReceiveVideoRequest">
+        <dc:Bounds x="240" y="485" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AuthenticateUser_di" bpmnElement="Activity_AuthenticateUser">
+        <dc:Bounds x="440" y="485" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RouteToVideo_di" bpmnElement="Activity_RouteToVideo">
+        <dc:Bounds x="640" y="485" width="170" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveURL_di" bpmnElement="Activity_ReceiveURL">
+        <dc:Bounds x="870" y="485" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ForwardURL_di" bpmnElement="Activity_ForwardURL">
+        <dc:Bounds x="1050" y="485" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_AG1_di" bpmnElement="Flow_AG1">
+        <di:waypoint x="380" y="520" />
+        <di:waypoint x="440" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG2_di" bpmnElement="Flow_AG2">
+        <di:waypoint x="580" y="520" />
+        <di:waypoint x="640" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG3_di" bpmnElement="Flow_AG3">
+        <di:waypoint x="810" y="520" />
+        <di:waypoint x="870" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG4_di" bpmnElement="Flow_AG4">
+        <di:waypoint x="990" y="520" />
+        <di:waypoint x="1050" y="520" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_VideoService_di" bpmnElement="Participant_VideoService" isHorizontal="true">
+        <dc:Bounds x="160" y="600" width="1490" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveRequest_di" bpmnElement="Activity_ReceiveRequest">
+        <dc:Bounds x="240" y="650" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ValidateParams_di" bpmnElement="Activity_ValidateParams">
+        <dc:Bounds x="410" y="650" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_QueryArchive_di" bpmnElement="Activity_QueryArchive">
+        <dc:Bounds x="590" y="650" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveFiles_di" bpmnElement="Activity_ReceiveFiles">
+        <dc:Bounds x="760" y="650" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Found_di" bpmnElement="Gateway_Found" isMarkerVisible="true">
+        <dc:Bounds x="925" y="665" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="916" y="635" width="69" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GenerateManifest_di" bpmnElement="Activity_GenerateManifest">
+        <dc:Bounds x="1030" y="650" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_NotFound_di" bpmnElement="Event_NotFound">
+        <dc:Bounds x="932" y="742" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="839" y="753" width="82" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_GenerateURLs_di" bpmnElement="Activity_GenerateURLs">
+        <dc:Bounds x="1215" y="650" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReturnStreamURL_di" bpmnElement="Activity_ReturnStreamURL">
+        <dc:Bounds x="1455" y="650" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_VS1_di" bpmnElement="Flow_VS1">
+        <di:waypoint x="360" y="690" />
+        <di:waypoint x="410" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS2_di" bpmnElement="Flow_VS2">
+        <di:waypoint x="540" y="690" />
+        <di:waypoint x="590" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS3_di" bpmnElement="Flow_VS3">
+        <di:waypoint x="710" y="690" />
+        <di:waypoint x="760" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS4_di" bpmnElement="Flow_VS4">
+        <di:waypoint x="870" y="690" />
+        <di:waypoint x="925" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS5_Yes_di" bpmnElement="Flow_VS5_Yes">
+        <di:waypoint x="975" y="690" />
+        <di:waypoint x="1030" y="690" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="988" y="672" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS5_No_di" bpmnElement="Flow_VS5_No">
+        <di:waypoint x="950" y="715" />
+        <di:waypoint x="950" y="742" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="958" y="723" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS6_di" bpmnElement="Flow_VS6">
+        <di:waypoint x="1170" y="690" />
+        <di:waypoint x="1215" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS7_di" bpmnElement="Flow_VS7">
+        <di:waypoint x="1365" y="690" />
+        <di:waypoint x="1455" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_DataStorage_di" bpmnElement="Participant_DataStorage" isHorizontal="true">
+        <dc:Bounds x="160" y="800" width="1340" height="140" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StreamChunks_di" bpmnElement="Activity_StreamChunks">
+        <dc:Bounds x="1100" y="830" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DeliverChunks_di" bpmnElement="Activity_DeliverChunks">
+        <dc:Bounds x="1320" y="830" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReturnFiles_di" bpmnElement="Activity_ReturnFiles">
+        <dc:Bounds x="750" y="830" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_FindVideos_di" bpmnElement="Activity_FindVideos">
+        <dc:Bounds x="580" y="830" width="140" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_DS2_di" bpmnElement="Flow_DS2">
+        <di:waypoint x="1260" y="870" />
+        <di:waypoint x="1320" y="870" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DS1_di" bpmnElement="Flow_DS1">
+        <di:waypoint x="720" y="870" />
+        <di:waypoint x="750" y="870" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TextAnnotation_Title_di" bpmnElement="TextAnnotation_Title">
+        <dc:Bounds x="170" y="80" width="180" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_HomeownerToApp_di" bpmnElement="Flow_HomeownerToApp">
+        <di:waypoint x="1020" y="250" />
+        <di:waypoint x="1020" y="285" />
+        <di:waypoint x="310" y="285" />
+        <di:waypoint x="310" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToGateway_di" bpmnElement="Flow_AppToGateway">
+        <di:waypoint x="685" y="410" />
+        <di:waypoint x="685" y="435" />
+        <di:waypoint x="310" y="435" />
+        <di:waypoint x="310" y="485" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToVideo_di" bpmnElement="Flow_GatewayToVideo">
+        <di:waypoint x="725" y="555" />
+        <di:waypoint x="725" y="575" />
+        <di:waypoint x="300" y="575" />
+        <di:waypoint x="300" y="650" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VideoToStorage_di" bpmnElement="Flow_VideoToStorage">
+        <di:waypoint x="650" y="730" />
+        <di:waypoint x="650" y="830" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_StorageToVideo_di" bpmnElement="Flow_StorageToVideo">
+        <di:waypoint x="815" y="830" />
+        <di:waypoint x="815" y="730" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VideoToGateway_di" bpmnElement="Flow_VideoToGateway">
+        <di:waypoint x="1530" y="650" />
+        <di:waypoint x="1530" y="590" />
+        <di:waypoint x="930" y="590" />
+        <di:waypoint x="930" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToApp_di" bpmnElement="Flow_GatewayToApp">
+        <di:waypoint x="1110" y="485" />
+        <di:waypoint x="1110" y="450" />
+        <di:waypoint x="885" y="450" />
+        <di:waypoint x="885" y="410" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToStorage_di" bpmnElement="Flow_AppToStorage">
+        <di:waypoint x="1275" y="410" />
+        <di:waypoint x="1275" y="620" />
+        <di:waypoint x="1180" y="620" />
+        <di:waypoint x="1180" y="830" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_StorageToApp_di" bpmnElement="Flow_StorageToApp">
+        <di:waypoint x="1385" y="830" />
+        <di:waypoint x="1385" y="620" />
+        <di:waypoint x="1465" y="620" />
+        <di:waypoint x="1465" y="410" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0cwfywv_di" bpmnElement="Flow_0cwfywv">
+        <di:waypoint x="1650" y="330" />
+        <di:waypoint x="1650" y="290" />
+        <di:waypoint x="1230" y="290" />
+        <di:waypoint x="1230" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Title_di" bpmnElement="Association_Title">
+        <di:waypoint x="260" y="140" />
+        <di:waypoint x="260" y="110" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

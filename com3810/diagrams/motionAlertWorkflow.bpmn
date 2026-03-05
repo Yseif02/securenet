@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_MotionAlert" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0">
+  <bpmn:collaboration id="Collaboration_MotionAlert">
+    <bpmn:extensionElements />
+    <bpmn:participant id="Participant_PhysicalDevice" name="Physical IoT Device (Motion Sensor)" processRef="Process_PhysicalDevice" />
+    <bpmn:participant id="Participant_IoTFirmware" name="IoT Device Management" processRef="Process_IoTFirmware" />
+    <bpmn:participant id="Participant_EventProcessing" name="Event Processing Service" processRef="Process_EventProcessing" />
+    <bpmn:participant id="Participant_Notification" name="Notification Service" processRef="Process_Notification" />
+    <bpmn:participant id="Participant_PushService" name="Push Notification Services (APNs/FCM)" processRef="Process_PushService" />
+    <bpmn:participant id="Participant_Homeowner" name="Homeowner" processRef="Process_Homeowner" />
+    <bpmn:participant id="Participant_ClientApp" name="Client Application" processRef="Process_ClientApp" />
+    <bpmn:participant id="Participant_APIGateway" name="API Gateway" processRef="Process_APIGateway" />
+    <bpmn:participant id="Participant_DataStorage" name="Data Storage Layer" processRef="Process_DataStorage" />
+    <bpmn:messageFlow id="Flow_DeviceToFirmware" sourceRef="Activity_TriggerInterrupt" targetRef="Activity_CaptureEvent" />
+    <bpmn:messageFlow id="Flow_FirmwareToEventProcessing" sourceRef="Activity_SendEventMQTT" targetRef="Activity_IngestEvent" />
+    <bpmn:messageFlow id="Flow_EventToStorage" sourceRef="Activity_LogEvent" targetRef="Activity_StoreEvent" />
+    <bpmn:messageFlow id="Flow_EventToNotification" sourceRef="Activity_TriggerAlert" targetRef="Activity_ReceiveAlertRequest" />
+    <bpmn:messageFlow id="Flow_NotificationToPush" sourceRef="Activity_SendToPushService" targetRef="Activity_ReceiveFromSecureNet" />
+    <bpmn:messageFlow id="Flow_PushToHomeowner" sourceRef="Activity_DeliverToMobile" targetRef="Activity_ReceiveNotification" />
+    <bpmn:messageFlow id="Flow_HomeownerToApp" sourceRef="Activity_OpenApp" targetRef="Activity_AppOpens" />
+    <bpmn:messageFlow id="Flow_AppToGateway" sourceRef="Activity_RequestLiveFeed" targetRef="Activity_ReceiveFeedRequest" />
+    <bpmn:messageFlow id="Flow_GatewayToFirmware" sourceRef="Activity_RequestStream" targetRef="Activity_StartStreaming" />
+    <bpmn:messageFlow id="Flow_FirmwareToApp" sourceRef="Activity_StreamVideo" targetRef="Activity_DisplayFeed" />
+    <bpmn:textAnnotation id="TextAnnotation_Title">
+      <bpmn:text>Motion Detection and Alert Workflow</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_Title" sourceRef="Participant_PhysicalDevice" targetRef="TextAnnotation_Title" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_PhysicalDevice" isExecutable="false">
+    <bpmn:startEvent id="Event_MotionDetected" name="Motion Detected by Sensor">
+      <bpmn:outgoing>Flow_PD1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_TriggerInterrupt" name="Trigger Hardware Interrupt">
+      <bpmn:incoming>Flow_PD1</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_PD1" sourceRef="Event_MotionDetected" targetRef="Activity_TriggerInterrupt" />
+  </bpmn:process>
+  <bpmn:process id="Process_IoTFirmware" isExecutable="false">
+    <bpmn:task id="Activity_CaptureEvent" name="Capture Event Details">
+      <bpmn:outgoing>Flow_IOT1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_PackageEvent" name="Package Event Data">
+      <bpmn:incoming>Flow_IOT1</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SendEventMQTT" name="Send Event">
+      <bpmn:incoming>Flow_IOT2</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_StartStreaming" name="Start Video Streaming">
+      <bpmn:outgoing>Flow_IOT3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_StreamVideo" name="Stream Video to Client">
+      <bpmn:incoming>Flow_IOT3</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_IOT1" sourceRef="Activity_CaptureEvent" targetRef="Activity_PackageEvent" />
+    <bpmn:sequenceFlow id="Flow_IOT2" sourceRef="Activity_PackageEvent" targetRef="Activity_SendEventMQTT" />
+    <bpmn:sequenceFlow id="Flow_IOT3" sourceRef="Activity_StartStreaming" targetRef="Activity_StreamVideo" />
+  </bpmn:process>
+  <bpmn:process id="Process_EventProcessing" isExecutable="false">
+    <bpmn:task id="Activity_IngestEvent" name="Ingest Event from Firmware">
+      <bpmn:outgoing>Flow_EP1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_EnrichEvent" name="Enrich Event (device name, location, user)">
+      <bpmn:incoming>Flow_EP1</bpmn:incoming>
+      <bpmn:outgoing>Flow_EP2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_ShouldAlert" name="Should Send Alert?">
+      <bpmn:incoming>Flow_EP2</bpmn:incoming>
+      <bpmn:outgoing>Flow_EP3_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_EP3_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_TriggerAlert" name="Trigger Alert to Notification Service">
+      <bpmn:incoming>Flow_EP3_Yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_EP4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_LogEvent" name="Log Event to History">
+      <bpmn:incoming>Flow_EP4</bpmn:incoming>
+      <bpmn:incoming>Flow_EP3_No</bpmn:incoming>
+      <bpmn:outgoing>Flow_EP5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_EventLogged" name="Event logged">
+      <bpmn:incoming>Flow_EP5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_EP1" sourceRef="Activity_IngestEvent" targetRef="Activity_EnrichEvent" />
+    <bpmn:sequenceFlow id="Flow_EP2" sourceRef="Activity_EnrichEvent" targetRef="Gateway_ShouldAlert" />
+    <bpmn:sequenceFlow id="Flow_EP3_Yes" name="Yes" sourceRef="Gateway_ShouldAlert" targetRef="Activity_TriggerAlert" />
+    <bpmn:sequenceFlow id="Flow_EP3_No" name="No" sourceRef="Gateway_ShouldAlert" targetRef="Activity_LogEvent" />
+    <bpmn:sequenceFlow id="Flow_EP4" sourceRef="Activity_TriggerAlert" targetRef="Activity_LogEvent" />
+    <bpmn:sequenceFlow id="Flow_EP5" sourceRef="Activity_LogEvent" targetRef="Event_EventLogged" />
+  </bpmn:process>
+  <bpmn:process id="Process_Notification" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveAlertRequest" name="Receive Alert Request">
+      <bpmn:outgoing>Flow_N1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_N1" sourceRef="Activity_ReceiveAlertRequest" targetRef="Activity_FormatMessage" />
+    <bpmn:task id="Activity_FormatMessage" name="Format Notification Message">
+      <bpmn:incoming>Flow_N1</bpmn:incoming>
+      <bpmn:outgoing>Flow_N3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SendToPushService" name="Send to Push Service">
+      <bpmn:incoming>Flow_N3</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_N3" sourceRef="Activity_FormatMessage" targetRef="Activity_SendToPushService" />
+  </bpmn:process>
+  <bpmn:process id="Process_PushService" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveFromSecureNet" name="Receive from SecureNet">
+      <bpmn:outgoing>Flow_PS1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_DeliverToMobile" name="Deliver to User&#39;s Mobile Device">
+      <bpmn:incoming>Flow_PS1</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_PS1" sourceRef="Activity_ReceiveFromSecureNet" targetRef="Activity_DeliverToMobile" />
+  </bpmn:process>
+  <bpmn:process id="Process_Homeowner" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveNotification" name="Receive Push Notification">
+      <bpmn:outgoing>Flow_H1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_OpenApp" name="Tap Notification, Open App">
+      <bpmn:incoming>Flow_H1</bpmn:incoming>
+      <bpmn:outgoing>Flow_H2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_ViewingFeed" name="Viewing live camera feed">
+      <bpmn:incoming>Flow_H2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_H1" sourceRef="Activity_ReceiveNotification" targetRef="Activity_OpenApp" />
+    <bpmn:sequenceFlow id="Flow_H2" sourceRef="Activity_OpenApp" targetRef="Event_ViewingFeed" />
+  </bpmn:process>
+  <bpmn:process id="Process_ClientApp" isExecutable="false">
+    <bpmn:task id="Activity_AppOpens" name="App Opens to Event View">
+      <bpmn:outgoing>Flow_CA1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_CA1" sourceRef="Activity_AppOpens" targetRef="Activity_RequestLiveFeed" />
+    <bpmn:sequenceFlow id="Flow_CA2" sourceRef="Activity_RequestLiveFeed" targetRef="Activity_DisplayFeed" />
+    <bpmn:task id="Activity_DisplayFeed" name="Display Live Video Feed">
+      <bpmn:incoming>Flow_CA2</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_RequestLiveFeed" name="Request Live Camera Feed">
+      <bpmn:incoming>Flow_CA1</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA2</bpmn:outgoing>
+    </bpmn:task>
+  </bpmn:process>
+  <bpmn:process id="Process_APIGateway" isExecutable="false">
+    <bpmn:sequenceFlow id="Flow_AG2" sourceRef="Activity_AuthenticateUser" targetRef="Activity_RequestStream" />
+    <bpmn:sequenceFlow id="Flow_AG1" sourceRef="Activity_ReceiveFeedRequest" targetRef="Activity_AuthenticateUser" />
+    <bpmn:task id="Activity_RequestStream" name="Request Stream from Device">
+      <bpmn:incoming>Flow_AG2</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_AuthenticateUser" name="Authenticate User">
+      <bpmn:incoming>Flow_AG1</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveFeedRequest" name="Receive Live Feed Request">
+      <bpmn:outgoing>Flow_AG1</bpmn:outgoing>
+    </bpmn:task>
+  </bpmn:process>
+  <bpmn:process id="Process_DataStorage" isExecutable="false">
+    <bpmn:task id="Activity_StoreEvent" name="Store Event in DB" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_MotionAlert">
+      <bpmndi:BPMNShape id="Participant_PhysicalDevice_di" bpmnElement="Participant_PhysicalDevice" isHorizontal="true">
+        <dc:Bounds x="160" y="140" width="500" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_MotionDetected_di" bpmnElement="Event_MotionDetected">
+        <dc:Bounds x="212" y="182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="199" y="225" width="81" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_TriggerInterrupt_di" bpmnElement="Activity_TriggerInterrupt">
+        <dc:Bounds x="320" y="160" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_PD1_di" bpmnElement="Flow_PD1">
+        <di:waypoint x="248" y="200" />
+        <di:waypoint x="320" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_IoTFirmware_di" bpmnElement="Participant_IoTFirmware" isHorizontal="true">
+        <dc:Bounds x="160" y="280" width="1200" height="150" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_CaptureEvent_di" bpmnElement="Activity_CaptureEvent">
+        <dc:Bounds x="230" y="315" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_PackageEvent_di" bpmnElement="Activity_PackageEvent">
+        <dc:Bounds x="380" y="315" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SendEventMQTT_di" bpmnElement="Activity_SendEventMQTT">
+        <dc:Bounds x="530" y="315" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StartStreaming_di" bpmnElement="Activity_StartStreaming">
+        <dc:Bounds x="1050" y="315" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StreamVideo_di" bpmnElement="Activity_StreamVideo">
+        <dc:Bounds x="1210" y="315" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_IOT1_di" bpmnElement="Flow_IOT1">
+        <di:waypoint x="330" y="355" />
+        <di:waypoint x="380" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT2_di" bpmnElement="Flow_IOT2">
+        <di:waypoint x="480" y="355" />
+        <di:waypoint x="530" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT3_di" bpmnElement="Flow_IOT3">
+        <di:waypoint x="1170" y="355" />
+        <di:waypoint x="1210" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_EventProcessing_di" bpmnElement="Participant_EventProcessing" isHorizontal="true">
+        <dc:Bounds x="160" y="450" width="900" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_IngestEvent_di" bpmnElement="Activity_IngestEvent">
+        <dc:Bounds x="230" y="500" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_EnrichEvent_di" bpmnElement="Activity_EnrichEvent">
+        <dc:Bounds x="380" y="500" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ShouldAlert_di" bpmnElement="Gateway_ShouldAlert" isMarkerVisible="true">
+        <dc:Bounds x="535" y="515" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="529" y="485" width="63" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_TriggerAlert_di" bpmnElement="Activity_TriggerAlert">
+        <dc:Bounds x="640" y="500" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_LogEvent_di" bpmnElement="Activity_LogEvent">
+        <dc:Bounds x="790" y="500" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_EventLogged_di" bpmnElement="Event_EventLogged">
+        <dc:Bounds x="952" y="522" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="938" y="565" width="65" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_EP1_di" bpmnElement="Flow_EP1">
+        <di:waypoint x="330" y="540" />
+        <di:waypoint x="380" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EP2_di" bpmnElement="Flow_EP2">
+        <di:waypoint x="480" y="540" />
+        <di:waypoint x="535" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EP3_Yes_di" bpmnElement="Flow_EP3_Yes">
+        <di:waypoint x="585" y="540" />
+        <di:waypoint x="640" y="540" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="598" y="522" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EP3_No_di" bpmnElement="Flow_EP3_No">
+        <di:waypoint x="560" y="565" />
+        <di:waypoint x="560" y="600" />
+        <di:waypoint x="810" y="600" />
+        <di:waypoint x="810" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="571" y="573" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EP4_di" bpmnElement="Flow_EP4">
+        <di:waypoint x="740" y="540" />
+        <di:waypoint x="790" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EP5_di" bpmnElement="Flow_EP5">
+        <di:waypoint x="890" y="540" />
+        <di:waypoint x="952" y="540" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Notification_di" bpmnElement="Participant_Notification" isHorizontal="true">
+        <dc:Bounds x="160" y="650" width="520" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveAlertRequest_di" bpmnElement="Activity_ReceiveAlertRequest">
+        <dc:Bounds x="230" y="675" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_FormatMessage_di" bpmnElement="Activity_FormatMessage">
+        <dc:Bounds x="380" y="675" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SendToPushService_di" bpmnElement="Activity_SendToPushService">
+        <dc:Bounds x="550" y="675" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_N1_di" bpmnElement="Flow_N1">
+        <di:waypoint x="330" y="710" />
+        <di:waypoint x="380" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_N3_di" bpmnElement="Flow_N3">
+        <di:waypoint x="500" y="710" />
+        <di:waypoint x="550" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_PushService_di" bpmnElement="Participant_PushService" isHorizontal="true">
+        <dc:Bounds x="160" y="790" width="520" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveFromSecureNet_di" bpmnElement="Activity_ReceiveFromSecureNet">
+        <dc:Bounds x="230" y="820" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DeliverToMobile_di" bpmnElement="Activity_DeliverToMobile">
+        <dc:Bounds x="400" y="820" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_PS1_di" bpmnElement="Flow_PS1">
+        <di:waypoint x="350" y="850" />
+        <di:waypoint x="400" y="850" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Homeowner_di" bpmnElement="Participant_Homeowner" isHorizontal="true">
+        <dc:Bounds x="160" y="930" width="520" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveNotification_di" bpmnElement="Activity_ReceiveNotification">
+        <dc:Bounds x="230" y="955" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_OpenApp_di" bpmnElement="Activity_OpenApp">
+        <dc:Bounds x="400" y="955" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ViewingFeed_di" bpmnElement="Event_ViewingFeed">
+        <dc:Bounds x="572" y="972" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="559" y="1015" width="62" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_H1_di" bpmnElement="Flow_H1">
+        <di:waypoint x="350" y="990" />
+        <di:waypoint x="400" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H2_di" bpmnElement="Flow_H2">
+        <di:waypoint x="520" y="990" />
+        <di:waypoint x="572" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_ClientApp_di" bpmnElement="Participant_ClientApp" isHorizontal="true">
+        <dc:Bounds x="700" y="930" width="660" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AppOpens_di" bpmnElement="Activity_AppOpens">
+        <dc:Bounds x="760" y="955" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_DisplayFeed_di" bpmnElement="Activity_DisplayFeed">
+        <dc:Bounds x="1150" y="955" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestLiveFeed_di" bpmnElement="Activity_RequestLiveFeed">
+        <dc:Bounds x="960" y="955" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_CA1_di" bpmnElement="Flow_CA1">
+        <di:waypoint x="880" y="990" />
+        <di:waypoint x="960" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA2_di" bpmnElement="Flow_CA2">
+        <di:waypoint x="1080" y="990" />
+        <di:waypoint x="1150" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_APIGateway_di" bpmnElement="Participant_APIGateway" isHorizontal="true">
+        <dc:Bounds x="700" y="1070" width="660" height="120" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveFeedRequest_di" bpmnElement="Activity_ReceiveFeedRequest">
+        <dc:Bounds x="760" y="1100" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AuthenticateUser_di" bpmnElement="Activity_AuthenticateUser">
+        <dc:Bounds x="930" y="1100" width="120" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestStream_di" bpmnElement="Activity_RequestStream">
+        <dc:Bounds x="1100" y="1100" width="120" height="60" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_AG1_di" bpmnElement="Flow_AG1">
+        <di:waypoint x="880" y="1130" />
+        <di:waypoint x="930" y="1130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG2_di" bpmnElement="Flow_AG2">
+        <di:waypoint x="1050" y="1130" />
+        <di:waypoint x="1100" y="1130" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_DataStorage_di" bpmnElement="Participant_DataStorage" isHorizontal="true">
+        <dc:Bounds x="280" y="1090" width="390" height="100" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StoreEvent_di" bpmnElement="Activity_StoreEvent">
+        <dc:Bounds x="420" y="1115" width="140" height="50" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Association_Title_di" bpmnElement="Association_Title">
+        <di:waypoint x="280" y="140" />
+        <di:waypoint x="280" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TextAnnotation_Title_di" bpmnElement="TextAnnotation_Title">
+        <dc:Bounds x="170" y="80" width="220" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_DeviceToFirmware_di" bpmnElement="Flow_DeviceToFirmware">
+        <di:waypoint x="380" y="240" />
+        <di:waypoint x="380" y="270" />
+        <di:waypoint x="280" y="270" />
+        <di:waypoint x="280" y="315" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareToEventProcessing_di" bpmnElement="Flow_FirmwareToEventProcessing">
+        <di:waypoint x="580" y="395" />
+        <di:waypoint x="580" y="420" />
+        <di:waypoint x="280" y="420" />
+        <di:waypoint x="280" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToFirmware_di" bpmnElement="Flow_GatewayToFirmware">
+        <di:waypoint x="1160" y="1100" />
+        <di:waypoint x="1160" y="1080" />
+        <di:waypoint x="1110" y="1080" />
+        <di:waypoint x="1110" y="395" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareToApp_di" bpmnElement="Flow_FirmwareToApp">
+        <di:waypoint x="1260" y="395" />
+        <di:waypoint x="1260" y="955" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EventToNotification_di" bpmnElement="Flow_EventToNotification">
+        <di:waypoint x="690" y="580" />
+        <di:waypoint x="690" y="620" />
+        <di:waypoint x="280" y="620" />
+        <di:waypoint x="280" y="675" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_EventToStorage_di" bpmnElement="Flow_EventToStorage">
+        <di:waypoint x="840" y="580" />
+        <di:waypoint x="640" y="870" />
+        <di:waypoint x="640" y="1140" />
+        <di:waypoint x="560" y="1140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NotificationToPush_di" bpmnElement="Flow_NotificationToPush">
+        <di:waypoint x="600" y="745" />
+        <di:waypoint x="600" y="760" />
+        <di:waypoint x="290" y="760" />
+        <di:waypoint x="290" y="820" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_PushToHomeowner_di" bpmnElement="Flow_PushToHomeowner">
+        <di:waypoint x="460" y="880" />
+        <di:waypoint x="460" y="900" />
+        <di:waypoint x="290" y="900" />
+        <di:waypoint x="290" y="955" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_HomeownerToApp_di" bpmnElement="Flow_HomeownerToApp">
+        <di:waypoint x="460" y="955" />
+        <di:waypoint x="460" y="940" />
+        <di:waypoint x="820" y="940" />
+        <di:waypoint x="820" y="955" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToGateway_di" bpmnElement="Flow_AppToGateway">
+        <di:waypoint x="990" y="1030" />
+        <di:waypoint x="990" y="1060" />
+        <di:waypoint x="820" y="1060" />
+        <di:waypoint x="820" y="1100" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

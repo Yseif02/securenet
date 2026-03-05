@@ -1,0 +1,67 @@
+<mxfile host="65bd71144e">
+    <diagram name="System Context" id="system-context">
+        <mxGraphModel dx="1907" dy="921" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="SecureNet System Context Diagram" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="225" y="40" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="C4 Model - Stage 1: System Context" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#666666" parent="1" vertex="1">
+                    <mxGeometry x="225" y="70" width="400" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="securenet-system" value="&lt;b&gt;SecureNet Platform&lt;/b&gt;&lt;br&gt;[Software System]&lt;br&gt;&lt;br&gt;Cloud-based smart home security platform that manages IoT devices, processes events, streams video, and delivers real-time alerts to homeowners." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=12;spacingTop=10;spacingBottom=10;spacingLeft=15;spacingRight=15;" parent="1" vertex="1">
+                    <mxGeometry x="247.5" y="320" width="355" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="homeowner" value="&lt;b&gt;Homeowner&lt;/b&gt;&lt;br&gt;[Person]&lt;br&gt;&lt;br&gt;Uses SecureNet to monitor&lt;br&gt;their home, view cameras,&lt;br&gt;control devices, and&lt;br&gt;receive security alerts." style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="90" width="60" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="iot-devices" value="&lt;b&gt;IoT Devices&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;SecureNet cameras, smart locks,&lt;br&gt;motion sensors, and door/window&lt;br&gt;sensors installed in the home." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=11;spacingTop=5;spacingBottom=5;spacingLeft=10;spacingRight=10;" parent="1" vertex="1">
+                    <mxGeometry x="10" y="225" width="190" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="push-services" value="&lt;b&gt;Push Notification Services&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;Apple Push Notification Service&lt;br&gt;(APNs) and Firebase Cloud&lt;br&gt;Messaging (FCM)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=default;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=11;spacingTop=5;spacingBottom=5;spacingLeft=10;spacingRight=10;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="200" width="190" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge-homeowner-securenet" value="Views live/recorded video,&lt;br&gt;controls devices, manages settings" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="homeowner" target="securenet-system" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-iot-securenet" value="Send events, video streams,&lt;br&gt;device status; receive commands&lt;div&gt;&lt;br/&gt;&lt;/div&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="iot-devices" target="securenet-system" edge="1">
+                    <mxGeometry x="0.2464" y="-54" relative="1" as="geometry">
+                        <mxPoint y="-1" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge-securenet-push" value="Sends push notifications&lt;br&gt;for security alerts" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=2;fontSize=10;fontColor=#333333;endArrow=classic;endFill=1;edgeStyle=orthogonalEdgeStyle;" parent="1" source="securenet-system" target="push-services" edge="1">
+                    <mxGeometry x="-0.4368" y="-34" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;opacity=60;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="540" width="770" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-title" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontStyle=1" parent="1" vertex="1">
+                    <mxGeometry x="50" y="550" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-person" value="" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="565" width="20" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-person-text" value="Person" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="572" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-system" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="570" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-system-text" value="Software System (SecureNet)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="572" width="160" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-external" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="480" y="570" width="80" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend-external-text" value="External System" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="570" y="572" width="100" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
