@@ -1,46 +1,46 @@
 <mxfile host="65bd71144e">
     <diagram name="Container Diagram" id="container-diagram">
-        <mxGraphModel dx="1587" dy="921" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+        <mxGraphModel dx="1638" dy="1136" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 <mxCell id="title" value="SecureNet Container Diagram" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" parent="1" vertex="1">
-                    <mxGeometry x="250" y="40" width="500" height="30" as="geometry"/>
+                    <mxGeometry x="290" y="40" width="500" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="subtitle" value="&lt;font style=&quot;font-size: 14px;&quot;&gt;C4 Model - Stage 2: Container Diagram&lt;/font&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#666666" parent="1" vertex="1">
-                    <mxGeometry x="235" y="20" width="500" height="20" as="geometry"/>
+                    <mxGeometry x="275" y="20" width="500" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="homeowner" value="&lt;b&gt;Homeowner&lt;/b&gt;&lt;br&gt;[Person]" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="70" y="120" width="50" height="100" as="geometry"/>
+                    <mxGeometry x="110" y="120" width="50" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="3" style="edgeStyle=none;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;startArrow=classic;startFill=1;strokeWidth=2;" parent="1" source="iot-devices" target="device-firmware" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="iot-devices" value="&lt;b&gt;IoT Devices&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;Cameras, locks,&lt;br&gt;sensors" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry y="620" width="140" height="80" as="geometry"/>
+                    <mxGeometry x="40" y="620" width="140" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="push-services" value="&lt;b&gt;Push Services&lt;/b&gt;&lt;br&gt;[External System]&lt;br&gt;&lt;br&gt;APNs, FCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry y="360" width="140" height="80" as="geometry"/>
+                    <mxGeometry x="40" y="360" width="140" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="system-boundary" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#0D5091;strokeWidth=3;dashed=1;dashPattern=8 8;verticalAlign=top;align=left;fontSize=14;fontStyle=1;fontColor=#0D5091;" parent="1" vertex="1">
-                    <mxGeometry x="155" y="90" width="755" height="650" as="geometry"/>
+                    <mxGeometry x="195" y="90" width="755" height="650" as="geometry"/>
                 </mxCell>
                 <mxCell id="client-app" value="&lt;b&gt;Client Applications&lt;/b&gt;&lt;br&gt;&lt;br&gt;User interface for monitoring&lt;br&gt;devices, viewing video,&lt;br&gt;controlling home" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="215" y="120" width="160" height="100" as="geometry"/>
+                    <mxGeometry x="255" y="120" width="160" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="api-gateway" value="&lt;b&gt;API Gateway&lt;/b&gt;&lt;br&gt;[Container: Java]&lt;br&gt;&lt;br&gt;Authentication, routing,&lt;br&gt;rate limiting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="470" y="120" width="160" height="100" as="geometry"/>
+                    <mxGeometry x="510" y="120" width="160" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="user-mgmt" value="&lt;b&gt;User Management&lt;/b&gt;&lt;br&gt;[Service: Java]&lt;br&gt;&lt;br&gt;User profiles" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="730" y="120" width="140" height="100" as="geometry"/>
+                    <mxGeometry x="770" y="120" width="140" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="device-mgmt" value="&lt;b&gt;Device Management&lt;/b&gt;&lt;br&gt;[Service: Java]&lt;br&gt;&lt;br&gt;Device registry,&lt;br&gt;Firmware downloads,&lt;div&gt;&lt;font style=&quot;color: rgb(255, 255, 255);&quot;&gt;Remote commands&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="230" y="300" width="160" height="100" as="geometry"/>
+                    <mxGeometry x="275" y="300" width="160" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="5" style="edgeStyle=none;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=2;" parent="1" source="event-processing" target="notification-svc" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="480" y="478"/>
+                            <mxPoint x="520" y="478"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
@@ -50,36 +50,36 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="event-processing" value="&lt;b&gt;Event Processing&lt;/b&gt;&lt;br&gt;[Service: Java]&lt;br&gt;&lt;br&gt;Ingest events,&lt;br&gt;Maintain history" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="440" y="320" width="160" height="100" as="geometry"/>
+                    <mxGeometry x="480" y="320" width="160" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="16" style="edgeStyle=none;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;strokeWidth=2;" edge="1" parent="1" source="video-streaming" target="client-app">
+                <mxCell id="16" style="edgeStyle=none;html=1;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;strokeWidth=2;" parent="1" source="video-streaming" target="client-app" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="630" y="325"/>
-                            <mxPoint x="630" y="290"/>
-                            <mxPoint x="420" y="290"/>
-                            <mxPoint x="420" y="195"/>
+                            <mxPoint x="670" y="325"/>
+                            <mxPoint x="670" y="290"/>
+                            <mxPoint x="460" y="290"/>
+                            <mxPoint x="460" y="195"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="17" value="Streams Video" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="16">
+                <mxCell id="17" value="Streams Video" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="16" vertex="1" connectable="0">
                     <mxGeometry x="0.6033" relative="1" as="geometry">
                         <mxPoint y="1" as="offset"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="video-streaming" value="&lt;b&gt;Video Streaming&lt;/b&gt;&lt;br&gt;[Service: Java]&lt;br&gt;&lt;br&gt;Ingest streams,&lt;br&gt;Retrieves footage,&lt;br&gt;Archive footage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="650" y="300" width="140" height="100" as="geometry"/>
+                    <mxGeometry x="690" y="300" width="140" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="8" value="Push notifications&lt;div&gt;&lt;span style=&quot;color: rgb(51, 51, 51); font-size: 9px;&quot;&gt;[HTTPS/REST]&lt;/span&gt;&lt;/div&gt;" style="edgeStyle=none;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="notification-svc" target="push-services" edge="1">
                     <mxGeometry x="0.1707" y="15" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="70" y="505"/>
+                            <mxPoint x="110" y="505"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="notification-svc" value="&lt;b&gt;Notification Service&lt;/b&gt;&lt;br&gt;[Service: Java]&lt;br&gt;&lt;br&gt;Push notifications" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="210" y="450" width="180" height="110" as="geometry"/>
+                    <mxGeometry x="250" y="450" width="180" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="12" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;strokeWidth=2;startArrow=classic;startFill=1;" parent="1" source="data-storage" target="user-mgmt" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
@@ -90,10 +90,10 @@
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="data-storage" value="&lt;b&gt;Data Storage Layer&lt;/b&gt;&lt;br&gt;[Database: PostgreSQL]&lt;br&gt;&lt;br&gt;Device state, user data,&lt;br&gt;events, video archives, Device firmaware" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="430" y="630" width="350" height="80" as="geometry"/>
+                    <mxGeometry x="470" y="630" width="350" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="device-firmware" value="&lt;b&gt;IoT Device Firmware&lt;/b&gt;&lt;div&gt;&lt;br&gt;Device control&lt;br&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;fontColor=#ffffff;align=center;verticalAlign=middle;fontSize=10;spacing=5;" parent="1" vertex="1">
-                    <mxGeometry x="205" y="620" width="160" height="80" as="geometry"/>
+                    <mxGeometry x="245" y="620" width="160" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="edge1" value="Uses&lt;br&gt;[HTTPS]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="homeowner" target="client-app" edge="1">
                     <mxGeometry x="0.2727" y="20" relative="1" as="geometry">
@@ -111,8 +111,8 @@
                 <mxCell id="edge4" value="Routes requests&lt;br&gt;[HTTPS/REST]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="api-gateway" target="device-mgmt" edge="1">
                     <mxGeometry x="0.4487" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="520" y="260"/>
-                            <mxPoint x="310" y="260"/>
+                            <mxPoint x="560" y="260"/>
+                            <mxPoint x="350" y="260"/>
                         </Array>
                         <mxPoint x="1" as="offset"/>
                     </mxGeometry>
@@ -120,8 +120,8 @@
                 <mxCell id="edge5" value="Routes requests&lt;br&gt;[HTTPS/REST]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="api-gateway" target="event-processing" edge="1">
                     <mxGeometry x="-0.2308" y="10" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="550" y="270"/>
-                            <mxPoint x="520" y="270"/>
+                            <mxPoint x="590" y="270"/>
+                            <mxPoint x="560" y="270"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
@@ -129,16 +129,16 @@
                 <mxCell id="edge6" value="Routes requests&lt;br&gt;[HTTPS/REST]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="api-gateway" target="video-streaming" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="580" y="260"/>
-                            <mxPoint x="720" y="260"/>
+                            <mxPoint x="620" y="260"/>
+                            <mxPoint x="760" y="260"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="edge8" value="Registers, sends&lt;br&gt;heartbeats, sends&lt;div&gt;commands,&lt;/div&gt;&lt;div&gt;live feed req&amp;nbsp;&lt;br&gt;&lt;span style=&quot;color: rgb(51, 51, 51);&quot;&gt;[HTTPS/REST]&lt;/span&gt;&lt;/div&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="device-firmware" target="device-mgmt" edge="1">
                     <mxGeometry x="0.3623" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="190" y="640"/>
-                            <mxPoint x="190" y="350"/>
+                            <mxPoint x="230" y="640"/>
+                            <mxPoint x="230" y="350"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
@@ -146,8 +146,8 @@
                 <mxCell id="edge9" value="Sends events&lt;br&gt;&lt;span style=&quot;color: rgb(51, 51, 51);&quot;&gt;[HTTPS/REST]&lt;/span&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;endArrow=classic;endFill=1;" parent="1" source="device-firmware" target="event-processing" edge="1">
                     <mxGeometry x="-0.85" y="10" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="310" y="570"/>
-                            <mxPoint x="510" y="570"/>
+                            <mxPoint x="350" y="570"/>
+                            <mxPoint x="550" y="570"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
@@ -155,8 +155,8 @@
                 <mxCell id="edge10" value="&amp;nbsp;Streams video" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;endArrow=classic;endFill=1;startArrow=classic;startFill=1;" parent="1" source="device-firmware" target="video-streaming" edge="1">
                     <mxGeometry x="-0.25" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="340" y="590"/>
-                            <mxPoint x="760" y="590"/>
+                            <mxPoint x="380" y="590"/>
+                            <mxPoint x="800" y="590"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
@@ -164,9 +164,9 @@
                 <mxCell id="edge15" value="Reads/writes&lt;br&gt;Device data/ firmware&lt;br&gt;[SQL/JDBC]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="device-mgmt" target="data-storage" edge="1">
                     <mxGeometry x="0.1111" y="10" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="430" y="350"/>
-                            <mxPoint x="430" y="600"/>
+                            <mxPoint x="470" y="350"/>
                             <mxPoint x="470" y="600"/>
+                            <mxPoint x="510" y="600"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
@@ -174,52 +174,66 @@
                 <mxCell id="edge16" value="Reads/writes&lt;br&gt;Events&lt;br&gt;[SQL/JDBC]" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="event-processing" target="data-storage" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="550" y="540"/>
-                            <mxPoint x="615" y="540"/>
+                            <mxPoint x="590" y="540"/>
+                            <mxPoint x="655" y="540"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="edge17" value="&lt;span style=&quot;color: rgb(51, 51, 51);&quot;&gt;Reads/writes&lt;br&gt;&lt;/span&gt;Foo&lt;span style=&quot;color: rgb(63, 63, 63); background-color: light-dark(#ffffff, var(--ge-dark-color, #121212));&quot;&gt;tage&lt;/span&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(51, 51, 51);&quot;&gt;[SQL/JDBC]&lt;/span&gt;&lt;/div&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;fontSize=9;fontColor=#333333;startArrow=classic;startFill=1;endArrow=classic;endFill=1;" parent="1" source="video-streaming" target="data-storage" edge="1">
                     <mxGeometry x="0.2" relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="680" y="540"/>
-                            <mxPoint x="650" y="540"/>
+                            <mxPoint x="720" y="540"/>
+                            <mxPoint x="690" y="540"/>
                         </Array>
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="legend-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;opacity=60;" parent="1" vertex="1">
-                    <mxGeometry x="165" y="760" width="710" height="70" as="geometry"/>
+                    <mxGeometry x="205" y="760" width="710" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-title" value="Legend:" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=1" parent="1" vertex="1">
-                    <mxGeometry x="175" y="770" width="60" height="20" as="geometry"/>
+                    <mxGeometry x="215" y="770" width="60" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-person" value="" style="shape=umlActor;html=1;fillColor=#08427B;strokeColor=#0D5091;fontColor=#ffffff;" parent="1" vertex="1">
-                    <mxGeometry x="185" y="790" width="15" height="25" as="geometry"/>
+                    <mxGeometry x="225" y="790" width="15" height="25" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-person-text" value="Person" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="210" y="795" width="50" height="15" as="geometry"/>
+                    <mxGeometry x="250" y="795" width="50" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-container" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;strokeColor=#0D5091;" parent="1" vertex="1">
-                    <mxGeometry x="285" y="795" width="60" height="20" as="geometry"/>
+                    <mxGeometry x="325" y="795" width="60" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-container-text" value="Container (Service)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="355" y="795" width="110" height="15" as="geometry"/>
+                    <mxGeometry x="395" y="795" width="110" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-db" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#0D5091;" parent="1" vertex="1">
-                    <mxGeometry x="495" y="795" width="60" height="20" as="geometry"/>
+                    <mxGeometry x="535" y="795" width="60" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-db-text" value="Database" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="565" y="795" width="60" height="15" as="geometry"/>
+                    <mxGeometry x="605" y="795" width="60" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-external" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=#666666;" parent="1" vertex="1">
-                    <mxGeometry x="655" y="795" width="60" height="20" as="geometry"/>
+                    <mxGeometry x="695" y="795" width="60" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend-external-text" value="External System" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="725" y="795" width="90" height="15" as="geometry"/>
+                    <mxGeometry x="765" y="795" width="90" height="15" as="geometry"/>
                 </mxCell>
                 <mxCell id="11" value="&lt;span style=&quot;color: rgb(13, 80, 145); font-size: 14px; font-weight: 700; text-align: left; text-wrap-mode: wrap;&quot;&gt;SecureNet Platform&lt;/span&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
-                    <mxGeometry x="205" y="30" width="150" height="30" as="geometry"/>
+                    <mxGeometry x="245" y="30" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" style="edgeStyle=none;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=-0.001;entryY=0.619;entryDx=0;entryDy=0;entryPerimeter=0;strokeWidth=2;" edge="1" parent="1" source="device-mgmt" target="event-processing">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="355" y="430"/>
+                            <mxPoint x="450" y="430"/>
+                            <mxPoint x="450" y="380"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="24" value="&lt;font style=&quot;font-size: 9px;&quot;&gt;Send device conn&lt;br&gt;events&lt;br&gt;HTTPS/REST&lt;/font&gt;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="23">
+                    <mxGeometry x="-0.2073" y="-1" relative="1" as="geometry">
+                        <mxPoint x="-1" y="-16" as="offset"/>
+                    </mxGeometry>
                 </mxCell>
             </root>
         </mxGraphModel>
