@@ -1,0 +1,951 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_LiveFeed" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0">
+  <bpmn:collaboration id="Collaboration_LiveFeed">
+    <bpmn:participant id="Participant_Homeowner" name="Homeowner" processRef="Process_Homeowner" />
+    <bpmn:participant id="Participant_ClientApp" name="Client Application" processRef="Process_ClientApp" />
+    <bpmn:participant id="Participant_APIGateway" name="API Gateway" processRef="Process_APIGateway" />
+    <bpmn:participant id="Participant_DeviceMgmt" name="Device Management Service" processRef="Process_DeviceMgmt" />
+    <bpmn:participant id="Participant_VideoService" name="Video Streaming Service" processRef="Process_VideoService" />
+    <bpmn:participant id="Participant_IoTFirmware" name="IoT Device Firmware (Camera)" processRef="Process_IoTFirmware" />
+    <bpmn:messageFlow id="Flow_HomeownerToApp" sourceRef="Activity_SelectCamera" targetRef="Activity_AppReceivesSelection" />
+    <bpmn:messageFlow id="Flow_AppToGateway" sourceRef="Activity_0orontt" targetRef="Activity_ReceiveFeedRequest" />
+    <bpmn:messageFlow id="Flow_GatewayToDeviceMgmt" sourceRef="Activity_RequestStream" targetRef="Activity_ReceiveRequest" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtToFirmware" sourceRef="Activity_SendStreamRequest" targetRef="Activity_ReceiveStreamRequest" />
+    <bpmn:messageFlow id="Flow_FirmwareToVideoService" sourceRef="Activity_StreamVideo" targetRef="Activity_IngestStream" />
+    <bpmn:messageFlow id="Flow_AppToVideoService" sourceRef="Activity_RequestChunks" targetRef="Activity_ReceiveChunkRequest" />
+    <bpmn:messageFlow id="Flow_VideoServiceToApp" sourceRef="Activity_StreamChunks" targetRef="Activity_ReceiveChunks" />
+    <bpmn:messageFlow id="Flow_VideoToHomeowner" sourceRef="Activity_RenderVideo" targetRef="Activity_WatchFeed" />
+    <bpmn:messageFlow id="Flow_FirmwareOfflineToDeviceMgmt" sourceRef="Activity_RecordLocally" targetRef="Activity_MarkDeviceOffline" />
+    <bpmn:messageFlow id="Flow_DeviceMgmtOfflineToApp" sourceRef="Activity_MarkDeviceOffline" targetRef="Activity_ShowOfflineStatus" />
+    <bpmn:messageFlow id="Flow_FirmwareSyncToVideoService" sourceRef="Activity_SyncBufferedFootage" targetRef="Activity_IngestSyncedFootage" />
+    <bpmn:messageFlow id="Flow_AppCachedToHomeowner" sourceRef="Activity_ShowCachedStatus" targetRef="Activity_SeeCachedWarning" />
+    <bpmn:messageFlow id="Flow_VideoServiceBandwidthToApp" sourceRef="Activity_ReduceQuality" targetRef="Activity_ShowReducedQuality" />
+    <bpmn:messageFlow id="Flow_02ckjug" sourceRef="Activity_1szsssh" targetRef="Activity_0nsupxq" />
+    <bpmn:messageFlow id="Flow_06cizzc" sourceRef="Activity_05smwqe" targetRef="Activity_ShowCachedStatus" />
+    <bpmn:textAnnotation id="TextAnnotation_Title">
+      <bpmn:text>User Views Live Camera Feed Workflow (with Failure Scenarios)</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_Title" sourceRef="Participant_Homeowner" targetRef="TextAnnotation_Title" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Homeowner" isExecutable="false">
+    <bpmn:startEvent id="Event_Start" name="User wants to view camera">
+      <bpmn:outgoing>Flow_H1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_OpenApp" name="Open Mobile/Web App">
+      <bpmn:incoming>Flow_H1</bpmn:incoming>
+      <bpmn:outgoing>Flow_H2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SelectCamera" name="Select Camera from Dashboard">
+      <bpmn:incoming>Flow_H2</bpmn:incoming>
+      <bpmn:outgoing>Flow_H3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_WatchFeed" name="Watch Live Feed">
+      <bpmn:incoming>Flow_H3</bpmn:incoming>
+      <bpmn:outgoing>Flow_H4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_End" name="Viewing live feed">
+      <bpmn:incoming>Flow_H4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Activity_SeeCachedWarning" name="See Cached Status Warning">
+      <bpmn:outgoing>Flow_H_CachedEnd</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_CachedEnd" name="Remote control unavailable">
+      <bpmn:incoming>Flow_H_CachedEnd</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_H1" sourceRef="Event_Start" targetRef="Activity_OpenApp" />
+    <bpmn:sequenceFlow id="Flow_H2" sourceRef="Activity_OpenApp" targetRef="Activity_SelectCamera" />
+    <bpmn:sequenceFlow id="Flow_H3" sourceRef="Activity_SelectCamera" targetRef="Activity_WatchFeed" />
+    <bpmn:sequenceFlow id="Flow_H4" sourceRef="Activity_WatchFeed" targetRef="Event_End" />
+    <bpmn:sequenceFlow id="Flow_H_CachedEnd" sourceRef="Activity_SeeCachedWarning" targetRef="Event_CachedEnd" />
+  </bpmn:process>
+  <bpmn:process id="Process_ClientApp" isExecutable="false">
+    <bpmn:task id="Activity_InitPlayer" name="Initialize Player">
+      <bpmn:incoming>Flow_06xepyc</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RequestChunks" name="Request Chunks">
+      <bpmn:incoming>Flow_CA3</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveChunks" name="Receive Chunks">
+      <bpmn:incoming>Flow_CA4</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RenderVideo" name="Render Video">
+      <bpmn:incoming>Flow_CA5</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_QualityCheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_BWRestored" name="Bandwidth Improved?">
+      <bpmn:incoming>Flow_CA_MonitorBW</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_BWRestored</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CA_BWStillLow</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_ShowOfflineStatus" name="Show Device Offline Status" />
+    <bpmn:sequenceFlow id="Flow_CA1" sourceRef="Activity_AppReceivesSelection" targetRef="Activity_RequestLiveFeed" />
+    <bpmn:sequenceFlow id="Flow_CA_ServiceCheck" sourceRef="Activity_RequestLiveFeed" targetRef="Gateway_ServiceAvailable" />
+    <bpmn:sequenceFlow id="Flow_CA_ServiceNo" name="Unavailable" sourceRef="Gateway_ServiceAvailable" targetRef="Activity_ShowCachedStatus" />
+    <bpmn:sequenceFlow id="Flow_CA3" sourceRef="Activity_InitPlayer" targetRef="Activity_RequestChunks" />
+    <bpmn:sequenceFlow id="Flow_CA4" sourceRef="Activity_RequestChunks" targetRef="Activity_ReceiveChunks" />
+    <bpmn:sequenceFlow id="Flow_CA5" sourceRef="Activity_ReceiveChunks" targetRef="Activity_RenderVideo" />
+    <bpmn:sequenceFlow id="Flow_CA_QualityCheck" sourceRef="Activity_RenderVideo" targetRef="Gateway_BandwidthOK" />
+    <bpmn:sequenceFlow id="Flow_CA_MonitorBW" sourceRef="Activity_ShowReducedQuality" targetRef="Gateway_BWRestored" />
+    <bpmn:sequenceFlow id="Flow_CA_BWRestored" name="Yes" sourceRef="Gateway_BWRestored" targetRef="Event_CA_BWRestored" />
+    <bpmn:sequenceFlow id="Flow_CA_BWStillLow" name="No" sourceRef="Gateway_BWRestored" targetRef="Event_CA_LowBW" />
+    <bpmn:task id="Activity_0nsupxq" name="Receive Reconnected Notification and Show Device Online Status" />
+    <bpmn:sequenceFlow id="Flow_CA_BWNo" name="No" sourceRef="Gateway_BandwidthOK" targetRef="Activity_ShowReducedQuality" />
+    <bpmn:sequenceFlow id="Flow_CA_BWYes" name="Yes" sourceRef="Gateway_BandwidthOK" targetRef="Event_CA_End" />
+    <bpmn:endEvent id="Event_CA_LowBW" name="Streaming at reduced quality">
+      <bpmn:incoming>Flow_CA_BWStillLow</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Event_CA_BWRestored" name="Quality auto-upgraded">
+      <bpmn:incoming>Flow_CA_BWRestored</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Activity_ShowReducedQuality" name="Display Stream at Reduced Quality">
+      <bpmn:incoming>Flow_CA_BWNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_MonitorBW</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_CA_End" name="Streaming at full quality">
+      <bpmn:incoming>Flow_CA_BWYes</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Gateway_BandwidthOK" name="Bandwidth Sufficient?">
+      <bpmn:incoming>Flow_CA_QualityCheck</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_BWYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_CA_BWNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_ShowCachedStatus" name="Show Cached Device Status with Warning">
+      <bpmn:incoming>Flow_CA_ServiceNo</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_0orontt" name="Send Live Camera Feed Request to Gateway">
+      <bpmn:incoming>Flow_1p2al3n</bpmn:incoming>
+      <bpmn:outgoing>Flow_06xepyc</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_RequestLiveFeed" name="Request Live Camera Feed">
+      <bpmn:incoming>Flow_CA1</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_ServiceCheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_AppReceivesSelection" name="App Opens to Event View">
+      <bpmn:outgoing>Flow_CA1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_ServiceAvailable" name="Cloud Service Available?">
+      <bpmn:incoming>Flow_CA_ServiceCheck</bpmn:incoming>
+      <bpmn:outgoing>Flow_CA_ServiceNo</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1p2al3n</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_1p2al3n" name="Available" sourceRef="Gateway_ServiceAvailable" targetRef="Activity_0orontt" />
+    <bpmn:sequenceFlow id="Flow_06xepyc" sourceRef="Activity_0orontt" targetRef="Activity_InitPlayer" />
+  </bpmn:process>
+  <bpmn:process id="Process_APIGateway" isExecutable="false">
+    <bpmn:task id="Activity_RequestStream" name="Request Stream from DMS">
+      <bpmn:incoming>Flow_AG_Healthy</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_ServiceHealth" name="Service Healthy?">
+      <bpmn:incoming>Flow_AG_HealthCheck</bpmn:incoming>
+      <bpmn:incoming>Flow_1fm9twa</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG_Healthy</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1skt8ft</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_RouteToHealthyInstance" name="Route to Healthy Instance (Load Balancer)">
+      <bpmn:incoming>Flow_0w0q5zj</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG_LogIncident</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1fm9twa</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_AG_Healthy" name="Yes" sourceRef="Gateway_ServiceHealth" targetRef="Activity_RequestStream" />
+    <bpmn:sequenceFlow id="Flow_AG1" sourceRef="Activity_ReceiveFeedRequest" targetRef="Activity_AuthenticateUser" />
+    <bpmn:sequenceFlow id="Flow_AG_HealthCheck" sourceRef="Activity_AuthenticateUser" targetRef="Gateway_ServiceHealth" />
+    <bpmn:sequenceFlow id="Flow_1fm9twa" sourceRef="Activity_RouteToHealthyInstance" targetRef="Gateway_ServiceHealth" />
+    <bpmn:sequenceFlow id="Flow_AG_LogIncident" sourceRef="Activity_RouteToHealthyInstance" targetRef="Activity_LogIncident" />
+    <bpmn:sequenceFlow id="Flow_1skt8ft" name="No" sourceRef="Gateway_ServiceHealth" targetRef="Gateway_1feiurf" />
+    <bpmn:exclusiveGateway id="Gateway_1feiurf" name="Another healthy Instance?">
+      <bpmn:incoming>Flow_1skt8ft</bpmn:incoming>
+      <bpmn:outgoing>Flow_0w0q5zj</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1dkxpsi</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="Flow_0w0q5zj" name="Yes" sourceRef="Gateway_1feiurf" targetRef="Activity_RouteToHealthyInstance" />
+    <bpmn:task id="Activity_ReceiveFeedRequest" name="Receive Live Feed Request">
+      <bpmn:outgoing>Flow_AG1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_AuthenticateUser" name="Authenticate User">
+      <bpmn:incoming>Flow_AG1</bpmn:incoming>
+      <bpmn:outgoing>Flow_AG_HealthCheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_05smwqe" name="Log no&#10;Healthy Instances">
+      <bpmn:incoming>Flow_1dkxpsi</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_1dkxpsi" name="No" sourceRef="Gateway_1feiurf" targetRef="Activity_05smwqe" />
+    <bpmn:task id="Activity_LogIncident" name="Log Service Incident">
+      <bpmn:incoming>Flow_AG_LogIncident</bpmn:incoming>
+    </bpmn:task>
+  </bpmn:process>
+  <bpmn:process id="Process_DeviceMgmt" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveRequest" name="Receive Request">
+      <bpmn:outgoing>Flow_DM1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_DeviceOnline" name="Device Online?">
+      <bpmn:incoming>Flow_DM1</bpmn:incoming>
+      <bpmn:outgoing>Flow_DM2_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_DM2_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_SendStreamRequest" name="Send Live Feed Request">
+      <bpmn:incoming>Flow_DM2_Yes</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_MarkDeviceOffline" name="Mark Device Offline in Registry">
+      <bpmn:incoming>Flow_DM2_No</bpmn:incoming>
+      <bpmn:outgoing>Flow_1bula3i</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0sgeax7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_1d99b0h" name="Attempt Reconnection&#10;(Exponential Backoff)">
+      <bpmn:incoming>Flow_051vxck</bpmn:incoming>
+      <bpmn:incoming>Flow_0sgeax7</bpmn:incoming>
+      <bpmn:outgoing>Flow_0h23coy</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_1edyikt" name="Reconnected?">
+      <bpmn:incoming>Flow_0h23coy</bpmn:incoming>
+      <bpmn:outgoing>Flow_051vxck</bpmn:outgoing>
+      <bpmn:outgoing>Flow_1vuv351</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_1szsssh" name="Mark Device Online in Registry">
+      <bpmn:incoming>Flow_1vuv351</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_DM1" sourceRef="Activity_ReceiveRequest" targetRef="Gateway_DeviceOnline" />
+    <bpmn:sequenceFlow id="Flow_DM2_Yes" name="Yes" sourceRef="Gateway_DeviceOnline" targetRef="Activity_SendStreamRequest" />
+    <bpmn:sequenceFlow id="Flow_DM2_No" name="No" sourceRef="Gateway_DeviceOnline" targetRef="Activity_MarkDeviceOffline" />
+    <bpmn:sequenceFlow id="Flow_1bula3i" sourceRef="Activity_MarkDeviceOffline" targetRef="Event_DeviceOffline" />
+    <bpmn:sequenceFlow id="Flow_0sgeax7" sourceRef="Activity_MarkDeviceOffline" targetRef="Activity_1d99b0h" />
+    <bpmn:sequenceFlow id="Flow_051vxck" name="No" sourceRef="Gateway_1edyikt" targetRef="Activity_1d99b0h" />
+    <bpmn:sequenceFlow id="Flow_0h23coy" sourceRef="Activity_1d99b0h" targetRef="Gateway_1edyikt" />
+    <bpmn:sequenceFlow id="Flow_1vuv351" name="Yes" sourceRef="Gateway_1edyikt" targetRef="Activity_1szsssh" />
+    <bpmn:endEvent id="Event_DeviceOffline" name="Error: Offline">
+      <bpmn:incoming>Flow_1bula3i</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorDef_Offline" />
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:process id="Process_VideoService" isExecutable="false">
+    <bpmn:task id="Activity_IngestStream" name="Ingest Live Stream">
+      <bpmn:outgoing>Flow_VS1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_BufferStream" name="Buffer Stream">
+      <bpmn:incoming>Flow_VS1</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReceiveChunkRequest" name="Receive Chunk Request">
+      <bpmn:incoming>Flow_VS2</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS_BWCheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Bandwidth" name="Bandwidth Sufficient?">
+      <bpmn:incoming>Flow_VS_BWCheck</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS_BWYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_VS_BWNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_StreamChunks" name="Stream Chunks (HD)">
+      <bpmn:incoming>Flow_VS_BWYes</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_ReduceQuality" name="Reduce Stream Quality">
+      <bpmn:incoming>Flow_VS_BWNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS_StreamLow</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_StreamLowQuality" name="Stream Chunks (Low Resolution)">
+      <bpmn:incoming>Flow_VS_StreamLow</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS_MonitorBW</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_IngestSyncedFootage" name="Ingest Synced Buffered Footage" />
+    <bpmn:exclusiveGateway id="Gateway_BWRecovered" name="Bandwidth Recovered?">
+      <bpmn:incoming>Flow_VS_MonitorBW</bpmn:incoming>
+      <bpmn:outgoing>Flow_VS_Recovered</bpmn:outgoing>
+      <bpmn:outgoing>Flow_VS_StillLow</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_RestoreQuality" name="Restore HD Quality">
+      <bpmn:incoming>Flow_VS_Recovered</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:endEvent id="Event_VS_StillLow" name="Continue low-quality stream">
+      <bpmn:incoming>Flow_VS_StillLow</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_VS1" sourceRef="Activity_IngestStream" targetRef="Activity_BufferStream" />
+    <bpmn:sequenceFlow id="Flow_VS2" sourceRef="Activity_BufferStream" targetRef="Activity_ReceiveChunkRequest" />
+    <bpmn:sequenceFlow id="Flow_VS_BWCheck" sourceRef="Activity_ReceiveChunkRequest" targetRef="Gateway_Bandwidth" />
+    <bpmn:sequenceFlow id="Flow_VS_BWYes" name="Yes" sourceRef="Gateway_Bandwidth" targetRef="Activity_StreamChunks" />
+    <bpmn:sequenceFlow id="Flow_VS_BWNo" name="No" sourceRef="Gateway_Bandwidth" targetRef="Activity_ReduceQuality" />
+    <bpmn:sequenceFlow id="Flow_VS_StreamLow" sourceRef="Activity_ReduceQuality" targetRef="Activity_StreamLowQuality" />
+    <bpmn:sequenceFlow id="Flow_VS_MonitorBW" sourceRef="Activity_StreamLowQuality" targetRef="Gateway_BWRecovered" />
+    <bpmn:sequenceFlow id="Flow_VS_Recovered" name="Yes" sourceRef="Gateway_BWRecovered" targetRef="Activity_RestoreQuality" />
+    <bpmn:sequenceFlow id="Flow_VS_StillLow" name="No" sourceRef="Gateway_BWRecovered" targetRef="Event_VS_StillLow" />
+  </bpmn:process>
+  <bpmn:process id="Process_IoTFirmware" isExecutable="false">
+    <bpmn:task id="Activity_ReceiveStreamRequest" name="Receive Request">
+      <bpmn:outgoing>Flow_IOT1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ValidateRequest" name="Validate Request">
+      <bpmn:incoming>Flow_IOT1</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT_WiFiCheck</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_WiFiOK" name="WiFi Connected?">
+      <bpmn:incoming>Flow_IOT_WiFiCheck</bpmn:incoming>
+      <bpmn:incoming>Flow_IOT_BackoffRetry</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT_WiFiYes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_IOT_WiFiNo</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_StreamVideo" name="Stream Video">
+      <bpmn:incoming>Flow_IOT_WiFiYes</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:task id="Activity_RecordLocally" name="Record to Local Buffer / Storage">
+      <bpmn:incoming>Flow_IOT_WiFiNo</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT_Backoff</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ExponentialBackoff" name="Attempt Reconnection (Exponential Backoff)">
+      <bpmn:incoming>Flow_IOT_Backoff</bpmn:incoming>
+      <bpmn:outgoing>Flow_IOT_BackoffRetry</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_SyncBufferedFootage" name="Sync Buffered Footage to Cloud">
+      <bpmn:incoming>Flow_IOT_SyncTrigger</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="Flow_IOT1" sourceRef="Activity_ReceiveStreamRequest" targetRef="Activity_ValidateRequest" />
+    <bpmn:sequenceFlow id="Flow_IOT_WiFiCheck" sourceRef="Activity_ValidateRequest" targetRef="Gateway_WiFiOK" />
+    <bpmn:sequenceFlow id="Flow_IOT_BackoffRetry" sourceRef="Activity_ExponentialBackoff" targetRef="Gateway_WiFiOK" />
+    <bpmn:sequenceFlow id="Flow_IOT_WiFiYes" name="Connected" sourceRef="Gateway_WiFiOK" targetRef="Activity_StreamVideo" />
+    <bpmn:sequenceFlow id="Flow_IOT_WiFiNo" name="Lost" sourceRef="Gateway_WiFiOK" targetRef="Activity_RecordLocally" />
+    <bpmn:sequenceFlow id="Flow_IOT_SyncTrigger" sourceRef="Activity_StreamVideo" targetRef="Activity_SyncBufferedFootage" />
+    <bpmn:sequenceFlow id="Flow_IOT_Backoff" sourceRef="Activity_RecordLocally" targetRef="Activity_ExponentialBackoff" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_LiveFeed">
+      <bpmndi:BPMNShape id="Participant_Homeowner_di" bpmnElement="Participant_Homeowner" isHorizontal="true">
+        <dc:Bounds x="160" y="140" width="1320" height="170" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_Start_di" bpmnElement="Event_Start">
+        <dc:Bounds x="212" y="207" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="196" y="250" width="68" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_OpenApp_di" bpmnElement="Activity_OpenApp">
+        <dc:Bounds x="300" y="185" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SelectCamera_di" bpmnElement="Activity_SelectCamera">
+        <dc:Bounds x="490" y="185" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_WatchFeed_di" bpmnElement="Activity_WatchFeed">
+        <dc:Bounds x="700" y="185" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_End_di" bpmnElement="Event_End">
+        <dc:Bounds x="872" y="207" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="849" y="250" width="83" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SeeCachedWarning_di" bpmnElement="Activity_SeeCachedWarning">
+        <dc:Bounds x="990" y="185" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_CachedEnd_di" bpmnElement="Event_CachedEnd">
+        <dc:Bounds x="1212" y="207" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1186" y="250" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_H1_di" bpmnElement="Flow_H1">
+        <di:waypoint x="248" y="225" />
+        <di:waypoint x="300" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H2_di" bpmnElement="Flow_H2">
+        <di:waypoint x="440" y="225" />
+        <di:waypoint x="490" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H3_di" bpmnElement="Flow_H3">
+        <di:waypoint x="650" y="225" />
+        <di:waypoint x="700" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H4_di" bpmnElement="Flow_H4">
+        <di:waypoint x="820" y="225" />
+        <di:waypoint x="872" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_H_CachedEnd_di" bpmnElement="Flow_H_CachedEnd">
+        <di:waypoint x="1150" y="225" />
+        <di:waypoint x="1212" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_ClientApp_di" bpmnElement="Participant_ClientApp" isHorizontal="true">
+        <dc:Bounds x="160" y="330" width="1320" height="470" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_InitPlayer_di" bpmnElement="Activity_InitPlayer">
+        <dc:Bounds x="710" y="365" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestChunks_di" bpmnElement="Activity_RequestChunks">
+        <dc:Bounds x="880" y="365" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveChunks_di" bpmnElement="Activity_ReceiveChunks">
+        <dc:Bounds x="1060" y="365" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RenderVideo_di" bpmnElement="Activity_RenderVideo">
+        <dc:Bounds x="1230" y="365" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_BandwidthOK_di" bpmnElement="Gateway_BandwidthOK" isMarkerVisible="true">
+        <dc:Bounds x="1235" y="490" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1206" y="548" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_CA_End_di" bpmnElement="Event_CA_End">
+        <dc:Bounds x="1392" y="497" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1371" y="540" width="80" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ShowReducedQuality_di" bpmnElement="Activity_ShowReducedQuality">
+        <dc:Bounds x="1215" y="600" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_BWRestored_di" bpmnElement="Gateway_BWRestored" isMarkerVisible="true">
+        <dc:Bounds x="1235" y="720" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1206" y="686" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_CA_BWRestored_di" bpmnElement="Event_CA_BWRestored">
+        <dc:Bounds x="1392" y="727" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1379" y="766" width="63" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_CA_LowBW_di" bpmnElement="Event_CA_LowBW">
+        <dc:Bounds x="1140" y="727" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1121" y="766" width="75" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ShowOfflineStatus_di" bpmnElement="Activity_ShowOfflineStatus">
+        <dc:Bounds x="590" y="600" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_14d1bc8" bpmnElement="Activity_0nsupxq">
+        <dc:Bounds x="770" y="600" width="160" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ShowCachedStatus_di" bpmnElement="Activity_ShowCachedStatus">
+        <dc:Bounds x="530" y="490" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0trvti0" bpmnElement="Activity_0orontt">
+        <dc:Bounds x="540" y="365" width="140" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestLiveFeed_di" bpmnElement="Activity_RequestLiveFeed">
+        <dc:Bounds x="370" y="365" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AppReceivesSelection_di" bpmnElement="Activity_AppReceivesSelection">
+        <dc:Bounds x="200" y="365" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ServiceAvailable_di" bpmnElement="Gateway_ServiceAvailable" isMarkerVisible="true">
+        <dc:Bounds x="425" y="490" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="376" y="445.5" width="69" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_CA1_di" bpmnElement="Flow_CA1">
+        <di:waypoint x="340" y="405" />
+        <di:waypoint x="370" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_ServiceCheck_di" bpmnElement="Flow_CA_ServiceCheck">
+        <di:waypoint x="450" y="445" />
+        <di:waypoint x="450" y="490" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_ServiceNo_di" bpmnElement="Flow_CA_ServiceNo">
+        <di:waypoint x="475" y="515" />
+        <di:waypoint x="503" y="515" />
+        <di:waypoint x="503" y="530" />
+        <di:waypoint x="530" y="530" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="451" y="533" width="58" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA3_di" bpmnElement="Flow_CA3">
+        <di:waypoint x="830" y="405" />
+        <di:waypoint x="880" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA4_di" bpmnElement="Flow_CA4">
+        <di:waypoint x="1010" y="405" />
+        <di:waypoint x="1060" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA5_di" bpmnElement="Flow_CA5">
+        <di:waypoint x="1180" y="405" />
+        <di:waypoint x="1230" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_QualityCheck_di" bpmnElement="Flow_CA_QualityCheck">
+        <di:waypoint x="1290" y="445" />
+        <di:waypoint x="1290" y="468" />
+        <di:waypoint x="1260" y="468" />
+        <di:waypoint x="1260" y="490" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_BWYes_di" bpmnElement="Flow_CA_BWYes">
+        <di:waypoint x="1285" y="515" />
+        <di:waypoint x="1392" y="515" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1310" y="497" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_BWNo_di" bpmnElement="Flow_CA_BWNo">
+        <di:waypoint x="1260" y="540" />
+        <di:waypoint x="1260" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1266" y="562" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_MonitorBW_di" bpmnElement="Flow_CA_MonitorBW">
+        <di:waypoint x="1260" y="680" />
+        <di:waypoint x="1260" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_BWRestored_di" bpmnElement="Flow_CA_BWRestored">
+        <di:waypoint x="1285" y="745" />
+        <di:waypoint x="1392" y="745" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1310" y="727" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CA_BWStillLow_di" bpmnElement="Flow_CA_BWStillLow">
+        <di:waypoint x="1235" y="745" />
+        <di:waypoint x="1176" y="745" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1190" y="727" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1p2al3n_di" bpmnElement="Flow_1p2al3n">
+        <di:waypoint x="460" y="500" />
+        <di:waypoint x="480" y="470" />
+        <di:waypoint x="560" y="470" />
+        <di:waypoint x="560" y="445" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="498" y="452" width="45" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_06xepyc_di" bpmnElement="Flow_06xepyc">
+        <di:waypoint x="680" y="405" />
+        <di:waypoint x="710" y="405" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_APIGateway_di" bpmnElement="Participant_APIGateway" isHorizontal="true">
+        <dc:Bounds x="160" y="820" width="1320" height="210" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RequestStream_di" bpmnElement="Activity_RequestStream">
+        <dc:Bounds x="710" y="865" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ServiceHealth_di" bpmnElement="Gateway_ServiceHealth" isMarkerVisible="true">
+        <dc:Bounds x="565" y="865" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="549" y="841" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RouteToHealthyInstance_di" bpmnElement="Activity_RouteToHealthyInstance">
+        <dc:Bounds x="455" y="960" width="190" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1feiurf_di" bpmnElement="Gateway_1feiurf" isMarkerVisible="true">
+        <dc:Bounds x="365" y="965" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="331" y="936" width="78" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveFeedRequest_di" bpmnElement="Activity_ReceiveFeedRequest">
+        <dc:Bounds x="200" y="845" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_AuthenticateUser_di" bpmnElement="Activity_AuthenticateUser">
+        <dc:Bounds x="370" y="845" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_0gl2ahr" bpmnElement="Activity_05smwqe">
+        <dc:Bounds x="205" y="935" width="110" height="70" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_LogIncident_di" bpmnElement="Activity_LogIncident">
+        <dc:Bounds x="820" y="960" width="140" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_AG_Healthy_di" bpmnElement="Flow_AG_Healthy">
+        <di:waypoint x="612" y="893" />
+        <di:waypoint x="710" y="893" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="621" y="877" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG1_di" bpmnElement="Flow_AG1">
+        <di:waypoint x="340" y="880" />
+        <di:waypoint x="370" y="880" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG_HealthCheck_di" bpmnElement="Flow_AG_HealthCheck">
+        <di:waypoint x="510" y="873" />
+        <di:waypoint x="538" y="873" />
+        <di:waypoint x="538" y="893" />
+        <di:waypoint x="568" y="893" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1fm9twa_di" bpmnElement="Flow_1fm9twa">
+        <di:waypoint x="618" y="960" />
+        <di:waypoint x="640" y="950" />
+        <di:waypoint x="602" y="903" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AG_LogIncident_di" bpmnElement="Flow_AG_LogIncident">
+        <di:waypoint x="645" y="990" />
+        <di:waypoint x="820" y="990" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1skt8ft_di" bpmnElement="Flow_1skt8ft">
+        <di:waypoint x="578" y="903" />
+        <di:waypoint x="530" y="950" />
+        <di:waypoint x="430" y="950" />
+        <di:waypoint x="403" y="978" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="522" y="932" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0w0q5zj_di" bpmnElement="Flow_0w0q5zj">
+        <di:waypoint x="415" y="990" />
+        <di:waypoint x="455" y="990" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="421" y="993" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1dkxpsi_di" bpmnElement="Flow_1dkxpsi">
+        <di:waypoint x="365" y="990" />
+        <di:waypoint x="315" y="990" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="333" y="993" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_DeviceMgmt_di" bpmnElement="Participant_DeviceMgmt" isHorizontal="true">
+        <dc:Bounds x="160" y="1050" width="1320" height="220" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveRequest_di" bpmnElement="Activity_ReceiveRequest">
+        <dc:Bounds x="230" y="1090" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_DeviceOnline_di" bpmnElement="Gateway_DeviceOnline" isMarkerVisible="true">
+        <dc:Bounds x="385" y="1100" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="373" y="1076" width="75" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SendStreamRequest_di" bpmnElement="Activity_SendStreamRequest">
+        <dc:Bounds x="480" y="1085" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_MarkDeviceOffline_di" bpmnElement="Activity_MarkDeviceOffline">
+        <dc:Bounds x="680" y="1090" width="160" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_DeviceOffline_di" bpmnElement="Event_DeviceOffline">
+        <dc:Bounds x="862" y="1202" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="858" y="1173" width="63" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_08ep3xk" bpmnElement="Activity_1d99b0h">
+        <dc:Bounds x="875" y="1090" width="110" height="70" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1edyikt_di" bpmnElement="Gateway_1edyikt" isMarkerVisible="true">
+        <dc:Bounds x="1025" y="1145" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="994" y="1113" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_02mkqjt" bpmnElement="Activity_1szsssh">
+        <dc:Bounds x="1110" y="1090" width="160" height="70" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_DM1_di" bpmnElement="Flow_DM1">
+        <di:waypoint x="340" y="1125" />
+        <di:waypoint x="385" y="1125" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM2_Yes_di" bpmnElement="Flow_DM2_Yes">
+        <di:waypoint x="435" y="1125" />
+        <di:waypoint x="480" y="1125" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="448" y="1107" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DM2_No_di" bpmnElement="Flow_DM2_No">
+        <di:waypoint x="410" y="1150" />
+        <di:waypoint x="410" y="1210" />
+        <di:waypoint x="730" y="1210" />
+        <di:waypoint x="730" y="1160" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="422" y="1193" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1bula3i_di" bpmnElement="Flow_1bula3i">
+        <di:waypoint x="836" y="1158" />
+        <di:waypoint x="870" y="1205" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0sgeax7_di" bpmnElement="Flow_0sgeax7">
+        <di:waypoint x="840" y="1125" />
+        <di:waypoint x="875" y="1125" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_051vxck_di" bpmnElement="Flow_051vxck">
+        <di:waypoint x="1038" y="1183" />
+        <di:waypoint x="1020" y="1200" />
+        <di:waypoint x="930" y="1200" />
+        <di:waypoint x="930" y="1160" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="972" y="1178" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0h23coy_di" bpmnElement="Flow_0h23coy">
+        <di:waypoint x="985" y="1125" />
+        <di:waypoint x="1005" y="1125" />
+        <di:waypoint x="1038" y="1158" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1vuv351_di" bpmnElement="Flow_1vuv351">
+        <di:waypoint x="1063" y="1158" />
+        <di:waypoint x="1093" y="1125" />
+        <di:waypoint x="1110" y="1125" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1069" y="1153" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_VideoService_di" bpmnElement="Participant_VideoService" isHorizontal="true">
+        <dc:Bounds x="160" y="1290" width="1320" height="280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_IngestStream_di" bpmnElement="Activity_IngestStream">
+        <dc:Bounds x="230" y="1320" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_BufferStream_di" bpmnElement="Activity_BufferStream">
+        <dc:Bounds x="410" y="1320" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveChunkRequest_di" bpmnElement="Activity_ReceiveChunkRequest">
+        <dc:Bounds x="580" y="1320" width="150" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Bandwidth_di" bpmnElement="Gateway_Bandwidth" isMarkerVisible="true">
+        <dc:Bounds x="785" y="1335" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="785" y="1306" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StreamChunks_di" bpmnElement="Activity_StreamChunks">
+        <dc:Bounds x="890" y="1320" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReduceQuality_di" bpmnElement="Activity_ReduceQuality">
+        <dc:Bounds x="770" y="1440" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StreamLowQuality_di" bpmnElement="Activity_StreamLowQuality">
+        <dc:Bounds x="960" y="1440" width="150" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_IngestSyncedFootage_di" bpmnElement="Activity_IngestSyncedFootage">
+        <dc:Bounds x="230" y="1440" width="160" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_BWRecovered_di" bpmnElement="Gateway_BWRecovered" isMarkerVisible="true">
+        <dc:Bounds x="1165" y="1400" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1161" y="1366" width="60" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RestoreQuality_di" bpmnElement="Activity_RestoreQuality">
+        <dc:Bounds x="1270" y="1385" width="140" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_VS_StillLow_di" bpmnElement="Event_VS_StillLow">
+        <dc:Bounds x="1172" y="1485" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1156" y="1528" width="69" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_VS1_di" bpmnElement="Flow_VS1">
+        <di:waypoint x="360" y="1360" />
+        <di:waypoint x="410" y="1360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS2_di" bpmnElement="Flow_VS2">
+        <di:waypoint x="530" y="1360" />
+        <di:waypoint x="580" y="1360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_BWCheck_di" bpmnElement="Flow_VS_BWCheck">
+        <di:waypoint x="730" y="1360" />
+        <di:waypoint x="785" y="1360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_BWYes_di" bpmnElement="Flow_VS_BWYes">
+        <di:waypoint x="835" y="1360" />
+        <di:waypoint x="890" y="1360" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="848" y="1342" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_BWNo_di" bpmnElement="Flow_VS_BWNo">
+        <di:waypoint x="810" y="1385" />
+        <di:waypoint x="810" y="1440" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="818" y="1406" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_StreamLow_di" bpmnElement="Flow_VS_StreamLow">
+        <di:waypoint x="910" y="1475" />
+        <di:waypoint x="960" y="1475" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_MonitorBW_di" bpmnElement="Flow_VS_MonitorBW">
+        <di:waypoint x="1110" y="1475" />
+        <di:waypoint x="1177" y="1437" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_Recovered_di" bpmnElement="Flow_VS_Recovered">
+        <di:waypoint x="1215" y="1425" />
+        <di:waypoint x="1270" y="1420" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1223" y="1407" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VS_StillLow_di" bpmnElement="Flow_VS_StillLow">
+        <di:waypoint x="1190" y="1450" />
+        <di:waypoint x="1190" y="1485" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1198" y="1463" width="15" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_IoTFirmware_di" bpmnElement="Participant_IoTFirmware" isHorizontal="true">
+        <dc:Bounds x="160" y="1600" width="1320" height="280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ReceiveStreamRequest_di" bpmnElement="Activity_ReceiveStreamRequest">
+        <dc:Bounds x="230" y="1630" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ValidateRequest_di" bpmnElement="Activity_ValidateRequest">
+        <dc:Bounds x="400" y="1630" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_WiFiOK_di" bpmnElement="Gateway_WiFiOK" isMarkerVisible="true">
+        <dc:Bounds x="575" y="1645" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="558" y="1621" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_StreamVideo_di" bpmnElement="Activity_StreamVideo">
+        <dc:Bounds x="680" y="1630" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_RecordLocally_di" bpmnElement="Activity_RecordLocally">
+        <dc:Bounds x="560" y="1750" width="180" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_ExponentialBackoff_di" bpmnElement="Activity_ExponentialBackoff">
+        <dc:Bounds x="800" y="1750" width="200" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_SyncBufferedFootage_di" bpmnElement="Activity_SyncBufferedFootage">
+        <dc:Bounds x="860" y="1630" width="160" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_IOT1_di" bpmnElement="Flow_IOT1">
+        <di:waypoint x="350" y="1670" />
+        <di:waypoint x="400" y="1670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_WiFiCheck_di" bpmnElement="Flow_IOT_WiFiCheck">
+        <di:waypoint x="520" y="1670" />
+        <di:waypoint x="575" y="1670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_BackoffRetry_di" bpmnElement="Flow_IOT_BackoffRetry">
+        <di:waypoint x="900" y="1750" />
+        <di:waypoint x="900" y="1730" />
+        <di:waypoint x="650" y="1730" />
+        <di:waypoint x="611" y="1684" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_WiFiYes_di" bpmnElement="Flow_IOT_WiFiYes">
+        <di:waypoint x="625" y="1670" />
+        <di:waypoint x="680" y="1670" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="623" y="1652" width="54" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_WiFiNo_di" bpmnElement="Flow_IOT_WiFiNo">
+        <di:waypoint x="600" y="1695" />
+        <di:waypoint x="600" y="1750" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="567" y="1703" width="21" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_SyncTrigger_di" bpmnElement="Flow_IOT_SyncTrigger">
+        <di:waypoint x="800" y="1670" />
+        <di:waypoint x="860" y="1670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_IOT_Backoff_di" bpmnElement="Flow_IOT_Backoff">
+        <di:waypoint x="740" y="1785" />
+        <di:waypoint x="800" y="1785" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="TextAnnotation_Title_di" bpmnElement="TextAnnotation_Title">
+        <dc:Bounds x="170" y="70" width="420" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_HomeownerToApp_di" bpmnElement="Flow_HomeownerToApp">
+        <di:waypoint x="570" y="265" />
+        <di:waypoint x="570" y="300" />
+        <di:waypoint x="270" y="300" />
+        <di:waypoint x="270" y="365" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToGateway_di" bpmnElement="Flow_AppToGateway">
+        <di:waypoint x="540" y="405" />
+        <di:waypoint x="520" y="405" />
+        <di:waypoint x="520" y="755" />
+        <di:waypoint x="270" y="755" />
+        <di:waypoint x="270" y="845" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppToVideoService_di" bpmnElement="Flow_AppToVideoService">
+        <di:waypoint x="945" y="445" />
+        <di:waypoint x="945" y="720" />
+        <di:waypoint x="655" y="720" />
+        <di:waypoint x="655" y="1320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VideoServiceToApp_di" bpmnElement="Flow_VideoServiceToApp">
+        <di:waypoint x="1020" y="1360" />
+        <di:waypoint x="1090" y="1360" />
+        <di:waypoint x="1090" y="445" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VideoToHomeowner_di" bpmnElement="Flow_VideoToHomeowner">
+        <di:waypoint x="1290" y="365" />
+        <di:waypoint x="1290" y="290" />
+        <di:waypoint x="760" y="290" />
+        <di:waypoint x="760" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtOfflineToApp_di" bpmnElement="Flow_DeviceMgmtOfflineToApp">
+        <di:waypoint x="760" y="1090" />
+        <di:waypoint x="760" y="950" />
+        <di:waypoint x="670" y="950" />
+        <di:waypoint x="670" y="680" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AppCachedToHomeowner_di" bpmnElement="Flow_AppCachedToHomeowner">
+        <di:waypoint x="690" y="525" />
+        <di:waypoint x="700" y="530" />
+        <di:waypoint x="700" y="305" />
+        <di:waypoint x="1070" y="305" />
+        <di:waypoint x="1070" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_VideoServiceBandwidthToApp_di" bpmnElement="Flow_VideoServiceBandwidthToApp">
+        <di:waypoint x="870" y="1440" />
+        <di:waypoint x="870" y="1250" />
+        <di:waypoint x="1290" y="1250" />
+        <di:waypoint x="1290" y="680" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_Title_di" bpmnElement="Association_Title">
+        <di:waypoint x="300" y="140" />
+        <di:waypoint x="300" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_02ckjug_di" bpmnElement="Flow_02ckjug">
+        <di:waypoint x="1190" y="1090" />
+        <di:waypoint x="1190" y="860" />
+        <di:waypoint x="870" y="860" />
+        <di:waypoint x="870" y="680" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_GatewayToDeviceMgmt_di" bpmnElement="Flow_GatewayToDeviceMgmt">
+        <di:waypoint x="780" y="935" />
+        <di:waypoint x="780" y="1035" />
+        <di:waypoint x="285" y="1035" />
+        <di:waypoint x="285" y="1090" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_DeviceMgmtToFirmware_di" bpmnElement="Flow_DeviceMgmtToFirmware">
+        <di:waypoint x="550" y="1165" />
+        <di:waypoint x="550" y="1250" />
+        <di:waypoint x="210" y="1250" />
+        <di:waypoint x="210" y="1670" />
+        <di:waypoint x="230" y="1670" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareOfflineToDeviceMgmt_di" bpmnElement="Flow_FirmwareOfflineToDeviceMgmt">
+        <di:waypoint x="560" y="1785" />
+        <di:waypoint x="550" y="1785" />
+        <di:waypoint x="550" y="1280" />
+        <di:waypoint x="760" y="1280" />
+        <di:waypoint x="760" y="1160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareToVideoService_di" bpmnElement="Flow_FirmwareToVideoService">
+        <di:waypoint x="740" y="1630" />
+        <di:waypoint x="740" y="1490" />
+        <di:waypoint x="410" y="1490" />
+        <di:waypoint x="410" y="1420" />
+        <di:waypoint x="295" y="1420" />
+        <di:waypoint x="295" y="1400" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_FirmwareSyncToVideoService_di" bpmnElement="Flow_FirmwareSyncToVideoService">
+        <di:waypoint x="940" y="1630" />
+        <di:waypoint x="940" y="1580" />
+        <di:waypoint x="310" y="1580" />
+        <di:waypoint x="310" y="1510" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_06cizzc_di" bpmnElement="Flow_06cizzc">
+        <di:waypoint x="260" y="935" />
+        <di:waypoint x="260" y="920" />
+        <di:waypoint x="360" y="920" />
+        <di:waypoint x="360" y="710" />
+        <di:waypoint x="560" y="710" />
+        <di:waypoint x="560" y="570" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
