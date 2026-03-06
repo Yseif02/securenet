@@ -18,7 +18,7 @@ import java.util.Optional;
  * <p> - Token revocation on logout.
  *
  * <p>Callers:</p>
- * {@link com.securenet.client.APIGatewayService} — validates every inbound token before routing.
+ * {@link com.securenet.gateway.APIGatewayService} — validates every inbound token before routing.
  *
  * <p>Protocol:</p>
  * HTTPS/REST on the internal service mesh.

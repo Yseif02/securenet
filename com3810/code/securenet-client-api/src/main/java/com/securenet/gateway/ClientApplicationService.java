@@ -1,4 +1,4 @@
-package com.securenet.client;
+package com.securenet.gateway;
 
 import java.time.Instant;
 import java.util.List;

@@ -27,7 +27,7 @@ import java.util.List;
  * without exposing raw storage credentials.
  *
  * <p>Callers:</p>
- *  {@link com.securenet.client.APIGatewayService} — routes playback and clip-listing requests.
+ *  {@link com.securenet.gateway.APIGatewayService} — routes playback and clip-listing requests.
  *   <p>IoT Device Firmware — pushes live RTSP streams directly.
  *   <p>Client Applications — stream video chunks directly (bypasses gateway).
  *

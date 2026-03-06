@@ -21,7 +21,7 @@ import java.util.List;
  * <p>Remote commands — send lock/unlock, stream-start, and other commands to devices via MQTT.
  *
  * <p>Callers:</p>
- * {@link com.securenet.client.APIGatewayService} — routes homeowner-initiated device commands here via HTTPS/REST.
+ * {@link com.securenet.gateway.APIGatewayService} — routes homeowner-initiated device commands here via HTTPS/REST.
  * <p> IoT Device Firmware — registers, sends heartbeats, and requests firmware via HTTPS/REST.
  * <p>
  * <p>Protocol:</p>

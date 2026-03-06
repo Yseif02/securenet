@@ -23,7 +23,7 @@ import java.util.Map;
  *
  * <p>Callers:</p>
  * IoT Device Firmware — publishes raw security events over HTTPS/REST.
- * {@link com.securenet.client.APIGatewayService} — routes homeowner queries for event history.</li>
+ * {@link com.securenet.gateway.APIGatewayService} — routes homeowner queries for event history.</li>
  *
  * <p>Protocol:</p>
  * HTTPS/REST for inbound events; HTTPS/REST for outbound notification calls.
