@@ -40,8 +40,7 @@ async function main() {
     const args = process.argv;
 
     if (args.length < 3) {
-        console.error("Error: Not enough arguments");
-        process.exit(1);
+        throw new Error("Error: Not enough arguments");
     }
 
     const inputFile = args[2];
@@ -81,7 +80,7 @@ async function main() {
         if (!baseAccount) {
             throw new Error("Account does not exist");
         }
-        console.log("Found Base account");
+        //console.log("Found Base account");
         //console.log(baseAccount);
 
         const customer = await customersCollection.findOne({
@@ -91,15 +90,15 @@ async function main() {
         if (!customer) {
             throw new Error("Customer for account not found");
         }
-        console.log("Found customer");
+        //console.log("Found customer");
         //console.log(customer);
 
         const allAccountIds = customer.accounts;
         const otherAccountIds = allAccountIds.filter((id) => id !== accountId);
 
-        console.log("All customer account IDs:", allAccountIds);
-        console.log("Base account ID:", accountId);
-        console.log("Other customer account IDs:", otherAccountIds);
+        //console.log("All customer account IDs:", allAccountIds);
+        //console.log("Base account ID:", accountId);
+        //console.log("Other customer account IDs:", otherAccountIds);
 
         const reservedAmount = amount / 6;
         const distributableAmount = amount - reservedAmount;
@@ -109,9 +108,9 @@ async function main() {
             perOtherAccountAmount = distributableAmount / otherAccountIds.length;
         }
 
-        console.log("Reserved amount for base account:", reservedAmount);
-        console.log("Total amount to distribute:", distributableAmount);
-        console.log("Amount per other account:", perOtherAccountAmount);
+       //console.log("Reserved amount for base account:", reservedAmount);
+       //console.log("Total amount to distribute:", distributableAmount);
+       //console.log("Amount per other account:", perOtherAccountAmount);
 
         const otherAccounts = await  accountsCollection.find({
             account_id: { $in: otherAccountIds}
@@ -120,7 +119,7 @@ async function main() {
         if (otherAccounts.length !== otherAccountIds.length) {
             throw new Error(("One or more other accounts were not found"));
         }
-        console.log("Other account documents:");
+        //console.log("Other account documents:");
         //console.log(otherAccounts);
 
         //calc
@@ -140,7 +139,7 @@ async function main() {
         const customerTransactionCountIncrement = (1 + otherAccounts.length) * 2;
         const transactionDocsToInsert = 1 + otherAccounts.length;
 
-        console.log("Planned base account update:");
+        //console.log("Planned base account update:");
         /*console.log({
             account_id: baseAccount.account_id,
             old_limit: baseAccount.limit,
@@ -150,10 +149,10 @@ async function main() {
             reserved_amount: reservedAmount
         });*/
 
-        console.log("Planned other account updates:");
+        //console.log("Planned other account updates:");
         //console.log(otherAccountUpdatePlans);
 
-        console.log("Planned customer update:");
+        //console.log("Planned customer update:");
         /*console.log({
             customer_id: customer._id,
             transaction_count_increment: customerTransactionCountIncrement
@@ -180,7 +179,7 @@ async function main() {
             });
         }
 
-        console.log("Planned transaction documents:");
+        //console.log("Planned transaction documents:");
         //console.log(JSON.stringify(transactionDocs, null, 2));
 
 
@@ -203,7 +202,7 @@ async function main() {
                     },
                     { session }
                 );
-                // throw new Error("test rollback");
+                //throw new Error("test rollback");
 
 
                 for (const plan of otherAccountUpdatePlans) {
@@ -241,7 +240,7 @@ async function main() {
                 readConcern: { level: "snapshot"},
                 writeConcern: { w: "majority"}
             });
-            console.log("Transaction commited successfully");
+            //console.log("Transaction commited successfully");
         } finally {
             await session.endSession();
         }
@@ -254,5 +253,5 @@ async function main() {
 main().catch((err) => {
    /* console.error(err);
     process.exit(1);*/
-    throw new Error();
+    throw new Error(err);
 });
