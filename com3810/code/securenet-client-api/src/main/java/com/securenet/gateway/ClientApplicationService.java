@@ -1,5 +1,8 @@
 package com.securenet.gateway;
 
+import com.securenet.model.Device;
+import com.securenet.model.EventSummary;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -84,7 +87,7 @@ public interface ClientApplicationService {
      * @return an unmodifiable list of DeviceSummary records for display;
      *         empty if the homeowner has no registered devices
      */
-    List<DeviceSummary> loadDashboard();
+    List<Device> loadDashboard(); //this was DeviceSummary records but we dont have a model for that
 
     /**
      * Initiates the device onboarding flow: prompts the homeowner to scan a

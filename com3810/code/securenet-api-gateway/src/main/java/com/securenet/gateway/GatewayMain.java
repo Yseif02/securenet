@@ -1,0 +1,57 @@
+package com.securenet.gateway;
+
+import com.securenet.common.LoadBalancer;
+import com.securenet.gateway.impl.APIGatewayServiceImpl;
+import com.securenet.gateway.server.APIGatewayServer;
+
+import java.util.*;
+
+public class GatewayMain {
+    public static void main(String[] args) throws Exception {
+        int port = 443;
+        String host = "0.0.0.0";
+        String umsUrls = "http://localhost:9001";
+        String dmsUrls = "http://localhost:9002";
+        String epsUrls = "http://localhost:9003";
+        String notifyUrls = "http://localhost:9004";
+        String vssUrls = "http://localhost:9005";
+
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--port" -> port = Integer.parseInt(args[++i]);
+                case "--host" -> host = args[++i];
+                case "--ums-urls" -> umsUrls = args[++i];
+                case "--dms-urls" -> dmsUrls = args[++i];
+                case "--eps-urls" -> epsUrls = args[++i];
+                case "--notify-urls" -> notifyUrls = args[++i];
+                case "--vss-urls" -> vssUrls = args[++i];
+            }
+        }
+
+        LoadBalancer umsLb = new LoadBalancer("UMS", Arrays.asList(umsUrls.split(",")));
+        umsLb.start();
+
+        Map<String, LoadBalancer> serviceLbs = new HashMap<>();
+        serviceLbs.put("device-management", createLb("DMS", dmsUrls));
+        serviceLbs.put("event-processing", createLb("EPS", epsUrls));
+        serviceLbs.put("notification", createLb("Notification", notifyUrls));
+        serviceLbs.put("video-streaming", createLb("VSS", vssUrls));
+
+        APIGatewayServiceImpl gateway = new APIGatewayServiceImpl(umsLb, serviceLbs);
+        APIGatewayServer server = new APIGatewayServer(host, port, gateway);
+        server.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            server.stop();
+            umsLb.stop();
+            serviceLbs.values().forEach(LoadBalancer::stop);
+        }));
+        Thread.currentThread().join();
+    }
+
+    private static LoadBalancer createLb(String name, String urls) {
+        LoadBalancer lb = new LoadBalancer(name, Arrays.asList(urls.split(",")));
+        lb.start();
+        return lb;
+    }
+}

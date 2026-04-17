@@ -1,6 +1,8 @@
 package com.securenet.notification;
 
 
+import com.securenet.model.SecurityEvent;
+
 import java.util.List;
 
 /**
@@ -21,8 +23,8 @@ import java.util.List;
  *
  *
  * <p>Callers:</p>
- * {@link com.securenet.eventprocessing.EventProcessingService} — sends alert-worthy events over HTTPS/REST.
- * <p>{@link com.securenet.devicemanagement.DeviceManagementService} — sends device-unresponsive alerts directly.
+ * {com.securenet.eventprocessing.EventProcessingService} — sends alert-worthy events over HTTPS/REST.
+ * <p>{com.securenet.devicemanagement.DeviceManagementService} — sends device-unresponsive alerts directly.
  *
  *
  * <p>Protocol:</p>

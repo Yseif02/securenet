@@ -1,6 +1,15 @@
 package com.securenet.devicemanagement;
 
 
+import com.securenet.model.Device;
+import com.securenet.model.DeviceCredentials;
+import com.securenet.model.DeviceStatus;
+import com.securenet.model.DeviceType;
+import com.securenet.model.bootstrap.BootstrapRegistrationResult;
+import com.securenet.model.exception.DeviceAlreadyRegisteredException;
+import com.securenet.model.exception.DeviceNotFoundException;
+import com.securenet.model.exception.DeviceOfflineException;
+
 import java.util.List;
 
 /**
@@ -21,7 +30,7 @@ import java.util.List;
  * <p>Remote commands — send lock/unlock, stream-start, and other commands to devices via MQTT.
  *
  * <p>Callers:</p>
- * {@link com.securenet.gateway.APIGatewayService} — routes homeowner-initiated device commands here via HTTPS/REST.
+ * { com.securenet.gateway.APIGatewayService} — routes homeowner-initiated device commands here via HTTPS/REST.
  * <p> IoT Device Firmware — registers, sends heartbeats, and requests firmware via HTTPS/REST.
  * <p>
  * <p>Protocol:</p>
@@ -56,21 +65,26 @@ public interface DeviceManagementService {
             throws DeviceAlreadyRegisteredException, IllegalArgumentException;
 
     /**
-     * Accepts the device's first HTTPS/REST connection after power-on,
-     * completes the onboarding handshake, and returns MQTT broker credentials.
+     * Accepts the device's bootstrap registration connection after power-on,
+     * completes the bootstrap handshake, and returns firmware assignment
+     * information.
      *
-     * <p>After this call succeeds the device transitions to ONLINE and begins sending heartbeats.
+     * <p>After this call succeeds the device is known to the platform and can
+     * proceed with firmware installation. Runtime MQTT credentials are not
+     * returned during this phase.
+     *
+     * <p>This method is intentionally idempotent for bootloader retries and
+     * reboot scenarios. A device that already completed bootstrap registration
+     * may still receive a valid bootstrap response again.
      *
      * @param deviceId          the manufacturer-assigned device identifier
      * @param registrationToken the one-time token embedded in the QR code
-     * @return DeviceCredentials the device must use to connect to
-     *         the MQTT broker
-     * @throws DeviceNotFoundException  if no pending registration exists for
-     *                                  this device identifier
+     * @return bootstrap registration details and assigned firmware metadata
+     * @throws DeviceNotFoundException  if no registration exists for this device
+     *                                  identifier
      * @throws IllegalArgumentException if the registration token is invalid
-     *                                  or already consumed
      */
-    DeviceCredentials acceptDeviceRegistration(String deviceId, String registrationToken)
+    BootstrapRegistrationResult acceptDeviceRegistration(String deviceId, String registrationToken)
             throws DeviceNotFoundException, IllegalArgumentException;
 
     // =========================================================================
@@ -118,7 +132,7 @@ public interface DeviceManagementService {
      *
      * <p>Called by the internal heartbeat-monitor background process, not
      * directly by the API Gateway. Triggers an alert via the
-     * {@link com.securenet.notification.NotificationService}.
+     * {com.securenet.notification.NotificationService}.
      *
      * @param deviceId the device to mark as unresponsive
      * @throws DeviceNotFoundException if the device is not in the registry

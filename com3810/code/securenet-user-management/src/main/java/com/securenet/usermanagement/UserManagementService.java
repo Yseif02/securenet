@@ -1,6 +1,10 @@
 package com.securenet.usermanagement;
 
 
+import com.securenet.model.AuthToken;
+import com.securenet.model.User;
+import com.securenet.model.exception.AuthenticationException;
+
 import java.util.Optional;
 
 /**
@@ -8,7 +12,7 @@ import java.util.Optional;
  *
  * <p>This service owns all homeowner identity data and is the sole authority
  * for issuing and revoking AuthTokens. It stores user profiles in the
- * {@link com.securenet.storage.StorageService} (PostgreSQL) and reads/writes
+ * { com.securenet.storage.StorageService} (PostgreSQL) and reads/writes
  * user data via SQL/JDBC as shown in the C4 Container Diagram.
  *
  * <p>It's responsibilities are:</p>
@@ -18,7 +22,7 @@ import java.util.Optional;
  * <p> - Token revocation on logout.
  *
  * <p>Callers:</p>
- * {@link com.securenet.gateway.APIGatewayService} — validates every inbound token before routing.
+ * { com.securenet.gateway.APIGatewayService} — validates every inbound token before routing.
  *
  * <p>Protocol:</p>
  * HTTPS/REST on the internal service mesh.

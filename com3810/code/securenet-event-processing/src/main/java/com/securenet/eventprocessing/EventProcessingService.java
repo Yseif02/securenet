@@ -2,6 +2,10 @@ package com.securenet.eventprocessing;
 
 
 
+import com.securenet.model.EventType;
+import com.securenet.model.SecurityEvent;
+import com.securenet.model.exception.DeviceNotFoundException;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +16,7 @@ import java.util.Map;
  * <p>This service is responsible for ingesting SecurityEvents emitted
  * by IoT devices, enriching them with platform context, persisting them to the
  * event history in the Data Storage Layer, and forwarding alert-worthy events
- * to the {@link com.securenet.notification.NotificationService}.
+ * to the {com.securenet.notification.NotificationService}.
  *
  * <p>It's responsibilities are:</p>
  * Event ingestion — receive raw events published by IoT Device Firmware over HTTPS/REST and validate their structure.
@@ -23,7 +27,7 @@ import java.util.Map;
  *
  * <p>Callers:</p>
  * IoT Device Firmware — publishes raw security events over HTTPS/REST.
- * {@link com.securenet.gateway.APIGatewayService} — routes homeowner queries for event history.</li>
+ * {com.securenet.gateway.APIGatewayService} — routes homeowner queries for event history.</li>
  *
  * <p>Protocol:</p>
  * HTTPS/REST for inbound events; HTTPS/REST for outbound notification calls.
@@ -114,7 +118,7 @@ public interface EventProcessingService {
 
     /**
      * Evaluates whether the given event warrants a push notification and, if so,
-     * forwards it to the {@link com.securenet.notification.NotificationService}.
+     * forwards it to the { com.securenet.notification.NotificationService}.
      *
      * <p>Called internally by {@link #ingestEvent} after persistence. Alert
      * criteria include:</p>

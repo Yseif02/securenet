@@ -1,5 +1,9 @@
 package com.securenet.storage;
 
+import com.securenet.model.*;
+import com.securenet.model.exception.DeviceNotFoundException;
+import com.securenet.model.exception.VideoNotFoundException;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -9,7 +13,7 @@ import java.util.Optional;
  *
  * <p>This service is the single gateway through which all other SecureNet
  * services (except user auth) read and write persistent data. Backed by PostgreSQL,
- * it stores five logically separate domains that share a single database cluster:</p>
+ * it stores five logically separate domains that share a database cluster:</p>
  *
  * - User data — homeowner accounts and push-token registrations(written by User Management Service and Notification Service).
  * <p> - Device state — the device registry, credentials, firmware metadata, and heartbeat timestamps (written by Device Management Service).
@@ -286,4 +290,13 @@ public interface StorageService {
      * @return an unmodifiable list of raw token strings; empty if none registered
      */
     List<String> findPushTokensByUser(String userId);
+
+    void savePasswordHash(String userId, String passwordHash);
+    Optional<String> findPasswordHashByUserId(String userId);
+
+    void saveAuthToken(AuthToken token);
+    Optional<AuthToken> findAuthToken(String tokenValue);
+
+    void revokeAuthToken(String tokenValue);
+    boolean isTokenRevoked(String tokenValue);
 }
