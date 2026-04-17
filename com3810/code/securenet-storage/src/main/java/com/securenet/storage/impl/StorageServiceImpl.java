@@ -159,7 +159,65 @@ public class StorageServiceImpl implements StorageService {
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )""",
 
-                "CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)"
+                "CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)",
+
+                // --- DMS registration tokens ---
+                """
+            CREATE TABLE IF NOT EXISTS registration_tokens (
+                device_id          VARCHAR(255) PRIMARY KEY,
+                registration_token VARCHAR(255) NOT NULL,
+                created_at         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""",
+
+                // --- DMS device heartbeats ---
+                """
+            CREATE TABLE IF NOT EXISTS device_heartbeats (
+                device_id    VARCHAR(255) PRIMARY KEY,
+                heartbeat_at TIMESTAMP    NOT NULL
+            )""",
+
+                // --- EPS deduplication table ---
+                """
+            CREATE TABLE IF NOT EXISTS eps_dedup (
+                dedup_key   VARCHAR(512) PRIMARY KEY,
+                event_id    VARCHAR(255) NOT NULL,
+                recorded_at TIMESTAMP    NOT NULL
+            )""",
+                "CREATE INDEX IF NOT EXISTS idx_eps_dedup_recorded ON eps_dedup(recorded_at)",
+
+                // --- EPS motion cooldown ---
+                """
+            CREATE TABLE IF NOT EXISTS eps_motion_cooldown (
+                device_id  VARCHAR(255) PRIMARY KEY,
+                alert_at   TIMESTAMP    NOT NULL
+            )""",
+
+                // --- EPS Lamport clock ---
+                """
+            CREATE TABLE IF NOT EXISTS eps_lamport_clock (
+                node_id     VARCHAR(255) PRIMARY KEY,
+                clock_value BIGINT       NOT NULL DEFAULT 0
+            )""",
+
+                // --- VSS recording sessions ---
+                """
+            CREATE TABLE IF NOT EXISTS recording_sessions (
+                session_id VARCHAR(255) PRIMARY KEY,
+                device_id  VARCHAR(255) NOT NULL,
+                owner_id   VARCHAR(255) NOT NULL,
+                started_at TIMESTAMP    NOT NULL
+            )""",
+                "CREATE INDEX IF NOT EXISTS idx_rec_sessions_device ON recording_sessions(device_id)",
+
+                // --- Notification outbox ---
+                """
+            CREATE TABLE IF NOT EXISTS notification_outbox (
+                notification_id VARCHAR(255) PRIMARY KEY,
+                token           VARCHAR(255) NOT NULL,
+                payload         TEXT         NOT NULL,
+                attempts        INT          NOT NULL DEFAULT 0,
+                created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
         };
 
         try (Statement stmt = connection.createStatement()) {
@@ -654,6 +712,267 @@ public class StorageServiceImpl implements StorageService {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to find push tokens", e);
         }
+    }
+
+    // =====================================================================
+    // DMS registration tokens
+    // =====================================================================
+
+    @Override
+    public void saveRegistrationToken(String deviceId, String registrationToken) {
+        String sql = "INSERT INTO registration_tokens (device_id, registration_token) VALUES (?, ?) " +
+                "ON CONFLICT (device_id) DO UPDATE SET registration_token = EXCLUDED.registration_token";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ps.setString(2, registrationToken);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save registration token", e); }
+    }
+
+    @Override
+    public Optional<String> findRegistrationToken(String deviceId) {
+        String sql = "SELECT registration_token FROM registration_tokens WHERE device_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getString("registration_token"));
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find registration token", e); }
+    }
+
+    @Override
+    public void deleteRegistrationToken(String deviceId) {
+        String sql = "DELETE FROM registration_tokens WHERE device_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete registration token", e); }
+    }
+
+    // =====================================================================
+    // DMS device heartbeats
+    // =====================================================================
+
+    @Override
+    public void saveDeviceHeartbeat(String deviceId, Instant heartbeatAt) {
+        String sql = "INSERT INTO device_heartbeats (device_id, heartbeat_at) VALUES (?, ?) " +
+                "ON CONFLICT (device_id) DO UPDATE SET heartbeat_at = EXCLUDED.heartbeat_at";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ps.setTimestamp(2, Timestamp.from(heartbeatAt));
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save heartbeat", e); }
+    }
+
+    @Override
+    public Optional<Instant> findDeviceHeartbeat(String deviceId) {
+        String sql = "SELECT heartbeat_at FROM device_heartbeats WHERE device_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getTimestamp("heartbeat_at").toInstant());
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find heartbeat", e); }
+    }
+
+    // =====================================================================
+    // EPS deduplication
+    // =====================================================================
+
+    @Override
+    public void saveDeduplicationEntry(String dedupKey, String eventId, Instant recordedAt) {
+        String sql = "INSERT INTO eps_dedup (dedup_key, event_id, recorded_at) VALUES (?, ?, ?) " +
+                "ON CONFLICT (dedup_key) DO UPDATE SET event_id = EXCLUDED.event_id, recorded_at = EXCLUDED.recorded_at";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, dedupKey);
+            ps.setString(2, eventId);
+            ps.setTimestamp(3, Timestamp.from(recordedAt));
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save dedup entry", e); }
+    }
+
+    @Override
+    public Optional<Map<String, String>> findDeduplicationEntry(String dedupKey) {
+        String sql = "SELECT event_id, recorded_at FROM eps_dedup WHERE dedup_key = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, dedupKey);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return Optional.of(Map.of(
+                        "eventId", rs.getString("event_id"),
+                        "recordedAt", rs.getTimestamp("recorded_at").toInstant().toString()));
+            }
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find dedup entry", e); }
+    }
+
+    @Override
+    public int deleteExpiredDeduplicationEntries(Instant olderThan) {
+        String sql = "DELETE FROM eps_dedup WHERE recorded_at < ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.from(olderThan));
+            return ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete expired dedup", e); }
+    }
+
+    // =====================================================================
+    // EPS motion cooldown
+    // =====================================================================
+
+    @Override
+    public void saveMotionCooldown(String deviceId, Instant alertAt) {
+        String sql = "INSERT INTO eps_motion_cooldown (device_id, alert_at) VALUES (?, ?) " +
+                "ON CONFLICT (device_id) DO UPDATE SET alert_at = EXCLUDED.alert_at";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ps.setTimestamp(2, Timestamp.from(alertAt));
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save motion cooldown", e); }
+    }
+
+    @Override
+    public Optional<Instant> findMotionCooldown(String deviceId) {
+        String sql = "SELECT alert_at FROM eps_motion_cooldown WHERE device_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getTimestamp("alert_at").toInstant());
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find motion cooldown", e); }
+    }
+
+    // =====================================================================
+    // EPS Lamport clock
+    // =====================================================================
+
+    @Override
+    public void saveLamportClock(String nodeId, long value) {
+        String sql = "INSERT INTO eps_lamport_clock (node_id, clock_value) VALUES (?, ?) " +
+                "ON CONFLICT (node_id) DO UPDATE SET clock_value = EXCLUDED.clock_value";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, nodeId);
+            ps.setLong(2, value);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save Lamport clock", e); }
+    }
+
+    @Override
+    public long findLamportClock(String nodeId) {
+        String sql = "SELECT clock_value FROM eps_lamport_clock WHERE node_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, nodeId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getLong("clock_value");
+            return 0L;
+        } catch (SQLException e) { throw new RuntimeException("Failed to find Lamport clock", e); }
+    }
+
+    // =====================================================================
+    // VSS recording sessions
+    // =====================================================================
+
+    @Override
+    public void saveRecordingSession(String sessionId, String deviceId, String ownerId, Instant startedAt) {
+        String sql = "INSERT INTO recording_sessions (session_id, device_id, owner_id, started_at) VALUES (?, ?, ?, ?)";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ps.setString(2, deviceId);
+            ps.setString(3, ownerId);
+            ps.setTimestamp(4, Timestamp.from(startedAt));
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save recording session", e); }
+    }
+
+    @Override
+    public Optional<Map<String, String>> findRecordingSession(String sessionId) {
+        String sql = "SELECT session_id, device_id, owner_id, started_at FROM recording_sessions WHERE session_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return Optional.of(Map.of(
+                        "sessionId", rs.getString("session_id"),
+                        "deviceId", rs.getString("device_id"),
+                        "ownerId", rs.getString("owner_id"),
+                        "startedAt", rs.getTimestamp("started_at").toInstant().toString()));
+            }
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find recording session", e); }
+    }
+
+    @Override
+    public Optional<String> findActiveSessionForDevice(String deviceId) {
+        String sql = "SELECT session_id FROM recording_sessions WHERE device_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, deviceId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return Optional.of(rs.getString("session_id"));
+            return Optional.empty();
+        } catch (SQLException e) { throw new RuntimeException("Failed to find active session", e); }
+    }
+
+    @Override
+    public void deleteRecordingSession(String sessionId) {
+        String sql = "DELETE FROM recording_sessions WHERE session_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete recording session", e); }
+    }
+
+    // =====================================================================
+    // Notification outbox
+    // =====================================================================
+
+    @Override
+    public void saveNotificationOutbox(String notificationId, String token, String payload, int attempts) {
+        String sql = "INSERT INTO notification_outbox (notification_id, token, payload, attempts) VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT (notification_id) DO UPDATE SET attempts = EXCLUDED.attempts";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, notificationId);
+            ps.setString(2, token);
+            ps.setString(3, payload);
+            ps.setInt(4, attempts);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save notification outbox", e); }
+    }
+
+    @Override
+    public List<Map<String, Object>> findPendingNotifications(int maxResults) {
+        String sql = "SELECT notification_id, token, payload, attempts FROM notification_outbox ORDER BY created_at ASC LIMIT ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, maxResults);
+            ResultSet rs = ps.executeQuery();
+            List<Map<String, Object>> results = new ArrayList<>();
+            while (rs.next()) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("notificationId", rs.getString("notification_id"));
+                entry.put("token", rs.getString("token"));
+                entry.put("payload", rs.getString("payload"));
+                entry.put("attempts", rs.getInt("attempts"));
+                results.add(entry);
+            }
+            return results;
+        } catch (SQLException e) { throw new RuntimeException("Failed to find pending notifications", e); }
+    }
+
+    @Override
+    public void deleteNotificationOutbox(String notificationId) {
+        String sql = "DELETE FROM notification_outbox WHERE notification_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, notificationId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete notification outbox", e); }
+    }
+
+    @Override
+    public void updateNotificationAttempts(String notificationId, int newAttempts) {
+        String sql = "UPDATE notification_outbox SET attempts = ? WHERE notification_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setInt(1, newAttempts);
+            ps.setString(2, notificationId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to update notification attempts", e); }
     }
 
     // =====================================================================

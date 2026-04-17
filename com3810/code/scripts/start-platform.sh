@@ -4,20 +4,19 @@
 #
 # Starts the full SecureNet platform with:
 #   - PostgreSQL replication cluster (primary + 2 standbys)
-#   - Embedded MQTT broker
-#   - 3x stateless service instances each for UMS, DMS, Notification, VSS
+#   - Embedded MQTT broker + IDFS
+#   - Storage Service
+#   - 3x UMS, DMS, Notification, VSS instances (stateless, load balanced)
 #   - 3x EPS Raft cluster nodes (stateful, leader-elected)
-#   - IDFS (device-facing gateway)
-#   - API Gateway (client-facing, routes through load balancers)
+#   - API Gateway (client-facing, routes via load balancers)
+#   - Cluster Manager (monitors all instances, detects failures)
 #
 # Prerequisites:
-#   - PostgreSQL cluster set up: ./scripts/setup-postgres-cluster.sh
-#   - Project built: mvn clean package -DskipTests
+#   - PostgreSQL cluster: ./scripts/setup-postgres-cluster.sh
+#   - Build: mvn clean package -DskipTests
 #
 # Usage:
 #   ./scripts/start-platform.sh
-#
-# Stop:
 #   ./scripts/stop-platform.sh
 # =============================================================================
 
@@ -66,6 +65,7 @@ echo ""
 echo "--- PostgreSQL Cluster ---"
 "$SCRIPT_DIR/start-postgres-cluster.sh"
 sleep 1
+
 STORAGE_URL="http://localhost:9000"
 
 # =====================================================================
@@ -80,7 +80,7 @@ start_service "idfs" "com.securenet.iotfirmware.IdfsMain" \
 sleep 2
 
 # =====================================================================
-# 3. Storage Service (connects to PG primary on 5432)
+# 3. Storage Service
 # =====================================================================
 echo ""
 echo "--- Storage Service ---"
@@ -171,7 +171,7 @@ start_service "vss-3" "com.securenet.videostreaming.VssMain" \
 sleep 0.3
 
 # =====================================================================
-# 9. API Gateway (routes all client requests)
+# 9. API Gateway
 # =====================================================================
 echo ""
 echo "--- API Gateway ---"
@@ -185,11 +185,40 @@ start_service "gateway" "com.securenet.gateway.GatewayMain" \
 sleep 0.5
 
 # =====================================================================
+# 10. Cluster Manager (monitors all instances)
+# =====================================================================
+echo ""
+echo "--- Cluster Manager ---"
+start_service "cluster-manager" "com.securenet.common.ClusterManagerMain" \
+    --port 9090 \
+    --check-interval 5000 \
+    --failure-threshold 15000 \
+    --instance IDFS:idfs:http://localhost:8080 \
+    --instance Storage:storage:http://localhost:9000 \
+    --instance UMS:ums-1:http://localhost:9001 \
+    --instance UMS:ums-2:http://localhost:9011 \
+    --instance UMS:ums-3:http://localhost:9021 \
+    --instance DMS:dms-1:http://localhost:9002 \
+    --instance DMS:dms-2:http://localhost:9012 \
+    --instance DMS:dms-3:http://localhost:9022 \
+    --instance EPS:eps-1:http://localhost:9003 \
+    --instance EPS:eps-2:http://localhost:9103 \
+    --instance EPS:eps-3:http://localhost:9203 \
+    --instance Notification:notify-1:http://localhost:9004 \
+    --instance Notification:notify-2:http://localhost:9014 \
+    --instance Notification:notify-3:http://localhost:9024 \
+    --instance VSS:vss-1:http://localhost:9005 \
+    --instance VSS:vss-2:http://localhost:9015 \
+    --instance VSS:vss-3:http://localhost:9025 \
+    --instance Gateway:gateway:http://localhost:8443
+sleep 0.5
+
+# =====================================================================
 # Summary
 # =====================================================================
 echo ""
 echo "================================================================"
-echo "  SecureNet Platform Running"
+echo "  SecureNet Platform Running — 21 Java processes"
 echo "================================================================"
 echo ""
 echo "  PostgreSQL Cluster:"
@@ -202,17 +231,21 @@ echo "    MQTT Broker:   localhost:1883"
 echo "    IDFS:          localhost:8080"
 echo "    Storage:       localhost:9000"
 echo "    API Gateway:   localhost:8443"
+echo "    Cluster Mgr:   localhost:9090"
 echo ""
-echo "  UMS Cluster:     localhost:9001, 9011, 9021"
-echo "  DMS Cluster:     localhost:9002, 9012, 9022"
-echo "  EPS Raft:        localhost:9003, 9103, 9203  (Raft: 9013, 9023, 9033)"
-echo "  Notification:    localhost:9004, 9014, 9024"
-echo "  VSS:             localhost:9005, 9015, 9025"
+echo "  Service Clusters (3 instances each, load balanced by Gateway):"
+echo "    UMS:           localhost:9001, 9011, 9021"
+echo "    DMS:           localhost:9002, 9012, 9022"
+echo "    Notification:  localhost:9004, 9014, 9024"
+echo "    VSS:           localhost:9005, 9015, 9025"
 echo ""
-echo "  Total: 20 processes"
+echo "  EPS Raft Cluster (stateful, leader-elected):"
+echo "    API:           localhost:9003, 9103, 9203"
+echo "    Raft RPC:      localhost:9013, 9023, 9033"
 echo ""
 echo "  Commands:"
-echo "    Check Raft:  curl http://localhost:9013/raft/status"
-echo "    Run demo:    java -cp \"\$CLASSPATH\" com.securenet.demo.PlatformDemo"
-echo "    Stop all:    ./scripts/stop-platform.sh"
+echo "    Raft status:     curl http://localhost:9013/raft/status"
+echo "    Cluster health:  curl http://localhost:9090/cluster/status"
+echo "    Run demo:        java -cp \"\$CP\" com.securenet.demo.PlatformDemo"
+echo "    Stop all:        ./scripts/stop-platform.sh"
 echo "================================================================"

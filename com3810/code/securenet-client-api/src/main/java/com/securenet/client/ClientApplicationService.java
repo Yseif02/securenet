@@ -1,4 +1,4 @@
-package com.securenet.gateway;
+package com.securenet.client;
 
 import com.securenet.model.Device;
 import com.securenet.model.EventSummary;

@@ -204,7 +204,7 @@ public class SecureNetOrchestrator {
         System.out.println();
         System.out.println("--- EPS status ---");
         System.out.println("  Lamport clock: " + epsService.getLamportClock());
-        System.out.println("  Dedup table size: " + epsService.getDeduplicationTableSize());
+        //System.out.println("  Dedup table size: " + epsService.getDeduplicationTableSize());
 
         System.out.println();
         System.out.println("=== All tests passed — platform running ===");

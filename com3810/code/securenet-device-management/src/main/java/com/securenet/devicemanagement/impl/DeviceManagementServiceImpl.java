@@ -16,33 +16,27 @@ import com.securenet.storage.StorageGateway;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Distributed implementation of the Device Management Service.
  *
- * <p>Runs as its own process and accesses persistent data through
- * {@link StorageGateway} (HTTP client to the remote Storage Service).
+ * <p>Runs as its own process and accesses <strong>all</strong> persistent data
+ * through {@link StorageGateway} (HTTP client to the remote Storage Service).
+ * No in-memory state is kept — registration tokens, heartbeats, and device
+ * records are all stored in PostgreSQL so that any DMS instance behind
+ * the load balancer can serve any request.
  *
  * <p>Remote commands (lock, unlock, stream-start) are dispatched to
  * devices via the IDFS {@code /command} endpoint, which publishes to
- * the device's MQTT command topic and waits for an ack. This completes
- * the full round-trip: DMS → IDFS → MQTT → device → ack → MQTT → IDFS → DMS.
+ * the device's MQTT command topic and waits for an ack.
  */
 public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private final StorageGateway storageGateway;
     private final String idfsBaseUrl;
     private final ServiceClient httpClient;
-
-    /** Pending registration tokens keyed by deviceId. */
-    private final Map<String, String> pendingTokens = new ConcurrentHashMap<>();
-
-    /** Last heartbeat timestamp keyed by deviceId. */
-    private final Map<String, Instant> lastHeartbeats = new ConcurrentHashMap<>();
 
     /**
      * @param storageGateway HTTP client pointing to the remote Storage Service
@@ -82,7 +76,10 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         );
 
         storageGateway.saveDevice(device);
-        pendingTokens.put(parsed.deviceId(), parsed.registrationToken());
+
+        // Store token in PostgreSQL (shared across all DMS instances)
+        storageGateway.saveRegistrationToken(parsed.deviceId(), parsed.registrationToken());
+
         return device;
     }
 
@@ -95,7 +92,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         Device device = storageGateway.findDeviceById(deviceId)
                 .orElseThrow(() -> new DeviceNotFoundException(deviceId));
 
-        String expectedToken = pendingTokens.get(deviceId);
+        // Look up token from PostgreSQL (not in-memory)
+        String expectedToken = storageGateway.findRegistrationToken(deviceId).orElse(null);
         if (expectedToken == null) {
             throw new DeviceNotFoundException(deviceId);
         }
@@ -115,7 +113,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                     .orElseThrow(() -> new DeviceNotFoundException(deviceId));
         }
 
-        lastHeartbeats.put(deviceId, now);
+        // Record heartbeat in PostgreSQL
+        storageGateway.saveDeviceHeartbeat(deviceId, now);
 
         return buildBootstrapResult(device, now);
     }
@@ -144,7 +143,9 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     @Override
     public void recordHeartbeat(String deviceId) throws DeviceNotFoundException {
         Device device = getDevice(deviceId);
-        lastHeartbeats.put(deviceId, Instant.now());
+
+        // Store heartbeat in PostgreSQL (not in-memory)
+        storageGateway.saveDeviceHeartbeat(deviceId, Instant.now());
 
         if (device.status() == DeviceStatus.OFFLINE ||
                 device.status() == DeviceStatus.UNRESPONSIVE ||
@@ -175,19 +176,6 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     // Remote commands — dispatched via IDFS /command → MQTT → device
     // =====================================================================
 
-    /**
-     * Sends a LOCK command to a smart lock device.
-     *
-     * <p>The command flows: DMS → HTTP POST to IDFS /command →
-     * IDFS publishes to MQTT topic {@code securenet/devices/{id}/commands/lock} →
-     * device receives, actuates lock motor, publishes ack →
-     * IDFS receives ack, returns result → DMS returns to caller.
-     *
-     * @param deviceId the smart lock to command
-     * @return {@code true} if the device acknowledged the lock command
-     * @throws DeviceNotFoundException if the device is not in the registry
-     * @throws DeviceOfflineException  if the device is not reachable
-     */
     @Override
     public boolean sendLockCommand(String deviceId)
             throws DeviceNotFoundException, DeviceOfflineException {
@@ -210,13 +198,6 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         dispatchCommand(deviceId, "STREAM_START");
     }
 
-    /**
-     * Dispatches a command to a device via IDFS and waits for the ack.
-     *
-     * @param deviceId    the device to command
-     * @param commandType the command (LOCK, UNLOCK, STREAM_START, etc.)
-     * @return {@code true} if the device acknowledged successfully
-     */
     private boolean dispatchCommand(String deviceId, String commandType) {
         String correlationId = UUID.randomUUID().toString();
 
@@ -226,7 +207,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         try {
             ServiceResponse response = httpClient.post(
                     idfsBaseUrl + "/command",
-                    Map.of(
+                    java.util.Map.of(
                             "device_id", deviceId,
                             "command_type", commandType,
                             "correlation_id", correlationId
@@ -234,7 +215,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             );
 
             if (response.isSuccess()) {
-                Map result = JsonUtil.fromJson(response.body(), Map.class);
+                java.util.Map result = JsonUtil.fromJson(response.body(), java.util.Map.class);
                 boolean acknowledged = Boolean.TRUE.equals(result.get("acknowledged"));
                 System.out.println("[DMS] Command " + commandType + " for " + deviceId +
                         " acknowledged=" + acknowledged);
@@ -294,8 +275,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             throw new IllegalArgumentException("ownerId does not match device owner");
         }
 
-        pendingTokens.remove(deviceId);
-        lastHeartbeats.remove(deviceId);
+        // Clean up from PostgreSQL (not in-memory)
+        storageGateway.deleteRegistrationToken(deviceId);
         storageGateway.deleteDevice(deviceId);
     }
 

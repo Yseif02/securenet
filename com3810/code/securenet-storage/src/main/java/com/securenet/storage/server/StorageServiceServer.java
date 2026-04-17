@@ -77,6 +77,14 @@ public class StorageServiceServer {
         // ----- Health check -----
         httpServer.createContext("/health", ex -> writeJson(ex, 200, Map.of("status", "UP")));
 
+        httpServer.createContext("/storage/registration-tokens", this::handleRegistrationTokens);
+        httpServer.createContext("/storage/device-heartbeats", this::handleDeviceHeartbeats);
+        httpServer.createContext("/storage/eps-dedup", this::handleEpsDedup);
+        httpServer.createContext("/storage/eps-motion-cooldown", this::handleEpsMotionCooldown);
+        httpServer.createContext("/storage/eps-lamport-clock", this::handleEpsLamportClock);
+        httpServer.createContext("/storage/recording-sessions", this::handleRecordingSessions);
+        httpServer.createContext("/storage/notification-outbox", this::handleNotificationOutbox);
+
         httpServer.start();
         System.out.println("[StorageService] started on " + host + ":" + port);
     }
@@ -535,6 +543,165 @@ public class StorageServiceServer {
         } catch (Exception e) {
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
+    }
+
+
+    private void handleRegistrationTokens(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveRegistrationToken(
+                        (String) body.get("deviceId"), (String) body.get("registrationToken"));
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                Optional<String> token = storageService.findRegistrationToken(segments[3]);
+                if (token.isPresent()) writeJson(ex, 200, Map.of("registrationToken", token.get()));
+                else writeJson(ex, 404, Map.of("error", "No registration token found"));
+            } else if ("DELETE".equals(method) && segments.length == 4) {
+                storageService.deleteRegistrationToken(segments[3]);
+                writeJson(ex, 200, Map.of("status", "ok"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleDeviceHeartbeats(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveDeviceHeartbeat(
+                        (String) body.get("deviceId"), Instant.parse((String) body.get("heartbeatAt")));
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                Optional<Instant> hb = storageService.findDeviceHeartbeat(segments[3]);
+                if (hb.isPresent()) writeJson(ex, 200, Map.of("heartbeatAt", hb.get().toString()));
+                else writeJson(ex, 404, Map.of("error", "No heartbeat found"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleEpsDedup(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveDeduplicationEntry((String) body.get("dedupKey"),
+                        (String) body.get("eventId"), Instant.parse((String) body.get("recordedAt")));
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("POST".equals(method) && segments.length == 4 && "cleanup".equals(segments[3])) {
+                Map body = readBody(ex, Map.class);
+                int deleted = storageService.deleteExpiredDeduplicationEntries(
+                        Instant.parse((String) body.get("olderThan")));
+                writeJson(ex, 200, Map.of("deleted", deleted));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                String key = URLDecoder.decode(segments[3], StandardCharsets.UTF_8);
+                Optional<Map<String, String>> entry = storageService.findDeduplicationEntry(key);
+                if (entry.isPresent()) writeJson(ex, 200, entry.get());
+                else writeJson(ex, 404, Map.of("error", "Dedup entry not found"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleEpsMotionCooldown(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveMotionCooldown(
+                        (String) body.get("deviceId"), Instant.parse((String) body.get("alertAt")));
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                Optional<Instant> cd = storageService.findMotionCooldown(segments[3]);
+                if (cd.isPresent()) writeJson(ex, 200, Map.of("alertAt", cd.get().toString()));
+                else writeJson(ex, 404, Map.of("error", "No motion cooldown found"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleEpsLamportClock(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveLamportClock(
+                        (String) body.get("nodeId"), ((Number) body.get("value")).longValue());
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                long value = storageService.findLamportClock(segments[3]);
+                writeJson(ex, 200, Map.of("value", value));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleRecordingSessions(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveRecordingSession((String) body.get("sessionId"),
+                        (String) body.get("deviceId"), (String) body.get("ownerId"),
+                        Instant.parse((String) body.get("startedAt")));
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 5 && "device".equals(segments[3])) {
+                Optional<String> sid = storageService.findActiveSessionForDevice(segments[4]);
+                if (sid.isPresent()) writeJson(ex, 200, Map.of("sessionId", sid.get()));
+                else writeJson(ex, 404, Map.of("error", "No active session"));
+            } else if ("GET".equals(method) && segments.length == 4) {
+                Optional<Map<String, String>> session = storageService.findRecordingSession(segments[3]);
+                if (session.isPresent()) writeJson(ex, 200, session.get());
+                else writeJson(ex, 404, Map.of("error", "Session not found"));
+            } else if ("DELETE".equals(method) && segments.length == 4) {
+                storageService.deleteRecordingSession(segments[3]);
+                writeJson(ex, 200, Map.of("status", "ok"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+    }
+
+    private void handleNotificationOutbox(HttpExchange ex) throws IOException {
+        try {
+            String method = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.saveNotificationOutbox((String) body.get("notificationId"),
+                        (String) body.get("token"), (String) body.get("payload"),
+                        ((Number) body.get("attempts")).intValue());
+                writeJson(ex, 201, Map.of("status", "ok"));
+            } else if ("POST".equals(method) && segments.length == 5 && "attempts".equals(segments[4])) {
+                Map body = readBody(ex, Map.class);
+                storageService.updateNotificationAttempts(segments[3],
+                        ((Number) body.get("attempts")).intValue());
+                writeJson(ex, 200, Map.of("status", "ok"));
+            } else if ("GET".equals(method) && segments.length == 3) {
+                Map<String, String> params = parseQuery(ex.getRequestURI().getQuery());
+                int max = Integer.parseInt(params.getOrDefault("max", "50"));
+                writeJson(ex, 200, storageService.findPendingNotifications(max));
+            } else if ("DELETE".equals(method) && segments.length == 4) {
+                storageService.deleteNotificationOutbox(segments[3]);
+                writeJson(ex, 200, Map.of("status", "ok"));
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
     }
 
     // =====================================================================

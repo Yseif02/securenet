@@ -11,38 +11,38 @@ import com.securenet.storage.StorageGateway;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Raft-replicated implementation of the Event Processing Service.
  *
- * <p>When running in a cluster, this service integrates with
- * {@link RaftNode} for consensus. Event ingestion (writes) go through
- * the Raft leader, which replicates to followers before committing.
- * Event history queries (reads) can be served by any node from the
- * Storage Service.
+ * <p><strong>All state is persisted in PostgreSQL</strong> — no in-memory
+ * ConcurrentHashMaps. This ensures any EPS instance behind the load
+ * balancer can serve reads, and the Raft leader can be replaced without
+ * losing dedup/cooldown/Lamport state.
  *
  * <h3>Distributed Systems Problems Addressed</h3>
  * <ul>
- *   <li><strong>Lamport Clocks (#7):</strong> Assigns L = max(L, deviceTimestamp) + 1</li>
- *   <li><strong>Idempotency (#8):</strong> Dedup table keyed on deviceId:eventType:nonce</li>
+ *   <li><strong>Lamport Clocks (#7):</strong> L = max(L, deviceTimestamp) + 1,
+ *       persisted to {@code eps_lamport_clock} table</li>
+ *   <li><strong>Idempotency (#8):</strong> Dedup table in {@code eps_dedup} DB table,
+ *       keyed on deviceId:eventType:nonce with 24h TTL</li>
  *   <li><strong>Raft Log Replication (#2):</strong> Writes go through Raft consensus</li>
  *   <li><strong>Leader Election (#1):</strong> Via RaftNode</li>
- *   <li><strong>Quorums (#5):</strong> Entries committed only after majority ack</li>
+ *   <li><strong>Quorums (#5):</strong> Entries committed after majority ack</li>
  * </ul>
  */
 public class EventProcessingServiceImpl implements EventProcessingService {
 
-    private final AtomicLong lamportClock = new AtomicLong(0);
-    private final ConcurrentHashMap<String, DeduplicationEntry> deduplicationTable = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> lastMotionAlertByDevice = new ConcurrentHashMap<>();
-
+    /** TTL for deduplication entries — 24 hours. */
     private static final long DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
+
+    /** Motion alert cooldown — 10 seconds. */
     private static final long MOTION_COOLDOWN_MS = 10_000;
 
     private final StorageGateway storageGateway;
     private final ServiceClient httpClient;
     private final String notificationServiceUrl;
+    private final String nodeId;
 
     /** Raft node — null when running in single-node mode. */
     private volatile RaftNode raftNode;
@@ -50,18 +50,23 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     /**
      * @param storageGateway         HTTP client to the Storage Service
      * @param notificationServiceUrl base URL of Notification Service (nullable)
+     * @param nodeId                 this EPS node's identifier (for Lamport clock key)
      */
     public EventProcessingServiceImpl(StorageGateway storageGateway,
-                                      String notificationServiceUrl) {
+                                      String notificationServiceUrl,
+                                      String nodeId) {
         this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
         this.notificationServiceUrl = notificationServiceUrl;
+        this.nodeId = (nodeId != null) ? nodeId : "global";
         this.httpClient = new ServiceClient();
     }
 
-    /**
-     * Attaches a Raft node to this EPS instance, enabling replicated
-     * consensus for event ingestion.
-     */
+    /** Backward-compatible 2-arg constructor for single-node mode. */
+    public EventProcessingServiceImpl(StorageGateway storageGateway,
+                                      String notificationServiceUrl) {
+        this(storageGateway, notificationServiceUrl, "global");
+    }
+
     public void setRaftNode(RaftNode raftNode) {
         this.raftNode = raftNode;
     }
@@ -80,8 +85,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         if (metadata == null) metadata = Map.of();
         requireNonBlank(deviceId, "deviceId");
 
-        // If Raft is active and we're not the leader, reject the write.
-        // The caller (IDFS or API Gateway) should redirect to the leader.
+        // If Raft is active and we're not the leader, reject the write
         if (raftNode != null && !raftNode.isLeader()) {
             String leaderId = raftNode.getLeaderId();
             throw new IllegalStateException(
@@ -89,31 +93,29 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                             (leaderId != null ? leaderId : "unknown (election in progress)"));
         }
 
-        // Idempotency check
+        // Idempotency check — from PostgreSQL
         String nonce = metadata.getOrDefault("nonce", "");
         String dedupKey = deviceId + ":" + type.name() + ":" + nonce;
 
-        DeduplicationEntry existing = deduplicationTable.get(dedupKey);
-        if (existing != null && !existing.isExpired()) {
-            System.out.println("[EPS] Duplicate event suppressed: " + dedupKey);
-            SecurityEvent original = storageGateway.findEventById(existing.eventId()).orElse(null);
-            if (original != null) return original;
+        Optional<Map<String, String>> existingEntry = storageGateway.findDeduplicationEntry(dedupKey);
+        if (existingEntry.isPresent()) {
+            Instant recordedAt = Instant.parse(existingEntry.get().get("recordedAt"));
+            long age = System.currentTimeMillis() - recordedAt.toEpochMilli();
+            if (age < DEDUP_TTL_MS) {
+                System.out.println("[EPS] Duplicate event suppressed: " + dedupKey);
+                String originalEventId = existingEntry.get().get("eventId");
+                SecurityEvent original = storageGateway.findEventById(originalEventId).orElse(null);
+                if (original != null) return original;
+            }
         }
 
         if (raftNode != null) {
-            // Replicated path — go through Raft consensus
             return ingestViaRaft(deviceId, type, occurredAt, metadata, nonce, dedupKey);
         } else {
-            // Single-node path — apply directly
             return applyEvent(deviceId, type, occurredAt, metadata, dedupKey);
         }
     }
 
-    /**
-     * Appends the event to the Raft log and waits for it to be
-     * committed (replicated to a quorum). The commit callback
-     * then applies the event to the state machine.
-     */
     private SecurityEvent ingestViaRaft(String deviceId, EventType type, Instant occurredAt,
                                         Map<String, String> metadata, String nonce,
                                         String dedupKey)
@@ -129,27 +131,20 @@ public class EventProcessingServiceImpl implements EventProcessingService {
 
         try {
             LogEntry committed = future.get(5, TimeUnit.SECONDS);
-            // The commit callback (onRaftCommit) has already applied the event.
-            // Look it up by dedup key to return it.
-            DeduplicationEntry dedupEntry = deduplicationTable.get(dedupKey);
-            if (dedupEntry != null) {
-                return storageGateway.findEventById(dedupEntry.eventId()).orElse(null);
+            Optional<Map<String, String>> dedupEntry = storageGateway.findDeduplicationEntry(dedupKey);
+            if (dedupEntry.isPresent()) {
+                return storageGateway.findEventById(dedupEntry.get().get("eventId")).orElse(null);
             }
             return null;
         } catch (TimeoutException e) {
-            throw new RuntimeException("Raft commit timed out — entry may still be replicated", e);
+            throw new RuntimeException("Raft commit timed out", e);
         } catch (Exception e) {
             throw new RuntimeException("Raft commit failed: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Raft commit callback — called when a log entry is committed
-     * (replicated to a quorum). Applies the entry to the EPS state
-     * machine: assigns Lamport number, enriches, persists, routes alert.
-     *
-     * <p>This is called on all nodes (leader and followers) so that
-     * every node's state machine stays in sync.
+     * Raft commit callback — called on all nodes when an entry is committed.
      */
     public void onRaftCommit(LogEntry entry) {
         try {
@@ -161,8 +156,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
 
             String dedupKey = deviceId + ":" + type.name() + ":" + entry.nonce();
 
-            // Dedup check (follower might see replayed entries)
-            if (deduplicationTable.containsKey(dedupKey)) return;
+            // Check if already applied (follower replay)
+            if (storageGateway.findDeduplicationEntry(dedupKey).isPresent()) return;
 
             applyEvent(deviceId, type, occurredAt, metadata, dedupKey);
         } catch (Exception e) {
@@ -172,13 +167,15 @@ public class EventProcessingServiceImpl implements EventProcessingService {
 
     /**
      * Core state machine application — shared by single-node and Raft paths.
+     * All state mutations go to PostgreSQL.
      */
     private SecurityEvent applyEvent(String deviceId, EventType type, Instant occurredAt,
                                      Map<String, String> metadata, String dedupKey) {
-        // Lamport clock
+        // Lamport clock — read from DB, increment, write back
+        long currentClock = storageGateway.findLamportClock(nodeId);
         long deviceTimestampMs = occurredAt.toEpochMilli();
-        long sequenceNumber = lamportClock.updateAndGet(current ->
-                Math.max(current, deviceTimestampMs) + 1);
+        long sequenceNumber = Math.max(currentClock, deviceTimestampMs) + 1;
+        storageGateway.saveLamportClock(nodeId, sequenceNumber);
 
         // Enrich
         Device device;
@@ -195,19 +192,30 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         enrichedMetadata.put("lamport_sequence", String.valueOf(sequenceNumber));
         enrichedMetadata.put("device_display_name", displayName);
 
-        // Persist
+        // Persist event
         String eventId = UUID.randomUUID().toString();
         SecurityEvent event = new SecurityEvent(
                 eventId, deviceId, ownerId, type, occurredAt, enrichedMetadata);
 
         storageGateway.saveEvent(event);
-        deduplicationTable.put(dedupKey, new DeduplicationEntry(eventId, System.currentTimeMillis()));
+
+        // Record in dedup table (PostgreSQL)
+        storageGateway.saveDeduplicationEntry(dedupKey, eventId, Instant.now());
 
         System.out.println("[EPS] Event committed: id=" + eventId +
                 " device=" + deviceId + " type=" + type + " lamport=" + sequenceNumber);
 
         // Route alert
         routeAlertIfRequired(event);
+
+        // Periodic cleanup of expired dedup entries
+        if (sequenceNumber % 100 == 0) {
+            Instant cutoff = Instant.now().minusMillis(DEDUP_TTL_MS);
+            int removed = storageGateway.deleteExpiredDeduplicationEntries(cutoff);
+            if (removed > 0) {
+                System.out.println("[EPS] Dedup cleanup: removed " + removed + " expired entries");
+            }
+        }
 
         return event;
     }
@@ -245,20 +253,25 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     }
 
     // =====================================================================
-    // Alert routing
+    // Alert routing — motion cooldown in PostgreSQL
     // =====================================================================
 
     @Override
     public void routeAlertIfRequired(SecurityEvent event) {
         boolean shouldAlert = switch (event.type()) {
             case MOTION_DETECTED -> {
-                long now = System.currentTimeMillis();
-                Long lastAlert = lastMotionAlertByDevice.get(event.deviceId());
-                if (lastAlert != null && (now - lastAlert) < MOTION_COOLDOWN_MS) {
-                    System.out.println("[EPS] Motion alert suppressed (cooldown): " + event.deviceId());
-                    yield false;
+                Instant now = Instant.now();
+                // Check cooldown from PostgreSQL
+                Optional<Instant> lastAlert = storageGateway.findMotionCooldown(event.deviceId());
+                if (lastAlert.isPresent()) {
+                    long elapsed = now.toEpochMilli() - lastAlert.get().toEpochMilli();
+                    if (elapsed < MOTION_COOLDOWN_MS) {
+                        System.out.println("[EPS] Motion alert suppressed (cooldown): " + event.deviceId());
+                        yield false;
+                    }
                 }
-                lastMotionAlertByDevice.put(event.deviceId(), now);
+                // Update cooldown in PostgreSQL
+                storageGateway.saveMotionCooldown(event.deviceId(), now);
                 yield true;
             }
             case DEVICE_UNRESPONSIVE -> true;
@@ -289,9 +302,8 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     // Accessors
     // =====================================================================
 
-    public long getLamportClock() { return lamportClock.get(); }
-    public void setLamportClock(long value) { lamportClock.set(value); }
-    public int getDeduplicationTableSize() { return deduplicationTable.size(); }
+    public long getLamportClock() { return storageGateway.findLamportClock(nodeId); }
+    public void setLamportClock(long value) { storageGateway.saveLamportClock(nodeId, value); }
     public RaftNode getRaftNode() { return raftNode; }
 
     // =====================================================================
@@ -313,11 +325,5 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private static void validateMaxEvents(int maxEvents) {
         if (maxEvents < 1 || maxEvents > 500)
             throw new IllegalArgumentException("maxEvents must be between 1 and 500");
-    }
-
-    private record DeduplicationEntry(String eventId, long recordedAtMs) {
-        boolean isExpired() {
-            return (System.currentTimeMillis() - recordedAtMs) > DEDUP_TTL_MS;
-        }
     }
 }

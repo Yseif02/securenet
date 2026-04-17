@@ -86,13 +86,25 @@ public class APIGatewayServiceImpl implements APIGatewayService {
         }
 
         try {
-            ServiceResponse resp;
-            if (payload != null) {
-                resp = httpClient.post(targetUrl + endpoint, payload);
+            String fullUrl = targetUrl + endpoint;
+            if (payload != null && !payload.isBlank()) {
+                // Forward raw JSON body — do NOT re-serialize
+                var request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(fullUrl))
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(payload))
+                        .header("Content-Type", "application/json")
+                        .timeout(java.time.Duration.ofSeconds(10))
+                        .build();
+                var response = java.net.http.HttpClient.newHttpClient()
+                        .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+                return response.body();
             } else {
-                resp = httpClient.get(targetUrl + endpoint);
+                ServiceResponse resp = httpClient.get(fullUrl);
+                return resp.body();
             }
-            return resp.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ServiceUnavailableException(serviceName);
         } catch (IOException e) {
             logServiceIncident(serviceName, targetUrl, e.getMessage());
             throw new ServiceUnavailableException(serviceName);

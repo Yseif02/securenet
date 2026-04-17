@@ -15,27 +15,30 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Implementation of the Video Streaming Service.
  *
- * <p>Manages recording sessions triggered by motion events. Cameras
- * push chunks via IDFS; this service buffers them per session and
- * archives completed footage to the Data Storage Layer when the
- * session closes.
+ * <p>Recording session metadata (sessionId, deviceId, ownerId, startedAt)
+ * is persisted in PostgreSQL so that any VSS instance behind the load
+ * balancer can look up active sessions. Chunk data is buffered in-memory
+ * during the session (transient by nature — chunks are assembled and
+ * archived to PostgreSQL when the session closes).
  *
- * <p>No live streaming — all footage is motion-triggered, archived
- * immediately, and available for historical playback via signed URLs.
+ * <p>The {@code recording_sessions} table in PostgreSQL replaces the
+ * old in-memory {@code activeSessions} and {@code deviceToSession} maps.
  */
 public class VideoStreamingServiceImpl implements VideoStreamingService {
 
     private final StorageGateway storageGateway;
 
-    /** Active recording sessions keyed by sessionId. */
-    private final ConcurrentHashMap<String, RecordingSession> activeSessions =
+    /**
+     * In-memory chunk buffer keyed by sessionId.
+     * <p>Chunks are inherently transient — they exist only during an
+     * active recording session and are assembled into a VideoClip when
+     * the session closes. If the VSS instance crashes mid-session, the
+     * chunks are lost (same as real camera streams). Session metadata
+     * is in PostgreSQL so a new VSS instance can detect stale sessions.
+     */
+    private final ConcurrentHashMap<String, TreeMap<Long, byte[]>> sessionChunks =
             new ConcurrentHashMap<>();
 
-    /** Map from deviceId to active sessionId — one session per device. */
-    private final ConcurrentHashMap<String, String> deviceToSession =
-            new ConcurrentHashMap<>();
-
-    /** Secret key for signing playback URLs (simplified). */
     private static final String SIGNING_SECRET = "securenet-vss-signing-key";
 
     public VideoStreamingServiceImpl(StorageGateway storageGateway) {
@@ -55,15 +58,21 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         storageGateway.findDeviceById(deviceId)
                 .orElseThrow(() -> new DeviceNotFoundException(deviceId));
 
-        if (deviceToSession.containsKey(deviceId)) {
+        // Check for existing active session — from PostgreSQL
+        Optional<String> existingSession = storageGateway.findActiveSessionForDevice(deviceId);
+        if (existingSession.isPresent()) {
             throw new IllegalStateException(
                     "Recording session already active for device: " + deviceId);
         }
 
         String sessionId = "rec-" + UUID.randomUUID();
-        RecordingSession session = new RecordingSession(sessionId, deviceId, ownerId, Instant.now());
-        activeSessions.put(sessionId, session);
-        deviceToSession.put(deviceId, sessionId);
+        Instant now = Instant.now();
+
+        // Persist session metadata to PostgreSQL
+        storageGateway.saveRecordingSession(sessionId, deviceId, ownerId, now);
+
+        // Initialize in-memory chunk buffer
+        sessionChunks.put(sessionId, new TreeMap<>());
 
         System.out.println("[VSS] Opened recording session: " + sessionId +
                 " device=" + deviceId);
@@ -75,26 +84,41 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
             throws IllegalArgumentException {
         requireNonBlank(recordingSessionId, "recordingSessionId");
 
-        RecordingSession session = activeSessions.remove(recordingSessionId);
-        if (session == null) {
-            throw new IllegalArgumentException(
-                    "Unknown or already closed session: " + recordingSessionId);
-        }
-        deviceToSession.remove(session.deviceId);
+        // Look up session metadata from PostgreSQL
+        Map<String, String> session = storageGateway.findRecordingSession(recordingSessionId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown or already closed session: " + recordingSessionId));
 
-        byte[] assembledBytes = session.assembleChunks();
+        String deviceId = session.get("deviceId");
+        String ownerId = session.get("ownerId");
+        Instant startedAt = Instant.parse(session.get("startedAt"));
+
+        // Remove from PostgreSQL
+        storageGateway.deleteRecordingSession(recordingSessionId);
+
+        // Assemble chunks from in-memory buffer
+        TreeMap<Long, byte[]> chunks = sessionChunks.remove(recordingSessionId);
+        byte[] assembledBytes;
+        if (chunks != null && !chunks.isEmpty()) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            for (byte[] chunk : chunks.values()) {
+                out.writeBytes(chunk);
+            }
+            assembledBytes = out.toByteArray();
+        } else {
+            assembledBytes = new byte[0];
+        }
+
         if (assembledBytes.length == 0) {
             System.out.println("[VSS] Session " + recordingSessionId +
                     " closed with no chunks, skipping archive");
             return;
         }
 
-        Duration duration = Duration.between(session.startedAt, Instant.now());
+        Duration duration = Duration.between(startedAt, Instant.now());
 
         try {
-            VideoClip clip = archiveFootage(
-                    session.deviceId, session.ownerId,
-                    session.startedAt, assembledBytes);
+            VideoClip clip = archiveFootage(deviceId, ownerId, startedAt, assembledBytes);
             System.out.println("[VSS] Session " + recordingSessionId +
                     " archived as clip " + clip.clipId() +
                     " (" + assembledBytes.length + " bytes, " +
@@ -115,13 +139,14 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         requireNonBlank(recordingSessionId, "recordingSessionId");
         Objects.requireNonNull(chunkBytes, "chunkBytes");
 
-        RecordingSession session = activeSessions.get(recordingSessionId);
-        if (session == null) {
-            throw new IllegalArgumentException(
-                    "Unknown or closed session: " + recordingSessionId);
-        }
+        // Verify session exists in PostgreSQL
+        storageGateway.findRecordingSession(recordingSessionId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Unknown or closed session: " + recordingSessionId));
 
-        session.addChunk(sequenceNumber, chunkBytes);
+        // Buffer chunk in memory
+        sessionChunks.computeIfAbsent(recordingSessionId, k -> new TreeMap<>())
+                .put(sequenceNumber, chunkBytes);
     }
 
     // =====================================================================
@@ -130,7 +155,7 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
 
     @Override
     public VideoClip archiveFootage(String deviceId, String ownerId,
-                                     Instant segmentStarted, byte[] rawBytes)
+                                    Instant segmentStarted, byte[] rawBytes)
             throws VideoNotFoundException, DeviceNotFoundException {
         requireNonBlank(deviceId, "deviceId");
         requireNonBlank(ownerId, "ownerId");
@@ -193,42 +218,8 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         return Integer.toHexString(data.hashCode());
     }
 
-    // =====================================================================
-    // Helpers
-    // =====================================================================
-
     private static void requireNonBlank(String value, String fieldName) {
         if (value == null || value.isBlank())
             throw new IllegalArgumentException(fieldName + " is required");
-    }
-
-    /**
-     * Internal recording session state — buffers chunks in sequence order.
-     */
-    private static class RecordingSession {
-        final String sessionId;
-        final String deviceId;
-        final String ownerId;
-        final Instant startedAt;
-        final TreeMap<Long, byte[]> chunks = new TreeMap<>();
-
-        RecordingSession(String sessionId, String deviceId, String ownerId, Instant startedAt) {
-            this.sessionId = sessionId;
-            this.deviceId = deviceId;
-            this.ownerId = ownerId;
-            this.startedAt = startedAt;
-        }
-
-        synchronized void addChunk(long seq, byte[] data) {
-            chunks.put(seq, data);
-        }
-
-        synchronized byte[] assembleChunks() {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            for (byte[] chunk : chunks.values()) {
-                out.writeBytes(chunk);
-            }
-            return out.toByteArray();
-        }
     }
 }

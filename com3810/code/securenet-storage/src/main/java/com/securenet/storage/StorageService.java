@@ -6,6 +6,7 @@ import com.securenet.model.exception.VideoNotFoundException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -299,4 +300,38 @@ public interface StorageService {
 
     void revokeAuthToken(String tokenValue);
     boolean isTokenRevoked(String tokenValue);
+
+    // ----- DMS registration tokens -----
+    void saveRegistrationToken(String deviceId, String registrationToken);
+    Optional<String> findRegistrationToken(String deviceId);
+    void deleteRegistrationToken(String deviceId);
+
+    // ----- DMS device heartbeats -----
+    void saveDeviceHeartbeat(String deviceId, Instant heartbeatAt);
+    Optional<Instant> findDeviceHeartbeat(String deviceId);
+
+    // ----- EPS deduplication -----
+    void saveDeduplicationEntry(String dedupKey, String eventId, Instant recordedAt);
+    Optional<Map<String, String>> findDeduplicationEntry(String dedupKey);
+    int deleteExpiredDeduplicationEntries(Instant olderThan);
+
+    // ----- EPS motion cooldown -----
+    void saveMotionCooldown(String deviceId, Instant alertAt);
+    Optional<Instant> findMotionCooldown(String deviceId);
+
+    // ----- EPS Lamport clock -----
+    void saveLamportClock(String nodeId, long value);
+    long findLamportClock(String nodeId);
+
+    // ----- VSS recording sessions -----
+    void saveRecordingSession(String sessionId, String deviceId, String ownerId, Instant startedAt);
+    Optional<Map<String, String>> findRecordingSession(String sessionId);
+    Optional<String> findActiveSessionForDevice(String deviceId);
+    void deleteRecordingSession(String sessionId);
+
+    // ----- Notification outbox -----
+    void saveNotificationOutbox(String notificationId, String token, String payload, int attempts);
+    List<Map<String, Object>> findPendingNotifications(int maxResults);
+    void deleteNotificationOutbox(String notificationId);
+    void updateNotificationAttempts(String notificationId, int newAttempts);
 }

@@ -3,183 +3,159 @@ package com.securenet.demo;
 import com.securenet.common.JsonUtil;
 import com.securenet.common.ServiceClient;
 import com.securenet.common.ServiceClient.ServiceResponse;
+import com.securenet.client.impl.ClientApplicationServiceImpl;
+import com.securenet.model.Device;
 import com.securenet.model.DeviceType;
+import com.securenet.model.EventSummary;
 import com.securenet.storage.StorageGateway;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Integration test harness that runs against an already-running
- * SecureNet platform (started by {@code scripts/start-platform.sh}).
+ * End-to-end integration demo that exercises the full SecureNet platform
+ * through the Client API — the same interface a real mobile/web app uses.
  *
- * <p>This class does NOT start any services. It assumes the full
- * platform is already running and:
- * <ol>
- *   <li>Seeds a homeowner account and firmware binaries</li>
- *   <li>Registers 3 pending devices via DMS</li>
- *   <li>Launches mock devices that onboard, provision, and enter steady state</li>
- *   <li>Sends test commands (LOCK, UNLOCK, STREAM_START)</li>
- * </ol>
+ * <p>Assumes platform is running via {@code ./scripts/start-platform.sh}.
  *
  * <p>Usage:
  * <pre>
- * # Start the platform first:
- * ./scripts/start-platform.sh
- *
- * # Then run this demo:
- * java -cp ... com.securenet.demo.PlatformDemo
+ * java -cp "$CLASSPATH" com.securenet.demo.PlatformDemo
  * </pre>
  */
 public class PlatformDemo {
 
+    private static final String GATEWAY = "http://localhost:8443";
     private static final String UMS = "http://localhost:9001";
-    private static final String DMS = "http://localhost:9002";
     private static final String STORAGE = "http://localhost:9000";
     private static final String IDFS = "http://localhost:8080";
 
     public static void main(String[] args) throws Exception {
-        System.out.println("=== SecureNet Platform Demo ===");
-        System.out.println("(Assumes platform is already running via start-platform.sh)");
+        System.out.println("================================================================");
+        System.out.println("  SecureNet Platform — End-to-End Demo");
+        System.out.println("  All requests route through API Gateway + Client API");
+        System.out.println("================================================================");
         System.out.println();
 
-        ServiceClient client = new ServiceClient();
+        ServiceClient rawClient = new ServiceClient();
 
-        // ---- 1. Seed homeowner ----
-        System.out.println("--- Seeding homeowner ---");
-        ServiceResponse regResp = client.post(UMS + "/ums/register",
-                Map.of("email", "demo@example.com",
+        // 1. Create homeowner account
+        System.out.println("--- 1. Creating homeowner account ---");
+        String email = "demo-" + System.currentTimeMillis() + "@example.com";
+        ServiceResponse regResp = rawClient.post(UMS + "/ums/register",
+                Map.of("email", email,
                         "displayName", "Demo Homeowner",
                         "password", "securenet123"));
-
-        Map userMap = JsonUtil.fromJson(regResp.body(), Map.class);
-        String ownerId = (String) userMap.get("userId");
-
-        if (ownerId == null) {
-            System.out.println("  User already exists, logging in...");
-            ServiceResponse loginResp = client.post(UMS + "/ums/login",
-                    Map.of("email", "demo@example.com", "password", "securenet123"));
-            Map loginMap = JsonUtil.fromJson(loginResp.body(), Map.class);
-            ownerId = (String) loginMap.get("userId");
+        if (!regResp.isSuccess()) {
+            System.err.println("Registration failed: " + regResp.body());
+            return;
         }
-        System.out.println("  Owner ID: " + ownerId);
+        System.out.println("  Registered: " + email);
 
-        // ---- 2. Seed firmware ----
-        System.out.println("--- Seeding firmware ---");
-        StorageGateway storageGateway = new StorageGateway(STORAGE);
-        byte[] fakeFw = "SECURENET_FW_V1".getBytes();
+        // 2. Seed firmware
+        System.out.println("\n--- 2. Seeding firmware ---");
+        StorageGateway storage = new StorageGateway(STORAGE);
         for (DeviceType dt : DeviceType.values()) {
             try {
-                storageGateway.saveFirmwareBinary(dt.name(), "1.0.0", fakeFw);
-                System.out.println("  Seeded: " + dt.name() + " v1.0.0");
+                storage.saveFirmwareBinary(dt.name(), "1.0.0", "SECURENET_FW".getBytes());
+                System.out.println("  " + dt.name() + " v1.0.0 ✓");
             } catch (Exception e) {
                 System.out.println("  " + dt.name() + " already seeded");
             }
         }
 
-        // ---- 3. Register pending devices ----
-        System.out.println("--- Registering devices ---");
+        // 3. Login via Client API
+        System.out.println("\n--- 3. Logging in ---");
+        ClientApplicationServiceImpl client = new ClientApplicationServiceImpl(GATEWAY, UMS);
+        client.login(email, "securenet123");
+
+        // 4. Register push token
+        System.out.println("\n--- 4. Push token ---");
+        client.registerPushToken("fcm-token-" + System.currentTimeMillis());
+
+        // 5. Onboard devices
+        System.out.println("\n--- 5. Onboarding devices ---");
+        String suffix = String.valueOf(System.currentTimeMillis() % 10000);
         record Seed(String id, String token, DeviceType type) {}
         List<Seed> seeds = List.of(
-                new Seed("demo-sensor-001", "st-001", DeviceType.MOTION_SENSOR),
-                new Seed("demo-camera-001", "ct-001", DeviceType.CAMERA),
-                new Seed("demo-lock-001", "lt-001", DeviceType.SMART_LOCK));
+                new Seed("sensor-" + suffix, "st-" + suffix, DeviceType.MOTION_SENSOR),
+                new Seed("camera-" + suffix, "ct-" + suffix, DeviceType.CAMERA),
+                new Seed("lock-" + suffix, "lt-" + suffix, DeviceType.SMART_LOCK));
 
         for (Seed s : seeds) {
-            ServiceResponse resp = client.post(DMS + "/dms/devices/register",
-                    Map.of("ownerId", ownerId,
-                            "deviceType", s.type().name(),
-                            "qrPayload", s.id() + ":" + s.token()));
-            System.out.println("  " + s.id() + " → HTTP " + resp.statusCode());
+            client.startDeviceOnboarding(s.id() + ":" + s.token(), s.type().name());
         }
 
-        // ---- 4. Launch mock devices ----
-        System.out.println();
-        System.out.println("--- Launching mock devices ---");
-        MockSensor sensor = new MockSensor("demo-sensor-001", "st-001", IDFS);
-        MockCamera camera = new MockCamera("demo-camera-001", "ct-001", IDFS);
-        MockLock lock = new MockLock("demo-lock-001", "lt-001", IDFS);
+        // 6. Dashboard (devices pending)
+        System.out.println("\n--- 6. Dashboard (pre-onboarding) ---");
+        client.loadDashboard();
 
-        for (AbstractMockDevice device : List.of(sensor, camera, lock)) {
-            Thread t = new Thread(device, "Mock-" + device.getDeviceId());
-            t.setDaemon(true);
-            t.start();
-            System.out.println("  Launched " + device.getClass().getSimpleName() +
-                    ": " + device.getDeviceId());
+        // 7. Launch mock devices
+        System.out.println("\n--- 7. Launching mock devices ---");
+        MockSensor sensor = new MockSensor(seeds.get(0).id(), seeds.get(0).token(), IDFS);
+        MockCamera camera = new MockCamera(seeds.get(1).id(), seeds.get(1).token(), IDFS);
+        MockLock lock = new MockLock(seeds.get(2).id(), seeds.get(2).token(), IDFS);
+
+        for (AbstractMockDevice d : List.of(sensor, camera, lock)) {
+            new Thread(d, "Mock-" + d.getDeviceId()).start();
+            System.out.println("  " + d.getClass().getSimpleName() + ": " + d.getDeviceId());
             Thread.sleep(200);
         }
-
-        System.out.println("  Waiting for onboarding to complete...");
+        System.out.println("  Waiting for onboarding (6s)...");
         Thread.sleep(6000);
 
-        // ---- 5. Test commands ----
-        System.out.println();
-        System.out.println("--- Testing commands ---");
+        // 8. Dashboard (devices online)
+        System.out.println("\n--- 8. Dashboard (post-onboarding) ---");
+        for (Device d : client.loadDashboard()) {
+            System.out.println("  " + d.deviceId() + " [" + d.type() + "] " + d.status());
+        }
 
-        System.out.println("  LOCK demo-lock-001...");
-        ServiceResponse lockResp = client.post(DMS + "/dms/devices/lock",
-                Map.of("deviceId", "demo-lock-001"));
-        System.out.println("    Result: HTTP " + lockResp.statusCode() + " " + lockResp.body());
-        Thread.sleep(500);
+        // 9. Commands via Client API → Gateway → DMS → IDFS → MQTT → Device
+        System.out.println("\n--- 9. Commands ---");
+        client.sendLockCommand(seeds.get(2).id());
+        Thread.sleep(1000);
+        client.sendUnlockCommand(seeds.get(2).id());
+        Thread.sleep(1000);
+        client.startLiveStream(seeds.get(1).id());
 
-        System.out.println("  UNLOCK demo-lock-001...");
-        ServiceResponse unlockResp = client.post(DMS + "/dms/devices/unlock",
-                Map.of("deviceId", "demo-lock-001"));
-        System.out.println("    Result: HTTP " + unlockResp.statusCode() + " " + unlockResp.body());
-        Thread.sleep(500);
-
-        System.out.println("  STREAM_START demo-camera-001...");
-        ServiceResponse streamResp = client.post(DMS + "/dms/devices/stream-start",
-                Map.of("deviceId", "demo-camera-001",
-                        "streamTargetUrl", "http://localhost:9005/vss/chunks/ingest"));
-        System.out.println("    Result: HTTP " + streamResp.statusCode() + " " + streamResp.body());
-
-        // ---- 6. Query events via EPS ----
-        Thread.sleep(3000);
-        System.out.println();
-        System.out.println("--- Querying events from EPS ---");
-
-        // Try each EPS node to find the leader
-        for (int epsPort : List.of(9003, 9103, 9203)) {
-            try {
-                ServiceResponse eventsResp = client.get(
-                        "http://localhost:" + epsPort +
-                                "/eps/events/device/demo-sensor-001?max=10");
-                if (eventsResp.isSuccess()) {
-                    System.out.println("  Events from EPS on port " + epsPort + ":");
-                    System.out.println("    " + eventsResp.body().substring(0,
-                            Math.min(200, eventsResp.body().length())) + "...");
-                    break;
-                }
-            } catch (Exception e) {
-                System.out.println("  EPS " + epsPort + ": " + e.getMessage());
+        // 10. Event timeline
+        System.out.println("\n--- 10. Event timeline ---");
+        Thread.sleep(5000);
+        Instant now = Instant.now();
+        for (Seed s : seeds) {
+            List<EventSummary> events = client.loadEventTimeline(
+                    s.id(), now.minus(1, ChronoUnit.HOURS), now, 10);
+            for (EventSummary e : events) {
+                System.out.println("    " + e.type() + " at " + e.occurredAt());
             }
         }
 
-        // ---- 7. Check Raft status ----
-        System.out.println();
-        System.out.println("--- Raft cluster status ---");
-        for (int raftPort : List.of(9013, 9023, 9033)) {
+        // 11. Raft + Cluster Manager status
+        System.out.println("\n--- 11. Cluster status ---");
+        for (int p : List.of(9013, 9023, 9033)) {
             try {
-                ServiceResponse status = client.get(
-                        "http://localhost:" + raftPort + "/raft/status");
-                System.out.println("  " + raftPort + ": " + status.body());
-            } catch (Exception e) {
-                System.out.println("  " + raftPort + ": unreachable");
-            }
+                System.out.println("  Raft " + p + ": " + rawClient.get("http://localhost:" + p + "/raft/status").body());
+            } catch (Exception e) { System.out.println("  Raft " + p + ": unreachable"); }
         }
+        try {
+            System.out.println("  Cluster Manager: " + rawClient.get("http://localhost:9090/cluster/status").body().substring(0, 200) + "...");
+        } catch (Exception e) { System.out.println("  Cluster Manager: unreachable"); }
 
-        System.out.println();
-        System.out.println("=== Demo running — devices sending heartbeats ===");
-        System.out.println("Press Ctrl+C to stop mock devices.");
+        // 12. Logout
+        System.out.println("\n--- 12. Logout ---");
+        client.logout();
+
+        System.out.println("\n================================================================");
+        System.out.println("  Demo complete — mock devices running in background");
+        System.out.println("  Press Ctrl+C to stop");
+        System.out.println("================================================================");
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            sensor.shutdown();
-            camera.shutdown();
-            lock.shutdown();
+            sensor.shutdown(); camera.shutdown(); lock.shutdown();
             System.out.println("Mock devices stopped.");
         }));
-
         Thread.currentThread().join();
     }
 }

@@ -15,15 +15,18 @@ import java.util.concurrent.*;
  * APNs/FCM credentials, dispatch methods simulate the call and log
  * the result.
  *
+ * <p><strong>All state is persisted in PostgreSQL</strong> — the
+ * notification outbox uses the {@code notification_outbox} table
+ * instead of an in-memory {@code ConcurrentLinkedQueue}. This means
+ * any Notification Service instance behind the load balancer can
+ * pick up retries, and pending notifications survive restarts.
+ *
  * <h3>DS Problems Addressed</h3>
  * <ul>
  *   <li><strong>Leader Election (#1):</strong> The retry sweeper runs
- *       only on the elected leader node to prevent duplicate dispatch.
- *       Uses a simple leader flag — in production this would use
- *       ZooKeeper-style election as described in Stage 3.</li>
+ *       only on the elected leader node to prevent duplicate dispatch.</li>
  *   <li><strong>Idempotency (#8):</strong> Each notification carries a
- *       UUID set as APNs apns-id / FCM collapse-key. Platform-level
- *       dedup prevents duplicate delivery on retry.</li>
+ *       UUID set as APNs apns-id / FCM collapse-key.</li>
  *   <li><strong>At-least-once delivery:</strong> Failed dispatches are
  *       retried with exponential backoff up to 5 attempts.</li>
  * </ul>
@@ -31,9 +34,6 @@ import java.util.concurrent.*;
 public class NotificationServiceImpl implements NotificationService {
 
     private final StorageGateway storageGateway;
-
-    /** Pending notification outbox — simulates the DB outbox table. */
-    private final ConcurrentLinkedQueue<PendingNotification> outbox = new ConcurrentLinkedQueue<>();
 
     /** Whether this node is the sweeper leader. */
     private volatile boolean isSweeperLeader = true;
@@ -105,7 +105,8 @@ public class NotificationServiceImpl implements NotificationService {
         for (String token : tokens) {
             boolean success = dispatchViaApns(token, payload) || dispatchViaFcm(token, payload);
             if (!success) {
-                outbox.add(new PendingNotification(notificationId, token, payload, 1));
+                // Save to PostgreSQL outbox for retry (not in-memory queue)
+                storageGateway.saveNotificationOutbox(notificationId, token, payload, 1);
             }
         }
     }
@@ -131,33 +132,45 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     // =====================================================================
-    // Retry sweeper (leader only)
+    // Retry sweeper (leader only) — reads from PostgreSQL outbox
     // =====================================================================
 
     private void sweepRetries() {
         if (!isSweeperLeader) return;
 
-        int processed = 0;
-        PendingNotification pending;
-        while ((pending = outbox.poll()) != null) {
-            if (pending.attempts >= 5) {
-                System.err.println("[NotificationService] FAILED after 5 attempts: " +
-                        pending.notificationId);
-                continue;
+        try {
+            List<Map<String, Object>> pending = storageGateway.findPendingNotifications(50);
+            if (pending.isEmpty()) return;
+
+            int processed = 0;
+            for (Map<String, Object> entry : pending) {
+                String notificationId = (String) entry.get("notificationId");
+                String token = (String) entry.get("token");
+                String payload = (String) entry.get("payload");
+                int attempts = ((Number) entry.get("attempts")).intValue();
+
+                if (attempts >= 5) {
+                    System.err.println("[NotificationService] FAILED after 5 attempts: " +
+                            notificationId);
+                    storageGateway.deleteNotificationOutbox(notificationId);
+                    continue;
+                }
+
+                boolean success = dispatchViaApns(token, payload);
+                if (success) {
+                    storageGateway.deleteNotificationOutbox(notificationId);
+                } else {
+                    storageGateway.updateNotificationAttempts(notificationId, attempts + 1);
+                }
+                processed++;
             }
 
-            boolean success = dispatchViaApns(pending.token, pending.payload);
-            if (!success) {
-                outbox.add(new PendingNotification(
-                        pending.notificationId, pending.token,
-                        pending.payload, pending.attempts + 1));
+            if (processed > 0) {
+                System.out.println("[NotificationService] Retry sweeper processed " +
+                        processed + " pending notifications");
             }
-            processed++;
-        }
-
-        if (processed > 0) {
-            System.out.println("[NotificationService] Retry sweeper processed " +
-                    processed + " pending notifications");
+        } catch (Exception e) {
+            System.err.println("[NotificationService] Retry sweeper error: " + e.getMessage());
         }
     }
 
@@ -186,7 +199,4 @@ public class NotificationServiceImpl implements NotificationService {
     private static String truncate(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max) + "...";
     }
-
-    private record PendingNotification(String notificationId, String token,
-                                        String payload, int attempts) {}
 }
