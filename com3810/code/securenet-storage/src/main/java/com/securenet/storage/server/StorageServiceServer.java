@@ -735,7 +735,7 @@ public class StorageServiceServer {
 
     private void handleEpsLamportClock(HttpExchange ex) throws IOException {
         try {
-            String method = ex.getRequestMethod();
+            String method    = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
 
             if ("POST".equals(method) && segments.length == 3) {
@@ -745,11 +745,23 @@ public class StorageServiceServer {
                 log.info("[Storage] saveLamportClock: nodeId=" + nodeId + " value=" + value);
                 storageService.saveLamportClock(nodeId, value);
                 writeJson(ex, 201, Map.of("status", "ok"));
+
+            } else if ("POST".equals(method) && segments.length == 4
+                    && "increment".equals(segments[3])) {
+                Map body       = readBody(ex, Map.class);
+                String nodeId  = (String) body.get("nodeId");
+                long candidate = ((Number) body.get("candidate")).longValue();
+                long newValue  = storageService.incrementAndGetLamportClock(nodeId, candidate);
+                log.info("[Storage] incrementAndGetLamportClock: nodeId=" + nodeId
+                        + " candidate=" + candidate + " result=" + newValue);
+                writeJson(ex, 200, Map.of("value", newValue));
+
             } else if ("GET".equals(method) && segments.length == 4) {
                 String nodeId = segments[3];
-                long value = storageService.findLamportClock(nodeId);
+                long value    = storageService.findLamportClock(nodeId);
                 log.info("[Storage] findLamportClock: nodeId=" + nodeId + " value=" + value);
                 writeJson(ex, 200, Map.of("value", value));
+
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }

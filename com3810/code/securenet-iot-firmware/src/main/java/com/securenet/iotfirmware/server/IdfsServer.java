@@ -266,10 +266,11 @@ public class IdfsServer {
             storageGateway.savePendingCommand(corrId, deviceId, commandType, now, expiresAt);
 
             String topic   = "securenet/devices/" + deviceId + "/commands/" + commandType.toLowerCase();
-            String payload = JsonUtil.toJson(Map.of(
-                    "device_id",      deviceId,
-                    "command_type",   commandType,
-                    "correlation_id", corrId));
+            Map<String, Object> mqttPayload = new HashMap<>(body); // body is already parsed from the request
+            mqttPayload.put("device_id",      deviceId);
+            mqttPayload.put("command_type",   commandType);
+            mqttPayload.put("correlation_id", corrId);
+            String payload = JsonUtil.toJson(mqttPayload);
 
             mqttClient.publish(topic, payload.getBytes(StandardCharsets.UTF_8), 1, false);
             log.info("[IDFS] Published command to " + topic);

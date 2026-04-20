@@ -17,7 +17,9 @@ import com.securenet.storage.StorageGateway;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -34,26 +36,33 @@ import java.util.logging.Logger;
  * <p>Remote commands (lock, unlock, stream-start) are dispatched to
  * devices via the IDFS {@code /command} endpoint, which publishes to
  * the device's MQTT command topic and waits for an ack.
+ *
+ * <p>On {@code STREAM_START}, a VSS recording session is opened before
+ * the command is dispatched to the device, and automatically closed
+ * after a fixed duration.
  */
 public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private static final Logger log = Logger.getLogger(DeviceManagementServiceImpl.class.getName());
 
-    private final StorageGateway storageGateway;
-    //private final String idfsBaseUrl;
-    private final LoadBalancer idfsLoadBalancer;
+    /** How long to record before auto-closing the VSS session (ms). */
+    private static final long STREAM_DURATION_MS = 10_000;
 
+    private final StorageGateway storageGateway;
+    private final LoadBalancer idfsLoadBalancer;
+    private final String vssBaseUrl;
     private final ServiceClient httpClient;
 
     /**
      * @param storageGateway HTTP client pointing to the remote Storage Service
-     * //@param idfsBaseUrl    base URL of the IDFS server, e.g. {@code "http://localhost:8080"}
+     * @param idfsUrls       comma-separated IDFS URLs for load balancing
      */
     public DeviceManagementServiceImpl(StorageGateway storageGateway, String idfsUrls) {
-        this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
+        this.storageGateway   = Objects.requireNonNull(storageGateway, "storageGateway");
         this.idfsLoadBalancer = new LoadBalancer("IDFS", Arrays.asList(idfsUrls.split(",")));
         this.idfsLoadBalancer.start();
-        this.httpClient = new ServiceClient();
+        this.vssBaseUrl  = "http://localhost:9005";
+        this.httpClient  = new ServiceClient();
     }
 
     // =====================================================================
@@ -97,7 +106,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     }
 
     @Override
-    public BootstrapRegistrationResult acceptDeviceRegistration(String deviceId, String registrationToken)
+    public BootstrapRegistrationResult acceptDeviceRegistration(String deviceId,
+                                                                String registrationToken)
             throws DeviceNotFoundException, IllegalArgumentException {
         requireNonBlank(deviceId, "deviceId");
         requireNonBlank(registrationToken, "registrationToken");
@@ -106,17 +116,19 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
         Device device = storageGateway.findDeviceById(deviceId)
                 .orElseThrow(() -> {
-                    log.warning("[DMS] acceptDeviceRegistration failed: device not found deviceId=" + deviceId);
+                    log.warning("[DMS] acceptDeviceRegistration failed: not found deviceId="
+                            + deviceId);
                     return new DeviceNotFoundException(deviceId);
                 });
 
         String expectedToken = storageGateway.findRegistrationToken(deviceId).orElse(null);
         if (expectedToken == null) {
-            log.warning("[DMS] acceptDeviceRegistration failed: no registration token for deviceId=" + deviceId);
+            log.warning("[DMS] acceptDeviceRegistration failed: no token for deviceId=" + deviceId);
             throw new DeviceNotFoundException(deviceId);
         }
         if (!expectedToken.equals(registrationToken)) {
-            log.warning("[DMS] acceptDeviceRegistration failed: invalid token for deviceId=" + deviceId);
+            log.warning("[DMS] acceptDeviceRegistration failed: invalid token for deviceId="
+                    + deviceId);
             throw new IllegalArgumentException("Invalid registration token for device: " + deviceId);
         }
 
@@ -172,7 +184,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     public void recordHeartbeat(String deviceId) throws DeviceNotFoundException {
         Device device = getDevice(deviceId);
         storageGateway.saveDeviceHeartbeat(deviceId, Instant.now());
-        log.fine("[DMS] Heartbeat recorded: deviceId=" + deviceId + " status=" + device.status());
+        log.fine("[DMS] Heartbeat recorded: deviceId=" + deviceId
+                + " status=" + device.status());
 
         if (device.status() == DeviceStatus.OFFLINE ||
                 device.status() == DeviceStatus.UNRESPONSIVE ||
@@ -214,7 +227,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
         log.info("[DMS] sendLockCommand: deviceId=" + deviceId);
-        return dispatchCommand(deviceId, "LOCK");
+        return dispatchCommand(deviceId, "LOCK", Map.of());
     }
 
     @Override
@@ -222,37 +235,96 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
         log.info("[DMS] sendUnlockCommand: deviceId=" + deviceId);
-        return dispatchCommand(deviceId, "UNLOCK");
+        return dispatchCommand(deviceId, "UNLOCK", Map.of());
     }
 
+    /**
+     * Opens a VSS recording session, sends STREAM_START to the camera
+     * (with the sessionId embedded in the command payload so MockCamera
+     * can send chunks directly to VSS), then schedules STREAM_STOP and
+     * session close after {@value STREAM_DURATION_MS}ms.
+     */
     @Override
     public void sendStreamStartCommand(String deviceId, String streamTargetUrl)
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
         requireNonBlank(streamTargetUrl, "streamTargetUrl");
+
+        Device device = getDevice(deviceId);
         log.info("[DMS] sendStreamStartCommand: deviceId=" + deviceId
-                + " targetUrl=" + streamTargetUrl);
-        dispatchCommand(deviceId, "STREAM_START");
+                + " ownerId=" + device.ownerId());
+
+        // Open VSS recording session before telling camera to stream
+        String sessionId = null;
+        try {
+            ServiceResponse vssResp = httpClient.post(
+                    vssBaseUrl + "/vss/session/open",
+                    Map.of("deviceId", deviceId, "ownerId", device.ownerId()));
+            if (vssResp.isSuccess()) {
+                Map result = JsonUtil.fromJson(vssResp.body(), Map.class);
+                sessionId  = (String) result.get("recordingSessionId");
+                log.info("[DMS] VSS session opened: sessionId=" + sessionId
+                        + " deviceId=" + deviceId);
+            } else {
+                log.warning("[DMS] VSS session open failed: HTTP " + vssResp.statusCode()
+                        + " " + vssResp.body());
+            }
+        } catch (Exception e) {
+            log.warning("[DMS] Could not open VSS session: " + e.getMessage());
+        }
+
+        // Dispatch STREAM_START, passing sessionId and vssBaseUrl so the
+        // camera firmware knows where to POST chunks
+        Map<String, Object> extra = new HashMap<>();
+        if (sessionId != null) {
+            extra.put("session_id", sessionId);
+            extra.put("vss_url",    vssBaseUrl);
+        }
+        dispatchCommand(deviceId, "STREAM_START", extra);
+
+        // Schedule STREAM_STOP + session close after fixed duration
+        final String finalSessionId = sessionId;
+        Thread closer = new Thread(() -> {
+            try {
+                Thread.sleep(STREAM_DURATION_MS);
+                log.info("[DMS] Auto-stopping stream: deviceId=" + deviceId
+                        + " sessionId=" + finalSessionId);
+                dispatchCommand(deviceId, "STREAM_STOP", Map.of());
+                if (finalSessionId != null) {
+                    httpClient.post(vssBaseUrl + "/vss/session/close",
+                            Map.of("recordingSessionId", finalSessionId));
+                    log.info("[DMS] VSS session closed: sessionId=" + finalSessionId);
+                }
+            } catch (Exception e) {
+                log.warning("[DMS] Error in stream closer: " + e.getMessage());
+            }
+        }, "vss-closer-" + deviceId);
+        closer.setDaemon(true);
+        closer.start();
     }
 
-    private boolean dispatchCommand(String deviceId, String commandType) {
+    /**
+     * Dispatches a command to a device via IDFS, including any extra
+     * fields in the MQTT payload (e.g. session_id for STREAM_START).
+     */
+    private boolean dispatchCommand(String deviceId, String commandType,
+                                    Map<String, Object> extraFields) {
         String correlationId = UUID.randomUUID().toString();
-        String idfsUrl = idfsLoadBalancer.nextHealthyUrl();
+        String idfsUrl       = idfsLoadBalancer.nextHealthyUrl();
         log.info("[DMS] Dispatching " + commandType + " to " + deviceId
                 + " via " + idfsUrl + " correlationId=" + correlationId);
 
         try {
-            ServiceResponse response = httpClient.post(
-                    idfsUrl + "/command",
-                    java.util.Map.of(
-                            "device_id", deviceId,
-                            "command_type", commandType,
-                            "correlation_id", correlationId
-                    )
-            );
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("device_id",      deviceId);
+            payload.put("command_type",   commandType);
+            payload.put("correlation_id", correlationId);
+            payload.putAll(extraFields);
+
+            ServiceResponse response = httpClient.post(idfsUrl + "/command", payload);
 
             if (response.isSuccess()) {
-                java.util.Map result = JsonUtil.fromJson(response.body(), java.util.Map.class);
+                Map result       = JsonUtil.fromJson(response.body(), Map.class);
                 boolean acknowledged = Boolean.TRUE.equals(result.get("acknowledged"));
                 log.info("[DMS] Command " + commandType + " for " + deviceId
                         + " acknowledged=" + acknowledged);
@@ -260,7 +332,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             }
 
             log.warning("[DMS] Command " + commandType + " for " + deviceId
-                    + " failed: HTTP " + response.statusCode() + " body=" + response.body());
+                    + " failed: HTTP " + response.statusCode()
+                    + " body=" + response.body());
             return false;
 
         } catch (IOException e) {
@@ -279,7 +352,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         Objects.requireNonNull(deviceType, "deviceType");
         log.info("[DMS] getLatestFirmwareVersion: deviceType=" + deviceType);
         String version = storageGateway.getLatestFirmwareVersion(deviceType.name());
-        log.info("[DMS] latestFirmwareVersion: deviceType=" + deviceType + " version=" + version);
+        log.info("[DMS] latestFirmwareVersion: deviceType=" + deviceType
+                + " version=" + version);
         return version;
     }
 
@@ -289,18 +363,22 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         ensureDeviceReachable(deviceId);
         requireNonBlank(firmwareVersion, "firmwareVersion");
 
-        log.info("[DMS] pushFirmwareUpdate: deviceId=" + deviceId + " version=" + firmwareVersion);
+        log.info("[DMS] pushFirmwareUpdate: deviceId=" + deviceId
+                + " version=" + firmwareVersion);
 
         Device device = getDevice(deviceId);
         byte[] fw = storageGateway.loadFirmwareBinary(device.type().name(), firmwareVersion);
         if (fw.length == 0) {
-            log.warning("[DMS] pushFirmwareUpdate failed: empty binary for version=" + firmwareVersion);
-            throw new IllegalArgumentException("Firmware binary is empty for version: " + firmwareVersion);
+            log.warning("[DMS] pushFirmwareUpdate failed: empty binary for version="
+                    + firmwareVersion);
+            throw new IllegalArgumentException(
+                    "Firmware binary is empty for version: " + firmwareVersion);
         }
 
         try {
             storageGateway.updateDevice(device.withFirmwareVersion(firmwareVersion));
-            log.info("[DMS] Firmware updated: deviceId=" + deviceId + " version=" + firmwareVersion);
+            log.info("[DMS] Firmware updated: deviceId=" + deviceId
+                    + " version=" + firmwareVersion);
         } catch (DeviceNotFoundException e) {
             throw new RuntimeException("Device disappeared during firmware push", e);
         }
@@ -339,15 +417,13 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                 : latestVersion;
 
         DeviceRegistrationInfo regInfo = new DeviceRegistrationInfo(
-                device.deviceId(), device.type(), device.registeredAt()
-        );
+                device.deviceId(), device.type(), device.registeredAt());
 
         FirmwareAssignment fwAssignment = new FirmwareAssignment(
                 device.deviceId(),
                 fwVersion,
                 buildFirmwareUrl(device.type(), fwVersion),
-                issuedAt
-        );
+                issuedAt);
 
         return new BootstrapRegistrationResult(regInfo, fwAssignment);
     }
@@ -365,7 +441,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                 device.status() == DeviceStatus.UNRESPONSIVE ||
                 device.status() == DeviceStatus.DEREGISTERED ||
                 device.status() == DeviceStatus.PENDING_REGISTRATION) {
-            log.warning("[DMS] ensureDeviceReachable: device not reachable deviceId=" + deviceId
+            log.warning("[DMS] ensureDeviceReachable: not reachable deviceId=" + deviceId
                     + " status=" + device.status());
             throw new DeviceOfflineException(deviceId);
         }
@@ -389,10 +465,10 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private static String defaultDisplayName(DeviceType deviceType, String deviceId) {
         return switch (deviceType) {
-            case CAMERA       -> "Camera " + deviceId;
-            case SMART_LOCK   -> "Smart Lock " + deviceId;
+            case CAMERA        -> "Camera " + deviceId;
+            case SMART_LOCK    -> "Smart Lock " + deviceId;
             case MOTION_SENSOR -> "Motion Sensor " + deviceId;
-            case OTHER        -> "Device " + deviceId;
+            case OTHER         -> "Device " + deviceId;
         };
     }
 

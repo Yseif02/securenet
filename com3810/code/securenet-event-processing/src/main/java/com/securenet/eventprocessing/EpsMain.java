@@ -29,6 +29,7 @@ public class EpsMain {
         int    raftPort        = 9013;
         String storageUrl      = "http://localhost:9000";
         String notificationUrl = null;
+        String dmsUrl = null;
         List<String> peers     = new ArrayList<>();
         String bindHost        = "0.0.0.0";
 
@@ -39,6 +40,7 @@ public class EpsMain {
                 case "--raft-port"        -> raftPort        = Integer.parseInt(args[++i]);
                 case "--storage-url"      -> storageUrl      = args[++i];
                 case "--notification-url" -> notificationUrl = args[++i];
+                case "--dms-url" -> dmsUrl = args[++i];
                 case "--peers"            -> {
                     for (String peer : args[++i].split(",")) {
                         String trimmed = peer.trim();
@@ -54,12 +56,13 @@ public class EpsMain {
         log.info("  API port:     " + apiPort);
         log.info("  Raft port:    " + raftPort);
         log.info("  Storage:      " + storageUrl);
+        log.info("  DMS URL:      " + dmsUrl);
         log.info("  Peers:        " + peers);
 
         StorageGateway storageGateway = new StorageGateway(storageUrl);
 
         EventProcessingServiceImpl epsService = new EventProcessingServiceImpl(
-                storageGateway, notificationUrl, nodeId);
+            storageGateway, notificationUrl, nodeId, dmsUrl);
 
         RaftNode raftNode = new RaftNode(nodeId, peers, epsService::onRaftCommit);
         epsService.setRaftNode(raftNode);

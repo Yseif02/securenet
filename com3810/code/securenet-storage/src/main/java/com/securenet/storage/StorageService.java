@@ -337,6 +337,7 @@ public interface StorageService {
     // ----- EPS Lamport clock -----
     void saveLamportClock(String nodeId, long value);
     long findLamportClock(String nodeId);
+    long incrementAndGetLamportClock(String nodeId, long candidate);
 
     // ----- VSS recording sessions -----
     void saveRecordingSession(String sessionId, String deviceId, String ownerId, Instant startedAt);

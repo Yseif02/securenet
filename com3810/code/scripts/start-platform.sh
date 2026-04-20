@@ -4,8 +4,8 @@
 #
 # Starts the full SecureNet platform with:
 #   - PostgreSQL replication cluster (primary + 2 standbys)
-#   - Embedded MQTT broker + IDFS
-#   - Storage Service
+#   - Embedded MQTT broker + 3x IDFS
+#   - 3x Storage Service (HikariCP pool, load balanced)
 #   - 3x UMS, DMS, Notification, VSS instances (stateless, load balanced)
 #   - 3x EPS Raft cluster nodes (stateful, leader-elected)
 #   - API Gateway (client-facing, routes via load balancers)
@@ -54,16 +54,12 @@ fi
 
 # -----------------------------------------------------------------------------
 # start_service <name> <main_class> [args...]
-#
-# Writes a JUL logging.properties file for this service instance so that
-# java.util.logging writes to LOG_DIR/<name>.log instead of stderr.
 # -----------------------------------------------------------------------------
 start_service() {
     local name=$1
     local main_class=$2
     shift 2
 
-    # Write a per-instance JUL logging.properties
     local log_file="$LOG_DIR/$name.log"
     local props_file="$LOG_DIR/$name-logging.properties"
     cat > "$props_file" <<EOF
@@ -72,12 +68,11 @@ java.util.logging.FileHandler.pattern=$log_file
 java.util.logging.FileHandler.formatter=com.securenet.common.LogFormatter
 java.util.logging.FileHandler.append=false
 java.util.logging.FileHandler.limit=50000000
-# Root level — INFO shows normal operations, WARNING/SEVERE for problems
 .level=INFO
-# Suppress noisy JDK internals
 sun.net.level=WARNING
 io.netty.level=WARNING
 io.moquette.level=WARNING
+com.zaxxer.hikari.level=WARNING
 EOF
 
     echo "  Starting $name..."
@@ -99,13 +94,14 @@ echo "--- PostgreSQL Cluster ---"
 "$SCRIPT_DIR/start-postgres-cluster.sh"
 sleep 1
 
-STORAGE_URL="http://localhost:9000"
+# All three storage instances + their load-balanced URL for downstream services
+STORAGE_URL="http://localhost:9000,http://localhost:9010,http://localhost:9020"
 
 # =====================================================================
-# 2. MQTT Broker + IDFS
+# 2. MQTT Broker + IDFS (3 instances)
 # =====================================================================
 echo ""
-echo "--- IDFS + MQTT Broker ---"
+echo "--- IDFS + MQTT Broker (3 instances) ---"
 start_service "idfs-1" "com.securenet.iotfirmware.IdfsMain" \
     --http-port 8080 --mqtt-port 1883 \
     --dms-url http://localhost:9002 \
@@ -128,13 +124,24 @@ start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
 sleep 2
 
 # =====================================================================
-# 3. Storage Service
+# 3. Storage Service (3 instances, HikariCP pool, load balanced)
 # =====================================================================
 echo ""
-echo "--- Storage Service ---"
-start_service "storage" "com.securenet.storage.StorageMain" \
+echo "--- Storage Service (3 instances) ---"
+start_service "storage-1" "com.securenet.storage.StorageMain" \
     --port 9000 \
-    --jdbc-url jdbc:postgresql://localhost:5432/securenet
+    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --pool-size 10
+sleep 0.3
+start_service "storage-2" "com.securenet.storage.StorageMain" \
+    --port 9010 \
+    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --pool-size 10
+sleep 0.3
+start_service "storage-3" "com.securenet.storage.StorageMain" \
+    --port 9020 \
+    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --pool-size 10
 sleep 1
 
 # =====================================================================
@@ -178,16 +185,19 @@ echo "--- Event Processing Service (3-node Raft cluster) ---"
 start_service "eps-1" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-1 --api-port 9003 --raft-port 9013 \
     --storage-url $STORAGE_URL \
+    --dms-url http://localhost:9002 \
     --peers http://localhost:9023,http://localhost:9033
 sleep 0.5
 start_service "eps-2" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-2 --api-port 9103 --raft-port 9023 \
     --storage-url $STORAGE_URL \
+    --dms-url http://localhost:9002 \
     --peers http://localhost:9013,http://localhost:9033
 sleep 0.5
 start_service "eps-3" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-3 --api-port 9203 --raft-port 9033 \
     --storage-url $STORAGE_URL \
+    --dms-url http://localhost:9002 \
     --peers http://localhost:9013,http://localhost:9023
 sleep 1
 
@@ -247,7 +257,9 @@ start_service "cluster-manager" "com.securenet.common.ClusterManagerMain" \
     --instance IDFS:idfs-1:http://localhost:8080 \
     --instance IDFS:idfs-2:http://localhost:8081 \
     --instance IDFS:idfs-3:http://localhost:8082 \
-    --instance Storage:storage:http://localhost:9000 \
+    --instance Storage:storage-1:http://localhost:9000 \
+    --instance Storage:storage-2:http://localhost:9010 \
+    --instance Storage:storage-3:http://localhost:9020 \
     --instance UMS:ums-1:http://localhost:9001 \
     --instance UMS:ums-2:http://localhost:9011 \
     --instance UMS:ums-3:http://localhost:9021 \
@@ -271,7 +283,7 @@ sleep 0.5
 # =====================================================================
 echo ""
 echo "================================================================"
-echo "  SecureNet Platform Running — 23 Java processes"
+echo "  SecureNet Platform Running — 27 Java processes"
 echo "================================================================"
 echo ""
 echo "  PostgreSQL Cluster:"
@@ -281,12 +293,12 @@ echo "    Standby 2:     localhost:5434  (read-only)"
 echo ""
 echo "  Infrastructure:"
 echo "    MQTT Broker:   localhost:1883"
-echo "    Storage:       localhost:9000"
 echo "    API Gateway:   localhost:8443"
 echo "    Cluster Mgr:   localhost:9090"
 echo ""
-echo "  Service Clusters (3 instances each, load balanced by Gateway):"
+echo "  Service Clusters (3 instances each, load balanced):"
 echo "    IDFS:          localhost:8080, 8081, 8082"
+echo "    Storage:       localhost:9000, 9010, 9020  (HikariCP pool x3)"
 echo "    UMS:           localhost:9001, 9011, 9021"
 echo "    DMS:           localhost:9002, 9012, 9022"
 echo "    Notification:  localhost:9004, 9014, 9024"

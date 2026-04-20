@@ -26,13 +26,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ol>
  *
  * <p>Subclasses implement {@link #onSteadyStateTick(String, int)} to define
- * device-specific behavior (publishing motion events, lock state, camera streams, etc.)
- * and {@link #onCommandReceived(String, String, String)} to handle incoming MQTT commands.
+ * device-specific behavior and {@link #onCommandReceived(String, String, String)}
+ * to handle incoming MQTT commands. Subclasses that need the full command payload
+ * (e.g. to extract {@code session_id} for streaming) can additionally override
+ * {@link #onFullCommandReceived(String, Map)}.
  */
 public abstract class AbstractMockDevice implements Runnable {
 
-    private static final int INITIAL_BACKOFF_MS = 1000;
-    private static final int MAX_BACKOFF_MS = 15000;
+    private static final int INITIAL_BACKOFF_MS  = 1000;
+    private static final int MAX_BACKOFF_MS      = 15000;
     private static final int HEARTBEAT_INTERVAL_MS = 30_000;
 
     private final String deviceId;
@@ -41,7 +43,6 @@ public abstract class AbstractMockDevice implements Runnable {
     private final String idfsBaseUrl;
     protected final ServiceClient httpClient;
 
-    // ----- State set during onboarding -----
     protected volatile String firmwareVersion;
     protected volatile String firmwareUrl;
     protected volatile String mqttBrokerUrl;
@@ -49,44 +50,34 @@ public abstract class AbstractMockDevice implements Runnable {
     protected volatile String mqttUsername;
     protected volatile String mqttPassword;
 
-    // ----- Runtime state -----
     protected MqttClient mqttClient;
-    protected final AtomicBoolean running = new AtomicBoolean(false);
-    protected final AtomicLong eventNonce = new AtomicLong(0);
+    protected final AtomicBoolean running    = new AtomicBoolean(false);
+    protected final AtomicLong eventNonce    = new AtomicLong(0);
 
-    /**
-     * @param deviceId          unique device identifier (matches QR code)
-     * @param registrationToken one-time bootstrap token
-     * @param deviceType        hardware category
-     * @param idfsBaseUrl       URL of the IDFS server, e.g. "http://localhost:8080"
-     */
     protected AbstractMockDevice(String deviceId, String registrationToken,
                                  DeviceType deviceType, String idfsBaseUrl) {
-        this.deviceId = Objects.requireNonNull(deviceId, "deviceId");
+        this.deviceId          = Objects.requireNonNull(deviceId, "deviceId");
         this.registrationToken = Objects.requireNonNull(registrationToken, "registrationToken");
-        this.deviceType = Objects.requireNonNull(deviceType, "deviceType");
-        this.idfsBaseUrl = Objects.requireNonNull(idfsBaseUrl, "idfsBaseUrl");
-        this.httpClient = new ServiceClient();
+        this.deviceType        = Objects.requireNonNull(deviceType, "deviceType");
+        this.idfsBaseUrl       = Objects.requireNonNull(idfsBaseUrl, "idfsBaseUrl");
+        this.httpClient        = new ServiceClient();
     }
 
     // =====================================================================
     // Accessors
     // =====================================================================
 
-    public String getDeviceId() { return deviceId; }
+    public String getDeviceId()    { return deviceId; }
     public DeviceType getDeviceType() { return deviceType; }
-    public boolean isRunning() { return running.get(); }
+    public boolean isRunning()     { return running.get(); }
+    public void shutdown()         { running.set(false); }
 
-    /** Signals the device to stop its runtime loop. */
-    public void shutdown() { running.set(false); }
-
-    /** Returns a log tag like "[MockSensor:sensor-001]". */
     protected String tag() {
         return "[" + getClass().getSimpleName() + ":" + deviceId + "]";
     }
 
     // =====================================================================
-    // Lifecycle — called by run()
+    // Lifecycle
     // =====================================================================
 
     @Override
@@ -97,11 +88,10 @@ public abstract class AbstractMockDevice implements Runnable {
         try {
             System.out.println(t + " powered on");
 
-            // Phase 1: Bootstrap
             System.out.println(t + " Phase 1: Bootstrap registration");
             Map bootstrapResult = bootstrapRegisterWithRetry(t);
             firmwareVersion = (String) bootstrapResult.get("firmware_version");
-            firmwareUrl = (String) bootstrapResult.get("firmware_url");
+            firmwareUrl     = (String) bootstrapResult.get("firmware_url");
             System.out.println(t + " Bootstrap succeeded. firmware=" + firmwareVersion
                     + " url=" + firmwareUrl);
 
@@ -110,17 +100,15 @@ public abstract class AbstractMockDevice implements Runnable {
             System.out.println(t + " Firmware installed. Rebooting into installed firmware...");
             Thread.sleep(200);
 
-            // Phase 2: Runtime provisioning
             System.out.println(t + " Phase 2: Runtime provisioning");
             Map provisionResult = runtimeProvisionWithRetry(t);
             mqttBrokerUrl = (String) provisionResult.get("mqtt_broker_url");
-            mqttClientId = (String) provisionResult.get("mqtt_client_id");
-            mqttUsername = (String) provisionResult.get("mqtt_username");
-            mqttPassword = (String) provisionResult.get("mqtt_password");
+            mqttClientId  = (String) provisionResult.get("mqtt_client_id");
+            mqttUsername  = (String) provisionResult.get("mqtt_username");
+            mqttPassword  = (String) provisionResult.get("mqtt_password");
             System.out.println(t + " Provisioned. broker=" + mqttBrokerUrl
                     + " clientId=" + mqttClientId);
 
-            // Phase 3: MQTT + steady state
             System.out.println(t + " Phase 3: Connecting to MQTT broker");
             connectMqtt(t);
             System.out.println(t + " Entering steady-state runtime loop");
@@ -145,53 +133,60 @@ public abstract class AbstractMockDevice implements Runnable {
 
     /**
      * Called once per heartbeat interval during steady state.
-     * Subclasses use this to publish device-specific events.
-     *
-     * @param tag            log prefix
-     * @param heartbeatCount number of heartbeats sent so far
      */
     protected abstract void onSteadyStateTick(String tag, int heartbeatCount);
 
     /**
-     * Called when an MQTT command is received on the device's command topic.
-     *
-     * @param tag           log prefix
-     * @param commandType   the command type (LOCK, UNLOCK, STREAM_START, etc.)
-     * @param correlationId the correlation ID for idempotent ack
+     * Called when an MQTT command is received. Only {@code commandType}
+     * and {@code correlationId} are provided. Subclasses that need the
+     * full payload (e.g. {@code session_id}) should override
+     * {@link #onFullCommandReceived(String, Map)} instead.
      */
-    protected abstract void onCommandReceived(String tag, String commandType, String correlationId);
+    protected abstract void onCommandReceived(String tag, String commandType,
+                                              String correlationId);
+
+    /**
+     * Called with the full command payload map when an MQTT command arrives.
+     * Default implementation delegates to
+     * {@link #onCommandReceived(String, String, String)}, extracting only
+     * {@code command_type} and {@code correlation_id}.
+     *
+     * <p>Subclasses such as {@link MockCamera} override this to also extract
+     * {@code session_id} and {@code vss_url} from the STREAM_START payload.
+     *
+     * @param tag the log prefix
+     * @param cmd the full parsed command map from MQTT
+     */
+    protected void onFullCommandReceived(String tag, Map cmd) {
+        onCommandReceived(tag,
+                (String) cmd.get("command_type"),
+                (String) cmd.get("correlation_id"));
+    }
 
     // =====================================================================
     // Protected helpers for subclasses
     // =====================================================================
 
-    /**
-     * Publishes an MQTT event on the device's event topic.
-     * Mirrors mqtt_manager_publish_motion_detected() from the C firmware.
-     */
     protected void publishEvent(String subtopic, Map<String, Object> payload) {
         if (mqttClient == null || !mqttClient.isConnected()) return;
         try {
             String topic = "securenet/devices/" + deviceId + "/events/" + subtopic;
-            String json = JsonUtil.toJson(payload);
+            String json  = JsonUtil.toJson(payload);
             mqttClient.publish(topic, json.getBytes(StandardCharsets.UTF_8), 1, false);
         } catch (MqttException e) {
             System.out.println(tag() + " Failed to publish event: " + e.getMessage());
         }
     }
 
-    /**
-     * Publishes an acknowledgement for a received command.
-     */
     protected void publishAck(String correlationId, String commandType, boolean success) {
         if (mqttClient == null || !mqttClient.isConnected()) return;
         try {
             String topic = "securenet/devices/" + deviceId + "/acks";
-            String json = JsonUtil.toJson(Map.of(
-                    "device_id", deviceId,
+            String json  = JsonUtil.toJson(Map.of(
+                    "device_id",      deviceId,
                     "correlation_id", correlationId != null ? correlationId : "",
-                    "command_type", commandType != null ? commandType : "",
-                    "success", success
+                    "command_type",   commandType   != null ? commandType   : "",
+                    "success",        success
             ));
             mqttClient.publish(topic, json.getBytes(StandardCharsets.UTF_8), 1, false);
         } catch (MqttException e) {
@@ -199,13 +194,10 @@ public abstract class AbstractMockDevice implements Runnable {
         }
     }
 
-    /** Returns the next unique nonce for event deduplication. */
-    protected long nextNonce() {
-        return eventNonce.incrementAndGet();
-    }
+    protected long nextNonce() { return eventNonce.incrementAndGet(); }
 
     // =====================================================================
-    // Bootstrap registration (Phase 1) with exponential backoff
+    // Bootstrap registration (Phase 1)
     // =====================================================================
 
     private Map bootstrapRegisterWithRetry(String t) throws InterruptedException {
@@ -214,9 +206,10 @@ public abstract class AbstractMockDevice implements Runnable {
             try {
                 ServiceResponse resp = httpClient.post(
                         idfsBaseUrl + "/register",
-                        Map.of("device_id", deviceId, "registration_token", registrationToken)
-                );
-                if (resp.statusCode() == 200) return JsonUtil.fromJson(resp.body(), Map.class);
+                        Map.of("device_id", deviceId,
+                                "registration_token", registrationToken));
+                if (resp.statusCode() == 200)
+                    return JsonUtil.fromJson(resp.body(), Map.class);
                 System.out.println(t + " Bootstrap failed: HTTP " + resp.statusCode());
             } catch (IOException e) {
                 System.out.println(t + " Bootstrap error: " + e.getMessage());
@@ -229,7 +222,7 @@ public abstract class AbstractMockDevice implements Runnable {
     }
 
     // =====================================================================
-    // Runtime provisioning (Phase 2) with exponential backoff
+    // Runtime provisioning (Phase 2)
     // =====================================================================
 
     private Map runtimeProvisionWithRetry(String t) throws InterruptedException {
@@ -238,9 +231,9 @@ public abstract class AbstractMockDevice implements Runnable {
             try {
                 ServiceResponse resp = httpClient.post(
                         idfsBaseUrl + "/provision",
-                        Map.of("device_id", deviceId)
-                );
-                if (resp.statusCode() == 200) return JsonUtil.fromJson(resp.body(), Map.class);
+                        Map.of("device_id", deviceId));
+                if (resp.statusCode() == 200)
+                    return JsonUtil.fromJson(resp.body(), Map.class);
                 System.out.println(t + " Provisioning failed: HTTP " + resp.statusCode());
             } catch (IOException e) {
                 System.out.println(t + " Provisioning error: " + e.getMessage());
@@ -275,9 +268,9 @@ public abstract class AbstractMockDevice implements Runnable {
                     System.out.println(t + " Received command: " + payload);
                     try {
                         Map cmd = JsonUtil.fromJson(payload, Map.class);
-                        onCommandReceived(t,
-                                (String) cmd.get("command_type"),
-                                (String) cmd.get("correlation_id"));
+                        // Call onFullCommandReceived so subclasses get the
+                        // entire payload (including session_id, vss_url, etc.)
+                        onFullCommandReceived(t, cmd);
                     } catch (Exception e) {
                         System.out.println(t + " Error handling command: " + e.getMessage());
                     }
@@ -299,9 +292,9 @@ public abstract class AbstractMockDevice implements Runnable {
     private void steadyStateLoop(String t) throws InterruptedException {
         int heartbeatCount = 0;
         while (running.get()) {
-            // Send heartbeat
             try {
-                httpClient.post(idfsBaseUrl + "/heartbeat", Map.of("device_id", deviceId));
+                httpClient.post(idfsBaseUrl + "/heartbeat",
+                        Map.of("device_id", deviceId));
                 heartbeatCount++;
                 if (heartbeatCount % 5 == 0) {
                     System.out.println(t + " heartbeat #" + heartbeatCount);
@@ -310,9 +303,7 @@ public abstract class AbstractMockDevice implements Runnable {
                 System.out.println(t + " heartbeat failed: " + e.getMessage());
             }
 
-            // Subclass-specific behavior
             onSteadyStateTick(t, heartbeatCount);
-
             Thread.sleep(HEARTBEAT_INTERVAL_MS);
         }
     }

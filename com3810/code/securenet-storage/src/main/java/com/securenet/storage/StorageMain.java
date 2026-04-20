@@ -15,6 +15,8 @@ public class StorageMain {
         String jdbcUrl = "jdbc:postgresql://localhost:5432/securenet";
         String dbUser = System.getProperty("user.name");
         String dbPass = "";
+        int poolSize = 10;
+
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -23,6 +25,8 @@ public class StorageMain {
                 case "--jdbc-url"  -> jdbcUrl = args[++i];
                 case "--db-user"   -> dbUser  = args[++i];
                 case "--db-pass"   -> dbPass  = args[++i];
+                case "--pool-size" -> poolSize = Integer.parseInt(args[++i]);
+
             }
         }
 
@@ -33,7 +37,7 @@ public class StorageMain {
         log.info("  DB User:   " + dbUser);
 
         log.info("[Storage] Connecting to PostgreSQL at " + jdbcUrl);
-        StorageServiceImpl storage = new StorageServiceImpl(jdbcUrl, dbUser, dbPass);
+        StorageServiceImpl storage = new StorageServiceImpl(jdbcUrl, dbUser, dbPass, poolSize);
         log.info("[Storage] PostgreSQL connected and schema initialized");
 
         StorageServiceServer server = new StorageServiceServer(host, port, storage);
@@ -42,6 +46,7 @@ public class StorageMain {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("[Storage] Shutdown signal received");
             server.stop();
+            storage.close();
         }));
 
         log.info("[Storage] Ready — listening on " + host + ":" + port);

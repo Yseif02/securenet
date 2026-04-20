@@ -28,9 +28,15 @@ import java.util.Map;
 public class PlatformDemo {
 
     private static final String GATEWAY = "http://localhost:8443";
-    private static final String UMS = "http://localhost:9001";
+    private static final String UMS     = "http://localhost:9001";
     private static final String STORAGE = "http://localhost:9000";
-    private static final String IDFS = "http://localhost:8080";
+    private static final String IDFS    = "http://localhost:8080";
+    private static final String VSS     = "http://localhost:9005";
+
+    /** How long to poll for a clip before giving up (ms). */
+    private static final long CLIP_POLL_TIMEOUT_MS  = 60_000;
+    /** How often to poll (ms). */
+    private static final long CLIP_POLL_INTERVAL_MS = 2_000;
 
     public static void main(String[] args) throws Exception {
         System.out.println("================================================================");
@@ -45,9 +51,9 @@ public class PlatformDemo {
         System.out.println("--- 1. Creating homeowner account ---");
         String email = "demo-" + System.currentTimeMillis() + "@example.com";
         ServiceResponse regResp = rawClient.post(UMS + "/ums/register",
-                Map.of("email", email,
+                Map.of("email",       email,
                         "displayName", "Demo Homeowner",
-                        "password", "securenet123"));
+                        "password",    "securenet123"));
         if (!regResp.isSuccess()) {
             System.err.println("Registration failed: " + regResp.body());
             return;
@@ -82,7 +88,7 @@ public class PlatformDemo {
         List<Seed> seeds = List.of(
                 new Seed("sensor-" + suffix, "st-" + suffix, DeviceType.MOTION_SENSOR),
                 new Seed("camera-" + suffix, "ct-" + suffix, DeviceType.CAMERA),
-                new Seed("lock-" + suffix, "lt-" + suffix, DeviceType.SMART_LOCK));
+                new Seed("lock-"   + suffix, "lt-" + suffix, DeviceType.SMART_LOCK));
 
         for (Seed s : seeds) {
             client.startDeviceOnboarding(s.id() + ":" + s.token(), s.type().name());
@@ -96,7 +102,7 @@ public class PlatformDemo {
         System.out.println("\n--- 7. Launching mock devices ---");
         MockSensor sensor = new MockSensor(seeds.get(0).id(), seeds.get(0).token(), IDFS);
         MockCamera camera = new MockCamera(seeds.get(1).id(), seeds.get(1).token(), IDFS);
-        MockLock lock = new MockLock(seeds.get(2).id(), seeds.get(2).token(), IDFS);
+        MockLock   lock   = new MockLock(seeds.get(2).id(),   seeds.get(2).token(), IDFS);
 
         for (AbstractMockDevice d : List.of(sensor, camera, lock)) {
             new Thread(d, "Mock-" + d.getDeviceId()).start();
@@ -113,11 +119,14 @@ public class PlatformDemo {
         }
 
         // 9. Commands via Client API → Gateway → DMS → IDFS → MQTT → Device
+        // startLiveStream: DMS opens VSS session → STREAM_START → MockCamera
+        // sends chunks → DMS auto-closes after 10s → clip archived to PostgreSQL
         System.out.println("\n--- 9. Commands ---");
         client.sendLockCommand(seeds.get(2).id());
         Thread.sleep(1000);
         client.sendUnlockCommand(seeds.get(2).id());
         Thread.sleep(1000);
+        Instant streamStarted = Instant.now();
         client.startLiveStream(seeds.get(1).id());
 
         // 10. Event timeline
@@ -127,23 +136,77 @@ public class PlatformDemo {
         for (Seed s : seeds) {
             List<EventSummary> events = client.loadEventTimeline(
                     s.id(), now.minus(1, ChronoUnit.HOURS), now, 10);
+            System.out.println("  " + s.id() + ": " + events.size() + " event(s)");
             for (EventSummary e : events) {
                 System.out.println("    " + e.type() + " at " + e.occurredAt());
             }
+        }
+
+        // 10b. Video playback — poll until a clip appears or timeout
+        System.out.println("\n--- 10b. Video playback ---");
+        System.out.println("  Polling for archived clip (up to "
+                + (CLIP_POLL_TIMEOUT_MS / 1000) + "s)...");
+
+        String cameraId  = seeds.get(1).id();
+        Instant queryFrom = streamStarted.minus(1, ChronoUnit.MINUTES);
+        String clipId    = null;
+        long pollDeadline = System.currentTimeMillis() + CLIP_POLL_TIMEOUT_MS;
+
+        while (System.currentTimeMillis() < pollDeadline) {
+            ServiceResponse clipsResp = rawClient.get(
+                    VSS + "/vss/clips/device/" + cameraId
+                            + "?from=" + queryFrom + "&to=" + Instant.now());
+
+            if (clipsResp.isSuccess() && clipsResp.body().contains("clipId")) {
+                String body  = clipsResp.body();
+                int startIdx = body.indexOf("\"clipId\":\"") + 10;
+                clipId       = body.substring(startIdx, body.indexOf("\"", startIdx));
+                System.out.println("  ✓ Clip archived: " + clipId);
+                break;
+            }
+
+            System.out.println("  No clip yet, retrying in "
+                    + (CLIP_POLL_INTERVAL_MS / 1000) + "s...");
+            Thread.sleep(CLIP_POLL_INTERVAL_MS);
+        }
+
+        if (clipId != null) {
+            ServiceResponse urlResp = rawClient.get(
+                    VSS + "/vss/clips/playback?clipId=" + clipId + "&validFor=3600");
+            if (urlResp.isSuccess() && urlResp.body().contains("playbackUrl")) {
+                String urlBody     = urlResp.body();
+                int urlStart       = urlBody.indexOf("\"playbackUrl\":\"") + 15;
+                String playbackUrl = urlBody.substring(urlStart,
+                        urlBody.indexOf("\"", urlStart));
+                System.out.println("  ✓ Signed playback URL: " + playbackUrl);
+            } else {
+                System.out.println("  Playback URL generation failed: " + urlResp.body());
+            }
+        } else {
+            System.out.println("  No clip found within timeout — stream may not have closed yet");
         }
 
         // 11. Raft + Cluster Manager status
         System.out.println("\n--- 11. Cluster status ---");
         for (int p : List.of(9013, 9023, 9033)) {
             try {
-                System.out.println("  Raft " + p + ": " + rawClient.get("http://localhost:" + p + "/raft/status").body());
-            } catch (Exception e) { System.out.println("  Raft " + p + ": unreachable"); }
+                System.out.println("  Raft " + p + ": "
+                        + rawClient.get("http://localhost:" + p + "/raft/status").body());
+            } catch (Exception e) {
+                System.out.println("  Raft " + p + ": unreachable");
+            }
         }
         try {
-            System.out.println("  Cluster Manager: " + rawClient.get("http://localhost:9090/cluster/status").body().substring(0, 200) + "...");
-        } catch (Exception e) { System.out.println("  Cluster Manager: unreachable"); }
+            String clusterStatus = rawClient.get(
+                    "http://localhost:9090/cluster/status").body();
+            System.out.println("  Cluster Manager: "
+                    + clusterStatus.substring(0, Math.min(200, clusterStatus.length()))
+                    + "...");
+        } catch (Exception e) {
+            System.out.println("  Cluster Manager: unreachable");
+        }
 
-        // 12. Logout
+        // 12. Logout — only reached after video playback completes
         System.out.println("\n--- 12. Logout ---");
         client.logout();
 

@@ -31,7 +31,7 @@ import java.util.Map;
  */
 public class SecureNetOrchestrator {
 
-    private static final int MQTT_PORT = 1883;
+    /*private static final int MQTT_PORT = 1883;
     private static final int STORAGE_PORT = 9000;
     private static final int UMS_PORT = 9001;
     private static final int DMS_PORT = 9002;
@@ -228,5 +228,5 @@ public class SecureNetOrchestrator {
         }));
 
         Thread.currentThread().join();
-    }
+    }*/
 }

@@ -1,6 +1,7 @@
 package com.securenet.storage;
 
 import com.securenet.common.JsonUtil;
+import com.securenet.common.LoadBalancer;
 import com.securenet.common.ServiceClient;
 import com.securenet.common.ServiceClient.ServiceResponse;
 import com.securenet.model.*;
@@ -29,15 +30,19 @@ import java.util.*;
  */
 public class StorageGateway {
 
-    private final String baseUrl;
+    //private final String baseUrl;
+    private final LoadBalancer loadBalancer;
     private final ServiceClient client;
 
     /**
-     * @param storageServiceUrl root URL of the Storage Service, e.g.
-     *                          {@code "http://localhost:9000"}
+     * @param storageUrls comma-separated storage service URLs,
+     *                    e.g. "http://localhost:9000,http://localhost:9010,http://localhost:9020"
      */
-    public StorageGateway(String storageServiceUrl) {
-        this.baseUrl = Objects.requireNonNull(storageServiceUrl, "storageServiceUrl");
+    public StorageGateway(String storageUrls) {
+        Objects.requireNonNull(storageUrls, "storageUrls");
+        this.loadBalancer = new LoadBalancer("Storage",
+                Arrays.asList(storageUrls.split(",")));
+        this.loadBalancer.start();
         this.client = new ServiceClient();
     }
 
@@ -340,6 +345,13 @@ public class StorageGateway {
         return ((Number) map.get("value")).longValue();
     }
 
+    public long incrementAndGetLamportClock(String nodeId, long candidate) {
+        ServiceResponse resp = post("/storage/eps-lamport-clock/increment",
+                Map.of("nodeId", nodeId, "candidate", candidate));
+        Map map = resp.bodyAs(Map.class);
+        return ((Number) map.get("value")).longValue();
+    }
+
     // =====================================================================
     // VSS recording sessions
     // =====================================================================
@@ -436,7 +448,7 @@ public class StorageGateway {
 
     private ServiceResponse get(String path) {
         try {
-            return client.get(baseUrl + path);
+            return client.get(loadBalancer.nextHealthyUrl() + path);
         } catch (IOException e) {
             throw new RuntimeException("StorageService unreachable: " + e.getMessage(), e);
         }
@@ -444,7 +456,7 @@ public class StorageGateway {
 
     private ServiceResponse post(String path, Object body) {
         try {
-            return client.post(baseUrl + path, body);
+            return client.post(loadBalancer.nextHealthyUrl() + path, body);
         } catch (IOException e) {
             throw new RuntimeException("StorageService unreachable: " + e.getMessage(), e);
         }
@@ -452,7 +464,7 @@ public class StorageGateway {
 
     private ServiceResponse put(String path, Object body) {
         try {
-            return client.put(baseUrl + path, body);
+            return client.put(loadBalancer.nextHealthyUrl() + path, body);
         } catch (IOException e) {
             throw new RuntimeException("StorageService unreachable: " + e.getMessage(), e);
         }
@@ -460,7 +472,7 @@ public class StorageGateway {
 
     private ServiceResponse delete(String path) {
         try {
-            return client.delete(baseUrl + path);
+            return client.delete(loadBalancer.nextHealthyUrl() + path);
         } catch (IOException e) {
             throw new RuntimeException("StorageService unreachable: " + e.getMessage(), e);
         }

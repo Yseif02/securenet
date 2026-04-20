@@ -36,12 +36,13 @@ public class EventProcessingServiceImpl implements EventProcessingService {
 
     private static final Logger log = Logger.getLogger(EventProcessingServiceImpl.class.getName());
 
-    private static final long DEDUP_TTL_MS     = 24 * 60 * 60 * 1000;
+    private static final long DEDUP_TTL_MS      = 24 * 60 * 60 * 1000;
     private static final long MOTION_COOLDOWN_MS = 10_000;
 
     private final StorageGateway storageGateway;
     private final ServiceClient httpClient;
     private final String notificationServiceUrl;
+    private final String dmsServiceUrl;
     private final String nodeId;
 
     private volatile RaftNode raftNode;
@@ -50,21 +51,31 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * @param storageGateway         HTTP client to the Storage Service
      * @param notificationServiceUrl base URL of Notification Service (nullable)
      * @param nodeId                 this EPS node's identifier (for Lamport clock key)
+     * @param dmsServiceUrl          base URL of DMS for triggering camera streams (nullable)
      */
     public EventProcessingServiceImpl(StorageGateway storageGateway,
                                       String notificationServiceUrl,
-                                      String nodeId) {
+                                      String nodeId,
+                                      String dmsServiceUrl) {
         this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
         this.notificationServiceUrl = notificationServiceUrl;
+        this.dmsServiceUrl = dmsServiceUrl;
         this.nodeId = (nodeId != null) ? nodeId : "global";
         this.httpClient = new ServiceClient();
         log.info("[EPS:" + this.nodeId + "] Service initialized");
     }
 
+    /** Backward-compatible 3-arg constructor. */
+    public EventProcessingServiceImpl(StorageGateway storageGateway,
+                                      String notificationServiceUrl,
+                                      String nodeId) {
+        this(storageGateway, notificationServiceUrl, nodeId, null);
+    }
+
     /** Backward-compatible 2-arg constructor for single-node mode. */
     public EventProcessingServiceImpl(StorageGateway storageGateway,
                                       String notificationServiceUrl) {
-        this(storageGateway, notificationServiceUrl, "global");
+        this(storageGateway, notificationServiceUrl, "global", null);
     }
 
     public void setRaftNode(RaftNode raftNode) {
@@ -98,7 +109,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                             (leaderId != null ? leaderId : "unknown (election in progress)"));
         }
 
-        String nonce  = metadata.getOrDefault("nonce", "");
+        String nonce    = metadata.getOrDefault("nonce", "");
         String dedupKey = deviceId + ":" + type.name() + ":" + nonce;
 
         Optional<Map<String, String>> existingEntry = storageGateway.findDeduplicationEntry(dedupKey);
@@ -186,12 +197,10 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private SecurityEvent applyEvent(String deviceId, EventType type, Instant occurredAt,
                                      Map<String, String> metadata, String dedupKey) {
         // Lamport clock
-        long currentClock    = storageGateway.findLamportClock(nodeId);
         long deviceTimestampMs = occurredAt.toEpochMilli();
-        long sequenceNumber  = Math.max(currentClock, deviceTimestampMs) + 1;
-        storageGateway.saveLamportClock(nodeId, sequenceNumber);
-        log.info("[EPS:" + nodeId + "] Lamport clock: prev=" + currentClock
-                + " deviceTs=" + deviceTimestampMs + " new=" + sequenceNumber);
+        long sequenceNumber    = storageGateway.incrementAndGetLamportClock(nodeId, deviceTimestampMs);
+        log.info("[EPS:" + nodeId + "] Lamport clock: deviceTs=" + deviceTimestampMs
+                + " assigned=" + sequenceNumber);
 
         // Enrich
         Device device;
@@ -277,7 +286,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     }
 
     // =====================================================================
-    // Alert routing
+    // Alert routing + stream trigger
     // =====================================================================
 
     @Override
@@ -307,6 +316,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         log.info("[EPS] Alert triggered: type=" + event.type()
                 + " device=" + event.deviceId() + " owner=" + event.ownerId());
 
+        // Forward alert to Notification Service
         if (notificationServiceUrl != null) {
             try {
                 httpClient.post(notificationServiceUrl + "/notify/alert",
@@ -320,6 +330,29 @@ public class EventProcessingServiceImpl implements EventProcessingService {
             } catch (Exception e) {
                 log.warning("[EPS:" + nodeId + "] Failed to forward alert: eventId="
                         + event.eventId() + " error=" + e.getMessage());
+            }
+        }
+
+        // Trigger camera stream on motion events
+        if (event.type() == EventType.MOTION_DETECTED && dmsServiceUrl != null) {
+            try {
+                List<Device> ownerDevices =
+                        storageGateway.findDevicesByOwner(event.ownerId());
+                for (Device d : ownerDevices) {
+                    if (d.type() == DeviceType.CAMERA
+                            && d.status() == DeviceStatus.ONLINE) {
+                        log.info("[EPS:" + nodeId + "] Triggering stream: camera="
+                                + d.deviceId() + " triggered by motion on "
+                                + event.deviceId());
+                        httpClient.post(dmsServiceUrl + "/dms/devices/stream-start",
+                                Map.of("deviceId",        d.deviceId(),
+                                        "streamTargetUrl", "http://localhost:9005/vss/ingest"));
+                        break; // one camera per motion event
+                    }
+                }
+            } catch (Exception e) {
+                log.warning("[EPS:" + nodeId + "] Failed to trigger camera stream: "
+                        + e.getMessage());
             }
         }
     }
