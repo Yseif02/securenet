@@ -11,6 +11,7 @@ import com.securenet.storage.StorageGateway;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.logging.Logger;
 
 /**
  * Raft-replicated implementation of the Event Processing Service.
@@ -33,10 +34,9 @@ import java.util.concurrent.*;
  */
 public class EventProcessingServiceImpl implements EventProcessingService {
 
-    /** TTL for deduplication entries — 24 hours. */
-    private static final long DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
+    private static final Logger log = Logger.getLogger(EventProcessingServiceImpl.class.getName());
 
-    /** Motion alert cooldown — 10 seconds. */
+    private static final long DEDUP_TTL_MS     = 24 * 60 * 60 * 1000;
     private static final long MOTION_COOLDOWN_MS = 10_000;
 
     private final StorageGateway storageGateway;
@@ -44,7 +44,6 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private final String notificationServiceUrl;
     private final String nodeId;
 
-    /** Raft node — null when running in single-node mode. */
     private volatile RaftNode raftNode;
 
     /**
@@ -59,6 +58,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         this.notificationServiceUrl = notificationServiceUrl;
         this.nodeId = (nodeId != null) ? nodeId : "global";
         this.httpClient = new ServiceClient();
+        log.info("[EPS:" + this.nodeId + "] Service initialized");
     }
 
     /** Backward-compatible 2-arg constructor for single-node mode. */
@@ -69,6 +69,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
 
     public void setRaftNode(RaftNode raftNode) {
         this.raftNode = raftNode;
+        log.info("[EPS:" + nodeId + "] Raft node attached: " + raftNode.getNodeId());
     }
 
     // =====================================================================
@@ -85,16 +86,19 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         if (metadata == null) metadata = Map.of();
         requireNonBlank(deviceId, "deviceId");
 
-        // If Raft is active and we're not the leader, reject the write
+        log.info("[EPS:" + nodeId + "] ingestEvent: deviceId=" + deviceId
+                + " type=" + type + " occurredAt=" + occurredAt);
+
         if (raftNode != null && !raftNode.isLeader()) {
             String leaderId = raftNode.getLeaderId();
+            log.warning("[EPS:" + nodeId + "] Not the Raft leader — rejecting ingest. Leader="
+                    + (leaderId != null ? leaderId : "unknown"));
             throw new IllegalStateException(
                     "Not the Raft leader. Current leader: " +
                             (leaderId != null ? leaderId : "unknown (election in progress)"));
         }
 
-        // Idempotency check — from PostgreSQL
-        String nonce = metadata.getOrDefault("nonce", "");
+        String nonce  = metadata.getOrDefault("nonce", "");
         String dedupKey = deviceId + ":" + type.name() + ":" + nonce;
 
         Optional<Map<String, String>> existingEntry = storageGateway.findDeduplicationEntry(dedupKey);
@@ -102,16 +106,19 @@ public class EventProcessingServiceImpl implements EventProcessingService {
             Instant recordedAt = Instant.parse(existingEntry.get().get("recordedAt"));
             long age = System.currentTimeMillis() - recordedAt.toEpochMilli();
             if (age < DEDUP_TTL_MS) {
-                System.out.println("[EPS] Duplicate event suppressed: " + dedupKey);
                 String originalEventId = existingEntry.get().get("eventId");
+                log.info("[EPS:" + nodeId + "] Duplicate suppressed: dedupKey=" + dedupKey
+                        + " originalEventId=" + originalEventId);
                 SecurityEvent original = storageGateway.findEventById(originalEventId).orElse(null);
                 if (original != null) return original;
             }
         }
 
         if (raftNode != null) {
+            log.info("[EPS:" + nodeId + "] Routing ingest through Raft: deviceId=" + deviceId);
             return ingestViaRaft(deviceId, type, occurredAt, metadata, nonce, dedupKey);
         } else {
+            log.info("[EPS:" + nodeId + "] Single-node ingest: deviceId=" + deviceId);
             return applyEvent(deviceId, type, occurredAt, metadata, dedupKey);
         }
     }
@@ -122,23 +129,27 @@ public class EventProcessingServiceImpl implements EventProcessingService {
             throws DeviceNotFoundException {
 
         CompletableFuture<LogEntry> future = raftNode.appendEntry(
-                deviceId, type.name(), occurredAt.toString(), nonce, metadata
-        );
+                deviceId, type.name(), occurredAt.toString(), nonce, metadata);
 
         if (future == null) {
+            log.warning("[EPS:" + nodeId + "] Lost leadership during Raft append");
             throw new IllegalStateException("Lost leadership during append");
         }
 
         try {
             LogEntry committed = future.get(5, TimeUnit.SECONDS);
+            log.info("[EPS:" + nodeId + "] Raft entry committed: index=" + committed.index()
+                    + " deviceId=" + deviceId);
             Optional<Map<String, String>> dedupEntry = storageGateway.findDeduplicationEntry(dedupKey);
             if (dedupEntry.isPresent()) {
                 return storageGateway.findEventById(dedupEntry.get().get("eventId")).orElse(null);
             }
             return null;
         } catch (TimeoutException e) {
+            log.severe("[EPS:" + nodeId + "] Raft commit timed out for deviceId=" + deviceId);
             throw new RuntimeException("Raft commit timed out", e);
         } catch (Exception e) {
+            log.severe("[EPS:" + nodeId + "] Raft commit failed: " + e.getMessage());
             throw new RuntimeException("Raft commit failed: " + e.getMessage(), e);
         }
     }
@@ -148,34 +159,39 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      */
     public void onRaftCommit(LogEntry entry) {
         try {
-            String deviceId = entry.deviceId();
-            EventType type = EventType.valueOf(entry.eventType());
+            String deviceId    = entry.deviceId();
+            EventType type     = EventType.valueOf(entry.eventType());
             Instant occurredAt = Instant.parse(entry.occurredAt());
             Map<String, String> metadata = entry.metadata() != null
                     ? new HashMap<>(entry.metadata()) : new HashMap<>();
 
             String dedupKey = deviceId + ":" + type.name() + ":" + entry.nonce();
 
-            // Check if already applied (follower replay)
-            if (storageGateway.findDeduplicationEntry(dedupKey).isPresent()) return;
+            if (storageGateway.findDeduplicationEntry(dedupKey).isPresent()) {
+                log.fine("[EPS:" + nodeId + "] Raft commit: already applied dedupKey=" + dedupKey);
+                return;
+            }
 
+            log.info("[EPS:" + nodeId + "] Applying Raft commit: index=" + entry.index()
+                    + " deviceId=" + deviceId + " type=" + type);
             applyEvent(deviceId, type, occurredAt, metadata, dedupKey);
         } catch (Exception e) {
-            System.err.println("[EPS] Error applying committed entry: " + e.getMessage());
+            log.severe("[EPS:" + nodeId + "] Error applying committed entry: " + e.getMessage());
         }
     }
 
     /**
      * Core state machine application — shared by single-node and Raft paths.
-     * All state mutations go to PostgreSQL.
      */
     private SecurityEvent applyEvent(String deviceId, EventType type, Instant occurredAt,
                                      Map<String, String> metadata, String dedupKey) {
-        // Lamport clock — read from DB, increment, write back
-        long currentClock = storageGateway.findLamportClock(nodeId);
+        // Lamport clock
+        long currentClock    = storageGateway.findLamportClock(nodeId);
         long deviceTimestampMs = occurredAt.toEpochMilli();
-        long sequenceNumber = Math.max(currentClock, deviceTimestampMs) + 1;
+        long sequenceNumber  = Math.max(currentClock, deviceTimestampMs) + 1;
         storageGateway.saveLamportClock(nodeId, sequenceNumber);
+        log.info("[EPS:" + nodeId + "] Lamport clock: prev=" + currentClock
+                + " deviceTs=" + deviceTimestampMs + " new=" + sequenceNumber);
 
         // Enrich
         Device device;
@@ -185,35 +201,32 @@ public class EventProcessingServiceImpl implements EventProcessingService {
             device = null;
         }
 
-        String ownerId = (device != null) ? device.ownerId() : "unknown";
+        String ownerId     = (device != null) ? device.ownerId()     : "unknown";
         String displayName = (device != null) ? device.displayName() : deviceId;
 
         Map<String, String> enrichedMetadata = new HashMap<>(metadata);
         enrichedMetadata.put("lamport_sequence", String.valueOf(sequenceNumber));
         enrichedMetadata.put("device_display_name", displayName);
 
-        // Persist event
         String eventId = UUID.randomUUID().toString();
         SecurityEvent event = new SecurityEvent(
                 eventId, deviceId, ownerId, type, occurredAt, enrichedMetadata);
 
         storageGateway.saveEvent(event);
-
-        // Record in dedup table (PostgreSQL)
         storageGateway.saveDeduplicationEntry(dedupKey, eventId, Instant.now());
 
-        System.out.println("[EPS] Event committed: id=" + eventId +
-                " device=" + deviceId + " type=" + type + " lamport=" + sequenceNumber);
+        log.info("[EPS] Event committed: id=" + eventId + " device=" + deviceId
+                + " type=" + type + " lamport=" + sequenceNumber + " owner=" + ownerId);
 
-        // Route alert
         routeAlertIfRequired(event);
 
-        // Periodic cleanup of expired dedup entries
+        // Periodic dedup cleanup
         if (sequenceNumber % 100 == 0) {
             Instant cutoff = Instant.now().minusMillis(DEDUP_TTL_MS);
             int removed = storageGateway.deleteExpiredDeduplicationEntries(cutoff);
             if (removed > 0) {
-                System.out.println("[EPS] Dedup cleanup: removed " + removed + " expired entries");
+                log.info("[EPS:" + nodeId + "] Dedup cleanup: removed " + removed
+                        + " expired entries");
             }
         }
 
@@ -221,7 +234,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     }
 
     // =====================================================================
-    // Event history queries — read path (any node can serve)
+    // Event history queries — read path
     // =====================================================================
 
     @Override
@@ -233,7 +246,11 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         validateMaxEvents(maxEvents);
         storageGateway.findDeviceById(deviceId)
                 .orElseThrow(() -> new DeviceNotFoundException(deviceId));
-        return storageGateway.findEventsByDevice(deviceId, from, to, maxEvents);
+        log.info("[EPS:" + nodeId + "] getEventHistory: deviceId=" + deviceId
+                + " from=" + from + " to=" + to + " max=" + maxEvents);
+        List<SecurityEvent> events = storageGateway.findEventsByDevice(deviceId, from, to, maxEvents);
+        log.info("[EPS:" + nodeId + "] getEventHistory: returned " + events.size() + " events");
+        return events;
     }
 
     @Override
@@ -243,17 +260,24 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         Objects.requireNonNull(type, "type");
         validateTimeRange(from, to);
         validateMaxEvents(maxEvents);
-        return storageGateway.findEventsByOwnerAndType(ownerId, type.name(), from, to, maxEvents);
+        log.info("[EPS:" + nodeId + "] getEventsByTypeForOwner: ownerId=" + ownerId
+                + " type=" + type + " max=" + maxEvents);
+        List<SecurityEvent> events = storageGateway.findEventsByOwnerAndType(
+                ownerId, type.name(), from, to, maxEvents);
+        log.info("[EPS:" + nodeId + "] getEventsByTypeForOwner: returned " + events.size()
+                + " events");
+        return events;
     }
 
     @Override
     public SecurityEvent getEventById(String eventId) {
         if (eventId == null || eventId.isBlank()) return null;
+        log.info("[EPS:" + nodeId + "] getEventById: eventId=" + eventId);
         return storageGateway.findEventById(eventId).orElse(null);
     }
 
     // =====================================================================
-    // Alert routing — motion cooldown in PostgreSQL
+    // Alert routing
     // =====================================================================
 
     @Override
@@ -261,39 +285,41 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         boolean shouldAlert = switch (event.type()) {
             case MOTION_DETECTED -> {
                 Instant now = Instant.now();
-                // Check cooldown from PostgreSQL
                 Optional<Instant> lastAlert = storageGateway.findMotionCooldown(event.deviceId());
                 if (lastAlert.isPresent()) {
                     long elapsed = now.toEpochMilli() - lastAlert.get().toEpochMilli();
                     if (elapsed < MOTION_COOLDOWN_MS) {
-                        System.out.println("[EPS] Motion alert suppressed (cooldown): " + event.deviceId());
+                        log.info("[EPS:" + nodeId + "] Motion alert suppressed (cooldown): deviceId="
+                                + event.deviceId() + " elapsed=" + elapsed + "ms");
                         yield false;
                     }
                 }
-                // Update cooldown in PostgreSQL
                 storageGateway.saveMotionCooldown(event.deviceId(), now);
                 yield true;
             }
             case DEVICE_UNRESPONSIVE -> true;
-            case DOOR_UNLOCKED -> true;
-            default -> false;
+            case DOOR_UNLOCKED       -> true;
+            default                  -> false;
         };
 
         if (!shouldAlert) return;
 
-        System.out.println("[EPS] Alert triggered: type=" + event.type() +
-                " device=" + event.deviceId() + " owner=" + event.ownerId());
+        log.info("[EPS] Alert triggered: type=" + event.type()
+                + " device=" + event.deviceId() + " owner=" + event.ownerId());
 
         if (notificationServiceUrl != null) {
             try {
                 httpClient.post(notificationServiceUrl + "/notify/alert",
-                        Map.of("eventId", event.eventId(),
-                                "deviceId", event.deviceId(),
-                                "ownerId", event.ownerId(),
-                                "eventType", event.type().name(),
+                        Map.of("eventId",    event.eventId(),
+                                "deviceId",   event.deviceId(),
+                                "ownerId",    event.ownerId(),
+                                "eventType",  event.type().name(),
                                 "occurredAt", event.occurredAt().toString()));
+                log.info("[EPS:" + nodeId + "] Alert forwarded to NotificationService: eventId="
+                        + event.eventId());
             } catch (Exception e) {
-                System.err.println("[EPS] Failed to forward alert: " + e.getMessage());
+                log.warning("[EPS:" + nodeId + "] Failed to forward alert: eventId="
+                        + event.eventId() + " error=" + e.getMessage());
             }
         }
     }
@@ -302,9 +328,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     // Accessors
     // =====================================================================
 
-    public long getLamportClock() { return storageGateway.findLamportClock(nodeId); }
-    public void setLamportClock(long value) { storageGateway.saveLamportClock(nodeId, value); }
-    public RaftNode getRaftNode() { return raftNode; }
+    public long getLamportClock()        { return storageGateway.findLamportClock(nodeId); }
+    public void setLamportClock(long v)  { storageGateway.saveLamportClock(nodeId, v); }
+    public RaftNode getRaftNode()        { return raftNode; }
 
     // =====================================================================
     // Helpers

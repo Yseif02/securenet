@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.logging.Logger;
 
 /**
  * HTTP server for the Device Management Service.
@@ -31,6 +32,8 @@ import java.util.concurrent.Executors;
  * bootstrap registration).
  */
 public class DeviceManagementServer {
+
+    private static final Logger log = Logger.getLogger(DeviceManagementServer.class.getName());
 
     private final String host;
     private final int port;
@@ -52,28 +55,31 @@ public class DeviceManagementServer {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
         httpServer.setExecutor(Executors.newFixedThreadPool(8));
 
-        httpServer.createContext("/dms/devices/register", this::handleRegisterDevice);
+        httpServer.createContext("/dms/devices/register",            this::handleRegisterDevice);
         httpServer.createContext("/dms/devices/accept-registration", this::handleAcceptRegistration);
-        httpServer.createContext("/dms/devices/heartbeat", this::handleHeartbeat);
-        httpServer.createContext("/dms/devices/status", this::handleUpdateStatus);
-        httpServer.createContext("/dms/devices/lock", this::handleLock);
-        httpServer.createContext("/dms/devices/unlock", this::handleUnlock);
-        httpServer.createContext("/dms/devices/stream-start", this::handleStreamStart);
-        httpServer.createContext("/dms/devices/firmware-version", this::handleFirmwareVersion);
-        httpServer.createContext("/dms/devices/push-firmware", this::handlePushFirmware);
-        httpServer.createContext("/dms/devices/deregister", this::handleDeregister);
-        httpServer.createContext("/dms/devices/list", this::handleListDevices);
-        httpServer.createContext("/dms/devices/get", this::handleGetDevice);
-        httpServer.createContext("/health", ex -> writeJson(ex, 200, Map.of("status", "UP")));
+        httpServer.createContext("/dms/devices/heartbeat",           this::handleHeartbeat);
+        httpServer.createContext("/dms/devices/status",              this::handleUpdateStatus);
+        httpServer.createContext("/dms/devices/lock",                this::handleLock);
+        httpServer.createContext("/dms/devices/unlock",              this::handleUnlock);
+        httpServer.createContext("/dms/devices/stream-start",        this::handleStreamStart);
+        httpServer.createContext("/dms/devices/firmware-version",    this::handleFirmwareVersion);
+        httpServer.createContext("/dms/devices/push-firmware",       this::handlePushFirmware);
+        httpServer.createContext("/dms/devices/deregister",          this::handleDeregister);
+        httpServer.createContext("/dms/devices/list",                this::handleListDevices);
+        httpServer.createContext("/dms/devices/get",                 this::handleGetDevice);
+        httpServer.createContext("/health", ex -> {
+            log.fine("[DMS] Health check from " + ex.getRemoteAddress());
+            writeJson(ex, 200, Map.of("status", "UP"));
+        });
 
         httpServer.start();
-        System.out.println("[DeviceManagementService] started on " + host + ":" + port);
+        log.info("[DMS] started on " + host + ":" + port);
     }
 
     public void stop() {
         if (httpServer != null) {
             httpServer.stop(0);
-            System.out.println("[DeviceManagementService] stopped");
+            System.out.println("[DMS] stopped");
         }
     }
 
@@ -86,17 +92,23 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            String ownerId = (String) body.get("ownerId");
-            DeviceType deviceType = DeviceType.valueOf((String) body.get("deviceType"));
-            String qrPayload = (String) body.get("qrPayload");
-
-            Device device = service.registerDevice(ownerId, deviceType, qrPayload);
+            String ownerId    = (String) body.get("ownerId");
+            String deviceType = (String) body.get("deviceType");
+            String qrPayload  = (String) body.get("qrPayload");
+            log.info("[DMS] POST /dms/devices/register ownerId=" + ownerId
+                    + " deviceType=" + deviceType);
+            Device device = service.registerDevice(ownerId, DeviceType.valueOf(deviceType), qrPayload);
+            log.info("[DMS] Device registered: deviceId=" + device.deviceId()
+                    + " status=" + device.status());
             writeJson(ex, 201, device);
         } catch (DeviceAlreadyRegisteredException e) {
+            log.warning("[DMS] Register 409: " + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
+            log.warning("[DMS] Register 400: " + e.getMessage());
             writeJson(ex, 400, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] Register 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -110,17 +122,21 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            String deviceId = (String) body.get("deviceId");
+            String deviceId          = (String) body.get("deviceId");
             String registrationToken = (String) body.get("registrationToken");
-
+            log.info("[DMS] POST /dms/devices/accept-registration deviceId=" + deviceId);
             BootstrapRegistrationResult result =
                     service.acceptDeviceRegistration(deviceId, registrationToken);
+            log.info("[DMS] Bootstrap accepted: deviceId=" + deviceId);
             writeJson(ex, 200, result);
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] AcceptRegistration 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
+            log.warning("[DMS] AcceptRegistration 400: " + e.getMessage());
             writeJson(ex, 400, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] AcceptRegistration 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -134,11 +150,16 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            service.recordHeartbeat((String) body.get("deviceId"));
-            writeJson(ex, 204, Map.of("status", "ok"));
+            String deviceId = (String) body.get("deviceId");
+            log.fine("[DMS] POST /dms/devices/heartbeat deviceId=" + deviceId);
+            service.recordHeartbeat(deviceId);
+            ex.sendResponseHeaders(204, -1);
+            ex.getResponseBody().close();
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] Heartbeat 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] Heartbeat 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -152,14 +173,18 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            service.updateDeviceStatus(
-                    (String) body.get("deviceId"),
-                    DeviceStatus.valueOf((String) body.get("newStatus"))
-            );
-            writeJson(ex, 204, Map.of("status", "ok"));
+            String deviceId  = (String) body.get("deviceId");
+            String newStatus = (String) body.get("newStatus");
+            log.info("[DMS] POST /dms/devices/status deviceId=" + deviceId
+                    + " newStatus=" + newStatus);
+            service.updateDeviceStatus(deviceId, DeviceStatus.valueOf(newStatus));
+            ex.sendResponseHeaders(204, -1);
+            ex.getResponseBody().close();
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] UpdateStatus 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] UpdateStatus 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -173,13 +198,19 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            boolean acked = service.sendLockCommand((String) body.get("deviceId"));
+            String deviceId = (String) body.get("deviceId");
+            log.info("[DMS] POST /dms/devices/lock deviceId=" + deviceId);
+            boolean acked = service.sendLockCommand(deviceId);
+            log.info("[DMS] Lock result: deviceId=" + deviceId + " acknowledged=" + acked);
             writeJson(ex, 200, Map.of("acknowledged", acked));
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] Lock 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (DeviceOfflineException e) {
+            log.warning("[DMS] Lock 409: device offline deviceId=" + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] Lock 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -191,13 +222,19 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            boolean acked = service.sendUnlockCommand((String) body.get("deviceId"));
+            String deviceId = (String) body.get("deviceId");
+            log.info("[DMS] POST /dms/devices/unlock deviceId=" + deviceId);
+            boolean acked = service.sendUnlockCommand(deviceId);
+            log.info("[DMS] Unlock result: deviceId=" + deviceId + " acknowledged=" + acked);
             writeJson(ex, 200, Map.of("acknowledged", acked));
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] Unlock 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (DeviceOfflineException e) {
+            log.warning("[DMS] Unlock 409: device offline deviceId=" + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] Unlock 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -211,16 +248,21 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            service.sendStreamStartCommand(
-                    (String) body.get("deviceId"),
-                    (String) body.get("streamTargetUrl")
-            );
+            String deviceId       = (String) body.get("deviceId");
+            String streamTargetUrl = (String) body.get("streamTargetUrl");
+            log.info("[DMS] POST /dms/devices/stream-start deviceId=" + deviceId
+                    + " targetUrl=" + streamTargetUrl);
+            service.sendStreamStartCommand(deviceId, streamTargetUrl);
+            log.info("[DMS] Stream start dispatched: deviceId=" + deviceId);
             writeJson(ex, 202, Map.of("status", "ok"));
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] StreamStart 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (DeviceOfflineException e) {
+            log.warning("[DMS] StreamStart 409: device offline " + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] StreamStart 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -238,18 +280,20 @@ public class DeviceManagementServer {
             if (query != null) {
                 for (String param : query.split("&")) {
                     String[] kv = param.split("=", 2);
-                    if ("deviceType".equals(kv[0]) && kv.length == 2) {
-                        deviceType = kv[1];
-                    }
+                    if ("deviceType".equals(kv[0]) && kv.length == 2) deviceType = kv[1];
                 }
             }
+            log.info("[DMS] GET /dms/devices/firmware-version deviceType=" + deviceType);
             String version = service.getLatestFirmwareVersion(DeviceType.valueOf(deviceType));
             if (version != null) {
+                log.info("[DMS] Firmware version: deviceType=" + deviceType + " version=" + version);
                 writeJson(ex, 200, Map.of("version", version));
             } else {
+                log.warning("[DMS] Firmware version: not found for deviceType=" + deviceType);
                 writeJson(ex, 404, Map.of("error", "No firmware found"));
             }
         } catch (Exception e) {
+            log.severe("[DMS] FirmwareVersion 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -261,18 +305,24 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            service.pushFirmwareUpdate(
-                    (String) body.get("deviceId"),
-                    (String) body.get("firmwareVersion")
-            );
+            String deviceId        = (String) body.get("deviceId");
+            String firmwareVersion = (String) body.get("firmwareVersion");
+            log.info("[DMS] POST /dms/devices/push-firmware deviceId=" + deviceId
+                    + " version=" + firmwareVersion);
+            service.pushFirmwareUpdate(deviceId, firmwareVersion);
+            log.info("[DMS] Firmware pushed: deviceId=" + deviceId + " version=" + firmwareVersion);
             writeJson(ex, 202, Map.of("status", "ok"));
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] PushFirmware 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (DeviceOfflineException e) {
+            log.warning("[DMS] PushFirmware 409: " + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
+            log.warning("[DMS] PushFirmware 400: " + e.getMessage());
             writeJson(ex, 400, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] PushFirmware 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -286,16 +336,22 @@ public class DeviceManagementServer {
         }
         try {
             Map body = readBody(ex, Map.class);
-            service.deregisterDevice(
-                    (String) body.get("deviceId"),
-                    (String) body.get("ownerId")
-            );
-            writeJson(ex, 204, Map.of("status", "ok"));
+            String deviceId = (String) body.get("deviceId");
+            String ownerId  = (String) body.get("ownerId");
+            log.info("[DMS] POST /dms/devices/deregister deviceId=" + deviceId
+                    + " ownerId=" + ownerId);
+            service.deregisterDevice(deviceId, ownerId);
+            log.info("[DMS] Device deregistered: deviceId=" + deviceId);
+            ex.sendResponseHeaders(204, -1);
+            ex.getResponseBody().close();
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] Deregister 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
+            log.warning("[DMS] Deregister 400: " + e.getMessage());
             writeJson(ex, 400, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] Deregister 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -304,24 +360,32 @@ public class DeviceManagementServer {
 
     private void handleGetDevice(HttpExchange ex) throws IOException {
         try {
-            String query = ex.getRequestURI().getQuery();
+            String query    = ex.getRequestURI().getQuery();
             String deviceId = extractParam(query, "deviceId");
+            log.info("[DMS] GET /dms/devices/get deviceId=" + deviceId);
             Device device = service.getDevice(deviceId);
+            log.info("[DMS] getDevice: deviceId=" + deviceId + " status=" + device.status());
             writeJson(ex, 200, device);
         } catch (DeviceNotFoundException e) {
+            log.warning("[DMS] GetDevice 404: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[DMS] GetDevice 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
 
     private void handleListDevices(HttpExchange ex) throws IOException {
         try {
-            String query = ex.getRequestURI().getQuery();
+            String query   = ex.getRequestURI().getQuery();
             String ownerId = extractParam(query, "ownerId");
+            log.info("[DMS] GET /dms/devices/list ownerId=" + ownerId);
             List<Device> devices = service.listDevicesForOwner(ownerId);
+            log.info("[DMS] listDevices: found " + devices.size()
+                    + " devices for ownerId=" + ownerId);
             writeJson(ex, 200, devices);
         } catch (Exception e) {
+            log.severe("[DMS] ListDevices 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }

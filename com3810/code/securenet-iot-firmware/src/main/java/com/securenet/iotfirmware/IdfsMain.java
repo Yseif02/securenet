@@ -3,7 +3,12 @@ package com.securenet.iotfirmware;
 import com.securenet.iotfirmware.mqtt.EmbeddedMqttBroker;
 import com.securenet.iotfirmware.server.IdfsServer;
 
+import java.util.logging.Logger;
+
 public class IdfsMain {
+
+    private static final Logger log = Logger.getLogger(IdfsMain.class.getName());
+
     public static void main(String[] args) throws Exception {
         int httpPort = 8080;
         int mqttPort = 1883;
@@ -15,20 +20,30 @@ public class IdfsMain {
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--http-port" -> httpPort = Integer.parseInt(args[++i]);
-                case "--mqtt-port" -> mqttPort = Integer.parseInt(args[++i]);
-                case "--host" -> host = args[++i];
-                case "--dms-url" -> dmsUrl = args[++i];
-                case "--eps-url" -> epsUrl = args[++i];
+                case "--http-port"       -> httpPort      = Integer.parseInt(args[++i]);
+                case "--mqtt-port"       -> mqttPort      = Integer.parseInt(args[++i]);
+                case "--host"            -> host          = args[++i];
+                case "--dms-url"         -> dmsUrl        = args[++i];
+                case "--eps-url"         -> epsUrl        = args[++i];
                 case "--mqtt-broker-url" -> mqttBrokerUrl = args[++i];
-                case "--no-broker" -> startBroker = false;
+                case "--no-broker"       -> startBroker   = false;
             }
         }
+
+        log.info("=== SecureNet IDFS + MQTT Broker ===");
+        log.info("  Host:            " + host);
+        log.info("  HTTP port:       " + httpPort);
+        log.info("  MQTT port:       " + mqttPort);
+        log.info("  DMS URL:         " + dmsUrl);
+        log.info("  EPS URL:         " + epsUrl);
+        log.info("  MQTT broker URL: " + mqttBrokerUrl);
+        log.info("  Start broker:    " + startBroker);
 
         EmbeddedMqttBroker broker = null;
         if (startBroker) {
             broker = new EmbeddedMqttBroker(host, mqttPort);
             broker.start();
+            log.info("[IDFS] Embedded MQTT broker started on port " + mqttPort);
             Thread.sleep(500);
         }
 
@@ -37,9 +52,13 @@ public class IdfsMain {
 
         final EmbeddedMqttBroker brokerRef = broker;
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[IDFS] Shutdown signal received");
             idfs.stop();
             if (brokerRef != null) brokerRef.stop();
         }));
+
+        log.info("[IDFS] Ready — HTTP on " + host + ":" + httpPort
+                + ", MQTT on " + mqttBrokerUrl);
         Thread.currentThread().join();
     }
 }

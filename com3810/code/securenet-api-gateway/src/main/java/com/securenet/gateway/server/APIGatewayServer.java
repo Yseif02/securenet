@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.logging.Logger;
 
 /**
  * HTTP server for the API Gateway.
@@ -27,6 +28,8 @@ import java.util.concurrent.Executors;
  * <br>Example: {@code POST /api/device-management/devices/lock}
  */
 public class APIGatewayServer {
+
+    private static final Logger log = Logger.getLogger(APIGatewayServer.class.getName());
 
     private final String host;
     private final int port;
@@ -44,16 +47,19 @@ public class APIGatewayServer {
         httpServer.setExecutor(Executors.newFixedThreadPool(16));
 
         httpServer.createContext("/api/", this::handleApiRequest);
-        httpServer.createContext("/health", ex -> writeJson(ex, 200, Map.of("status", "UP")));
+        httpServer.createContext("/health", ex -> {
+            log.fine("[APIGateway] Health check from " + ex.getRemoteAddress());
+            writeJson(ex, 200, Map.of("status", "UP"));
+        });
 
         httpServer.start();
-        System.out.println("[APIGateway] started on " + host + ":" + port);
+        log.info("[APIGateway] started on " + host + ":" + port);
     }
 
     public void stop() {
         if (httpServer != null) {
             httpServer.stop(0);
-            System.out.println("[APIGateway] stopped");
+            log.info("[APIGateway] stopped");
         }
     }
 
@@ -70,10 +76,17 @@ public class APIGatewayServer {
      * </ol>
      */
     private void handleApiRequest(HttpExchange ex) throws IOException {
+        String method = ex.getRequestMethod();
+        String path = ex.getRequestURI().getPath();
+        String clientAddr = ex.getRemoteAddress().toString();
+        log.info("[APIGateway] Inbound: " + method + " " + path + " from " + clientAddr);
+
         try {
             // 1. Extract bearer token
             String authHeader = ex.getRequestHeaders().getFirst("Authorization");
             if (authHeader == null || !authHeader.toLowerCase().startsWith("bearer ")) {
+                log.warning("[APIGateway] REJECTED " + method + " " + path
+                        + ": missing Authorization header");
                 writeJson(ex, 401, Map.of("error", "Missing Authorization header"));
                 return;
             }
@@ -84,15 +97,17 @@ public class APIGatewayServer {
             try {
                 token = gateway.authenticateRequest(bearerToken);
             } catch (AuthenticationException e) {
+                log.warning("[APIGateway] REJECTED " + method + " " + path
+                        + ": auth failed — " + e.getMessage());
                 writeJson(ex, 401, Map.of("error", e.getMessage()));
                 return;
             }
 
             // 3. Parse path: /api/{serviceName}/{endpoint...}
-            String path = ex.getRequestURI().getPath();
             String afterApi = path.substring("/api/".length());
             int slashIdx = afterApi.indexOf('/');
             if (slashIdx < 0) {
+                log.warning("[APIGateway] REJECTED " + method + " " + path + ": malformed path");
                 writeJson(ex, 400, Map.of("error", "Expected /api/{service}/{endpoint}"));
                 return;
             }
@@ -105,19 +120,31 @@ public class APIGatewayServer {
 
             // 4. Read body for POST/PUT
             String payload = null;
-            if ("POST".equals(ex.getRequestMethod()) || "PUT".equals(ex.getRequestMethod())) {
+            if ("POST".equals(method) || "PUT".equals(method)) {
                 try (InputStream is = ex.getRequestBody()) {
                     payload = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                 }
+                log.info("[APIGateway] Payload: userId=" + token.userId()
+                        + " -> " + serviceName + endpoint
+                        + " payloadLen=" + (payload == null ? 0 : payload.length()));
             }
 
             // 5. Route
+            log.info("[APIGateway] Dispatching: userId=" + token.userId()
+                    + " " + method + " -> " + serviceName + endpoint);
             String responseBody = gateway.routeRequest(token, serviceName, endpoint, payload);
+            log.info("[APIGateway] Completed: userId=" + token.userId()
+                    + " " + method + " " + serviceName + endpoint
+                    + " responseLen=" + responseBody.length());
             writeRaw(ex, 200, responseBody);
 
         } catch (APIGatewayService.ServiceUnavailableException e) {
+            log.warning("[APIGateway] 503: service unavailable — " + e.getMessage()
+                    + " for " + method + " " + path);
             writeJson(ex, 503, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[APIGateway] 500: unexpected error for " + method + " " + path
+                    + " — " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }

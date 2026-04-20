@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.Executors;
+import java.util.logging.Logger;
 
 /**
  * HTTP server that exposes the {@link StorageService} API over REST/JSON.
@@ -24,25 +25,16 @@ import java.util.concurrent.Executors;
  * <p>Every other SecureNet service (UMS, DMS, EPS, etc.) accesses persistent
  * data through this server via the {@link com.securenet.storage.StorageGateway}
  * HTTP client.
- *
- * <p>This server is the single persistence endpoint in the SecureNet
- * architecture. In a production deployment it would front a PostgreSQL
- * cluster with replication; here it wraps the in-memory implementation.
- *
- * @see com.securenet.storage.StorageGateway
  */
 public class StorageServiceServer {
+
+    private static final Logger log = Logger.getLogger(StorageServiceServer.class.getName());
 
     private final String host;
     private final int port;
     private final StorageService storageService;
     private HttpServer httpServer;
 
-    /**
-     * @param host           bind address (e.g. "0.0.0.0" or "localhost")
-     * @param port           port to listen on
-     * @param storageService the backing storage implementation
-     */
     public StorageServiceServer(String host, int port, StorageService storageService) {
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
@@ -53,46 +45,35 @@ public class StorageServiceServer {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
         httpServer.setExecutor(Executors.newFixedThreadPool(8));
 
-        // ----- User endpoints -----
-        httpServer.createContext("/storage/users", this::handleUsers);
-        httpServer.createContext("/storage/passwords", this::handlePasswords);
-        httpServer.createContext("/storage/auth-tokens", this::handleAuthTokens);
-
-        // ----- Device endpoints -----
-        httpServer.createContext("/storage/devices", this::handleDevices);
-
-        // ----- Event endpoints -----
-        httpServer.createContext("/storage/events", this::handleEvents);
-
-        // ----- Video endpoints -----
-        httpServer.createContext("/storage/video-clips", this::handleVideoClips);
-        httpServer.createContext("/storage/video-bytes", this::handleVideoBytes);
-
-        // ----- Firmware endpoints -----
-        httpServer.createContext("/storage/firmware", this::handleFirmware);
-
-        // ----- Push token endpoints -----
-        httpServer.createContext("/storage/push-tokens", this::handlePushTokens);
-
-        // ----- Health check -----
-        httpServer.createContext("/health", ex -> writeJson(ex, 200, Map.of("status", "UP")));
-
-        httpServer.createContext("/storage/registration-tokens", this::handleRegistrationTokens);
-        httpServer.createContext("/storage/device-heartbeats", this::handleDeviceHeartbeats);
-        httpServer.createContext("/storage/eps-dedup", this::handleEpsDedup);
-        httpServer.createContext("/storage/eps-motion-cooldown", this::handleEpsMotionCooldown);
-        httpServer.createContext("/storage/eps-lamport-clock", this::handleEpsLamportClock);
-        httpServer.createContext("/storage/recording-sessions", this::handleRecordingSessions);
-        httpServer.createContext("/storage/notification-outbox", this::handleNotificationOutbox);
+        httpServer.createContext("/storage/users",                this::handleUsers);
+        httpServer.createContext("/storage/passwords",            this::handlePasswords);
+        httpServer.createContext("/storage/auth-tokens",          this::handleAuthTokens);
+        httpServer.createContext("/storage/devices",              this::handleDevices);
+        httpServer.createContext("/storage/events",               this::handleEvents);
+        httpServer.createContext("/storage/video-clips",          this::handleVideoClips);
+        httpServer.createContext("/storage/video-bytes",          this::handleVideoBytes);
+        httpServer.createContext("/storage/firmware",             this::handleFirmware);
+        httpServer.createContext("/storage/push-tokens",          this::handlePushTokens);
+        httpServer.createContext("/storage/registration-tokens",  this::handleRegistrationTokens);
+        httpServer.createContext("/storage/device-heartbeats",    this::handleDeviceHeartbeats);
+        httpServer.createContext("/storage/eps-dedup",            this::handleEpsDedup);
+        httpServer.createContext("/storage/eps-motion-cooldown",  this::handleEpsMotionCooldown);
+        httpServer.createContext("/storage/eps-lamport-clock",    this::handleEpsLamportClock);
+        httpServer.createContext("/storage/recording-sessions",   this::handleRecordingSessions);
+        httpServer.createContext("/storage/notification-outbox",  this::handleNotificationOutbox);
+        httpServer.createContext("/health", ex -> {
+            log.fine("[Storage] Health check from " + ex.getRemoteAddress());
+            writeJson(ex, 200, Map.of("status", "UP"));
+        });
 
         httpServer.start();
-        System.out.println("[StorageService] started on " + host + ":" + port);
+        log.info("[Storage] started on " + host + ":" + port);
     }
 
     public void stop() {
         if (httpServer != null) {
             httpServer.stop(0);
-            System.out.println("[StorageService] stopped");
+            System.out.println("[Storage] stopped");
         }
     }
 
@@ -105,12 +86,10 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/users                    -> segments: ["", "storage", "users"]
-            // /storage/users/{id}               -> segments: ["", "storage", "users", "{id}"]
-            // /storage/users/email/{email}       -> segments: ["", "storage", "users", "email", "{email}"]
 
             if ("POST".equals(method) && segments.length == 3) {
                 User user = readBody(ex, User.class);
+                log.info("[Storage] saveUser: userId=" + user.userId() + " email=" + user.email());
                 storageService.saveUser(user);
                 writeJson(ex, 201, user);
                 return;
@@ -118,6 +97,7 @@ public class StorageServiceServer {
 
             if ("PUT".equals(method) && segments.length == 3) {
                 User user = readBody(ex, User.class);
+                log.info("[Storage] updateUser: userId=" + user.userId());
                 storageService.updateUser(user);
                 writeJson(ex, 200, user);
                 return;
@@ -126,20 +106,24 @@ public class StorageServiceServer {
             if ("GET".equals(method)) {
                 if (segments.length == 5 && "email".equals(segments[3])) {
                     String email = URLDecoder.decode(segments[4], StandardCharsets.UTF_8);
+                    log.info("[Storage] findUserByEmail: email=" + email);
                     Optional<User> user = storageService.findUserByEmail(email);
                     if (user.isPresent()) {
                         writeJson(ex, 200, user.get());
                     } else {
+                        log.fine("[Storage] findUserByEmail: not found email=" + email);
                         writeJson(ex, 404, Map.of("error", "User not found"));
                     }
                     return;
                 }
                 if (segments.length == 4) {
                     String userId = segments[3];
+                    log.info("[Storage] findUserById: userId=" + userId);
                     Optional<User> user = storageService.findUserById(userId);
                     if (user.isPresent()) {
                         writeJson(ex, 200, user.get());
                     } else {
+                        log.fine("[Storage] findUserById: not found userId=" + userId);
                         writeJson(ex, 404, Map.of("error", "User not found"));
                     }
                     return;
@@ -148,8 +132,10 @@ public class StorageServiceServer {
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (IllegalArgumentException e) {
+            log.warning("[Storage] saveUser conflict: " + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[Storage] handleUsers 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -163,7 +149,6 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/passwords/{userId}  -> segments: ["", "storage", "passwords", "{userId}"]
 
             if (segments.length < 4) {
                 writeJson(ex, 400, Map.of("error", "userId required"));
@@ -174,17 +159,19 @@ public class StorageServiceServer {
 
             if ("POST".equals(method)) {
                 Map body = readBody(ex, Map.class);
-                String hash = (String) body.get("hash");
-                storageService.savePasswordHash(userId, hash);
+                log.info("[Storage] savePasswordHash: userId=" + userId);
+                storageService.savePasswordHash(userId, (String) body.get("hash"));
                 writeJson(ex, 201, Map.of("status", "ok"));
                 return;
             }
 
             if ("GET".equals(method)) {
+                log.info("[Storage] findPasswordHash: userId=" + userId);
                 Optional<String> hash = storageService.findPasswordHashByUserId(userId);
                 if (hash.isPresent()) {
                     writeJson(ex, 200, Map.of("hash", hash.get()));
                 } else {
+                    log.fine("[Storage] findPasswordHash: not found userId=" + userId);
                     writeJson(ex, 404, Map.of("error", "Password not found"));
                 }
                 return;
@@ -192,6 +179,7 @@ public class StorageServiceServer {
 
             writeJson(ex, 405, Map.of("error", "Method not allowed"));
         } catch (Exception e) {
+            log.severe("[Storage] handlePasswords 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -205,13 +193,11 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/auth-tokens                       POST save
-            // /storage/auth-tokens/{value}               GET  find
-            // /storage/auth-tokens/{value}/revoke        POST revoke
-            // /storage/auth-tokens/{value}/revoked       GET  isRevoked
 
             if ("POST".equals(method) && segments.length == 3) {
                 AuthToken token = readBody(ex, AuthToken.class);
+                log.info("[Storage] saveAuthToken: tokenId=" + token.tokenValue()
+                        + " userId=" + token.userId());
                 storageService.saveAuthToken(token);
                 writeJson(ex, 201, token);
                 return;
@@ -221,16 +207,19 @@ public class StorageServiceServer {
                 String tokenValue = URLDecoder.decode(segments[3], StandardCharsets.UTF_8);
 
                 if ("GET".equals(method) && segments.length == 4) {
+                    log.info("[Storage] findAuthToken: tokenId=" + tokenValue);
                     Optional<AuthToken> token = storageService.findAuthToken(tokenValue);
                     if (token.isPresent()) {
                         writeJson(ex, 200, token.get());
                     } else {
+                        log.fine("[Storage] findAuthToken: not found tokenId=" + tokenValue);
                         writeJson(ex, 404, Map.of("error", "Token not found"));
                     }
                     return;
                 }
 
                 if ("POST".equals(method) && segments.length == 5 && "revoke".equals(segments[4])) {
+                    log.info("[Storage] revokeAuthToken: tokenId=" + tokenValue);
                     storageService.revokeAuthToken(tokenValue);
                     writeJson(ex, 200, Map.of("status", "ok"));
                     return;
@@ -238,6 +227,7 @@ public class StorageServiceServer {
 
                 if ("GET".equals(method) && segments.length == 5 && "revoked".equals(segments[4])) {
                     boolean revoked = storageService.isTokenRevoked(tokenValue);
+                    log.info("[Storage] isTokenRevoked: tokenId=" + tokenValue + " revoked=" + revoked);
                     writeJson(ex, 200, Map.of("revoked", revoked));
                     return;
                 }
@@ -245,6 +235,7 @@ public class StorageServiceServer {
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (Exception e) {
+            log.severe("[Storage] handleAuthTokens 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -258,14 +249,12 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/devices                       POST save
-            // /storage/devices                       PUT  update
-            // /storage/devices/{id}                  GET  findById
-            // /storage/devices/{id}                  DELETE delete
-            // /storage/devices/owner/{ownerId}       GET  findByOwner
 
             if ("POST".equals(method) && segments.length == 3) {
                 Device device = readBody(ex, Device.class);
+                log.info("[Storage] saveDevice: deviceId=" + device.deviceId()
+                        + " type=" + device.type() + " owner=" + device.ownerId()
+                        + " status=" + device.status());
                 storageService.saveDevice(device);
                 writeJson(ex, 201, device);
                 return;
@@ -273,6 +262,8 @@ public class StorageServiceServer {
 
             if ("PUT".equals(method) && segments.length == 3) {
                 Device device = readBody(ex, Device.class);
+                log.info("[Storage] updateDevice: deviceId=" + device.deviceId()
+                        + " status=" + device.status());
                 storageService.updateDevice(device);
                 writeJson(ex, 200, device);
                 return;
@@ -281,16 +272,21 @@ public class StorageServiceServer {
             if ("GET".equals(method)) {
                 if (segments.length == 5 && "owner".equals(segments[3])) {
                     String ownerId = segments[4];
+                    log.info("[Storage] findDevicesByOwner: ownerId=" + ownerId);
                     List<Device> devices = storageService.findDevicesByOwner(ownerId);
+                    log.info("[Storage] findDevicesByOwner: found " + devices.size()
+                            + " devices for ownerId=" + ownerId);
                     writeJson(ex, 200, devices);
                     return;
                 }
                 if (segments.length == 4) {
                     String deviceId = segments[3];
+                    log.info("[Storage] findDeviceById: deviceId=" + deviceId);
                     Optional<Device> device = storageService.findDeviceById(deviceId);
                     if (device.isPresent()) {
                         writeJson(ex, 200, device.get());
                     } else {
+                        log.fine("[Storage] findDeviceById: not found deviceId=" + deviceId);
                         writeJson(ex, 404, Map.of("error", "Device not found"));
                     }
                     return;
@@ -299,6 +295,7 @@ public class StorageServiceServer {
 
             if ("DELETE".equals(method) && segments.length == 4) {
                 String deviceId = segments[3];
+                log.info("[Storage] deleteDevice: deviceId=" + deviceId);
                 storageService.deleteDevice(deviceId);
                 writeJson(ex, 204, Map.of("status", "ok"));
                 return;
@@ -306,10 +303,13 @@ public class StorageServiceServer {
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (DeviceNotFoundException e) {
+            log.warning("[Storage] device not found: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
+            log.warning("[Storage] saveDevice conflict: " + e.getMessage());
             writeJson(ex, 409, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[Storage] handleDevices 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -324,13 +324,11 @@ public class StorageServiceServer {
             String path = ex.getRequestURI().getPath();
             String query = ex.getRequestURI().getQuery();
             String[] segments = path.split("/");
-            // /storage/events                               POST save
-            // /storage/events/{id}                          GET  findById
-            // /storage/events/device/{deviceId}?from=&to=&max=  GET findByDevice
-            // /storage/events/owner/{ownerId}/type/{type}?...   GET findByOwnerAndType
 
             if ("POST".equals(method) && segments.length == 3) {
                 SecurityEvent event = readBody(ex, SecurityEvent.class);
+                log.info("[Storage] saveEvent: eventId=" + event.eventId()
+                        + " type=" + event.type() + " device=" + event.deviceId());
                 storageService.saveEvent(event);
                 writeJson(ex, 201, event);
                 return;
@@ -342,29 +340,40 @@ public class StorageServiceServer {
                 if (segments.length == 5 && "device".equals(segments[3])) {
                     String deviceId = segments[4];
                     Instant from = Instant.parse(params.getOrDefault("from", "1970-01-01T00:00:00Z"));
-                    Instant to = Instant.parse(params.getOrDefault("to", "2099-12-31T23:59:59Z"));
-                    int max = Integer.parseInt(params.getOrDefault("max", "500"));
+                    Instant to   = Instant.parse(params.getOrDefault("to",   "2099-12-31T23:59:59Z"));
+                    int max      = Integer.parseInt(params.getOrDefault("max", "500"));
+                    log.info("[Storage] findEventsByDevice: deviceId=" + deviceId
+                            + " from=" + from + " to=" + to + " max=" + max);
                     List<SecurityEvent> events = storageService.findEventsByDevice(deviceId, from, to, max);
+                    log.info("[Storage] findEventsByDevice: returned " + events.size()
+                            + " events for deviceId=" + deviceId);
                     writeJson(ex, 200, events);
                     return;
                 }
 
                 if (segments.length == 7 && "owner".equals(segments[3]) && "type".equals(segments[5])) {
-                    String ownerId = segments[4];
+                    String ownerId   = segments[4];
                     String eventType = segments[6];
                     Instant from = Instant.parse(params.getOrDefault("from", "1970-01-01T00:00:00Z"));
-                    Instant to = Instant.parse(params.getOrDefault("to", "2099-12-31T23:59:59Z"));
-                    int max = Integer.parseInt(params.getOrDefault("max", "500"));
-                    List<SecurityEvent> events = storageService.findEventsByOwnerAndType(ownerId, eventType, from, to, max);
+                    Instant to   = Instant.parse(params.getOrDefault("to",   "2099-12-31T23:59:59Z"));
+                    int max      = Integer.parseInt(params.getOrDefault("max", "500"));
+                    log.info("[Storage] findEventsByOwnerAndType: ownerId=" + ownerId
+                            + " type=" + eventType + " max=" + max);
+                    List<SecurityEvent> events = storageService.findEventsByOwnerAndType(
+                            ownerId, eventType, from, to, max);
+                    log.info("[Storage] findEventsByOwnerAndType: returned " + events.size() + " events");
                     writeJson(ex, 200, events);
                     return;
                 }
 
                 if (segments.length == 4) {
-                    Optional<SecurityEvent> event = storageService.findEventById(segments[3]);
+                    String eventId = segments[3];
+                    log.info("[Storage] findEventById: eventId=" + eventId);
+                    Optional<SecurityEvent> event = storageService.findEventById(eventId);
                     if (event.isPresent()) {
                         writeJson(ex, 200, event.get());
                     } else {
+                        log.fine("[Storage] findEventById: not found eventId=" + eventId);
                         writeJson(ex, 404, Map.of("error", "Event not found"));
                     }
                     return;
@@ -373,6 +382,7 @@ public class StorageServiceServer {
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (Exception e) {
+            log.severe("[Storage] handleEvents 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -389,11 +399,12 @@ public class StorageServiceServer {
             String[] segments = path.split("/");
 
             if ("POST".equals(method) && segments.length == 3) {
-                // For video clips, body is JSON with clip metadata + base64 bytes
                 Map body = readBody(ex, Map.class);
                 VideoClip clip = JsonUtil.fromJson(JsonUtil.toJson(body.get("clip")), VideoClip.class);
                 String b64 = (String) body.get("bytes");
                 byte[] rawBytes = Base64.getDecoder().decode(b64);
+                log.info("[Storage] saveVideoClip: clipId=" + clip.clipId()
+                        + " deviceId=" + clip.deviceId() + " bytes=" + rawBytes.length);
                 storageService.saveVideoClip(clip, rawBytes);
                 writeJson(ex, 201, clip);
                 return;
@@ -405,17 +416,24 @@ public class StorageServiceServer {
                 if (segments.length == 5 && "device".equals(segments[3])) {
                     String deviceId = segments[4];
                     Instant from = Instant.parse(params.getOrDefault("from", "1970-01-01T00:00:00Z"));
-                    Instant to = Instant.parse(params.getOrDefault("to", "2099-12-31T23:59:59Z"));
+                    Instant to   = Instant.parse(params.getOrDefault("to",   "2099-12-31T23:59:59Z"));
+                    log.info("[Storage] findClipsByDevice: deviceId=" + deviceId
+                            + " from=" + from + " to=" + to);
                     List<VideoClip> clips = storageService.findClipsByDevice(deviceId, from, to);
+                    log.info("[Storage] findClipsByDevice: returned " + clips.size()
+                            + " clips for deviceId=" + deviceId);
                     writeJson(ex, 200, clips);
                     return;
                 }
 
                 if (segments.length == 4) {
-                    Optional<VideoClip> clip = storageService.findClipById(segments[3]);
+                    String clipId = segments[3];
+                    log.info("[Storage] findClipById: clipId=" + clipId);
+                    Optional<VideoClip> clip = storageService.findClipById(clipId);
                     if (clip.isPresent()) {
                         writeJson(ex, 200, clip.get());
                     } else {
+                        log.fine("[Storage] findClipById: not found clipId=" + clipId);
                         writeJson(ex, 404, Map.of("error", "Clip not found"));
                     }
                     return;
@@ -424,6 +442,7 @@ public class StorageServiceServer {
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (Exception e) {
+            log.severe("[Storage] handleVideoClips 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -433,15 +452,20 @@ public class StorageServiceServer {
             String[] segments = ex.getRequestURI().getPath().split("/");
             if ("GET".equals(ex.getRequestMethod()) && segments.length == 4) {
                 String storageKey = URLDecoder.decode(segments[3], StandardCharsets.UTF_8);
+                log.info("[Storage] loadVideoBytes: storageKey=" + storageKey);
                 byte[] data = storageService.loadVideoBytes(storageKey);
+                log.info("[Storage] loadVideoBytes: returned " + data.length
+                        + " bytes for key=" + storageKey);
                 String b64 = Base64.getEncoder().encodeToString(data);
                 writeJson(ex, 200, Map.of("bytes", b64));
                 return;
             }
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (VideoNotFoundException e) {
+            log.warning("[Storage] loadVideoBytes not found: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[Storage] handleVideoBytes 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -455,9 +479,6 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/firmware/{type}/latest           GET  getLatestVersion
-            // /storage/firmware/{type}/{version}        GET  loadBinary
-            // /storage/firmware/{type}/{version}        POST saveBinary
 
             if (segments.length < 5) {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
@@ -467,10 +488,14 @@ public class StorageServiceServer {
             String deviceTypeKey = segments[3];
 
             if ("latest".equals(segments[4]) && "GET".equals(method)) {
+                log.info("[Storage] getLatestFirmwareVersion: deviceType=" + deviceTypeKey);
                 String version = storageService.getLatestFirmwareVersion(deviceTypeKey);
                 if (version != null) {
+                    log.info("[Storage] latestFirmware: deviceType=" + deviceTypeKey
+                            + " version=" + version);
                     writeJson(ex, 200, Map.of("version", version));
                 } else {
+                    log.warning("[Storage] latestFirmware: no firmware for type=" + deviceTypeKey);
                     writeJson(ex, 404, Map.of("error", "No firmware for type: " + deviceTypeKey));
                 }
                 return;
@@ -479,16 +504,20 @@ public class StorageServiceServer {
             String firmwareVersion = segments[4];
 
             if ("GET".equals(method)) {
+                log.info("[Storage] loadFirmwareBinary: deviceType=" + deviceTypeKey
+                        + " version=" + firmwareVersion);
                 byte[] binary = storageService.loadFirmwareBinary(deviceTypeKey, firmwareVersion);
-                String b64 = Base64.getEncoder().encodeToString(binary);
-                writeJson(ex, 200, Map.of("bytes", b64));
+                log.info("[Storage] loadFirmwareBinary: returned " + binary.length
+                        + " bytes for " + deviceTypeKey + "/" + firmwareVersion);
+                writeJson(ex, 200, Map.of("bytes", Base64.getEncoder().encodeToString(binary)));
                 return;
             }
 
             if ("POST".equals(method)) {
                 Map body = readBody(ex, Map.class);
-                String b64 = (String) body.get("bytes");
-                byte[] binary = Base64.getDecoder().decode(b64);
+                byte[] binary = Base64.getDecoder().decode((String) body.get("bytes"));
+                log.info("[Storage] saveFirmwareBinary: deviceType=" + deviceTypeKey
+                        + " version=" + firmwareVersion + " bytes=" + binary.length);
                 storageService.saveFirmwareBinary(deviceTypeKey, firmwareVersion, binary);
                 writeJson(ex, 201, Map.of("status", "ok"));
                 return;
@@ -496,8 +525,10 @@ public class StorageServiceServer {
 
             writeJson(ex, 405, Map.of("error", "Method not allowed"));
         } catch (IllegalArgumentException e) {
+            log.warning("[Storage] firmware not found: " + e.getMessage());
             writeJson(ex, 404, Map.of("error", e.getMessage()));
         } catch (Exception e) {
+            log.severe("[Storage] handleFirmware 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -511,197 +542,316 @@ public class StorageServiceServer {
             String method = ex.getRequestMethod();
             String path = ex.getRequestURI().getPath();
             String[] segments = path.split("/");
-            // /storage/push-tokens                          POST save
-            // /storage/push-tokens/{token}                  DELETE remove
-            // /storage/push-tokens/user/{userId}            GET  findByUser
 
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.savePushToken(
-                        (String) body.get("userId"),
-                        (String) body.get("token"),
-                        (String) body.get("platform")
-                );
+                String userId   = (String) body.get("userId");
+                String platform = (String) body.get("platform");
+                log.info("[Storage] savePushToken: userId=" + userId + " platform=" + platform);
+                storageService.savePushToken(userId, (String) body.get("token"), platform);
                 writeJson(ex, 201, Map.of("status", "ok"));
                 return;
             }
 
             if ("DELETE".equals(method) && segments.length == 4) {
                 String token = URLDecoder.decode(segments[3], StandardCharsets.UTF_8);
+                log.info("[Storage] deletePushToken: token=" + token);
                 storageService.deletePushToken(token);
                 writeJson(ex, 200, Map.of("status", "ok"));
                 return;
             }
 
             if ("GET".equals(method) && segments.length == 5 && "user".equals(segments[3])) {
-                List<String> tokens = storageService.findPushTokensByUser(segments[4]);
+                String userId = segments[4];
+                log.info("[Storage] findPushTokensByUser: userId=" + userId);
+                List<String> tokens = storageService.findPushTokensByUser(userId);
+                log.info("[Storage] findPushTokensByUser: found " + tokens.size()
+                        + " tokens for userId=" + userId);
                 writeJson(ex, 200, tokens);
                 return;
             }
 
             writeJson(ex, 400, Map.of("error", "Bad request"));
         } catch (Exception e) {
+            log.severe("[Storage] handlePushTokens 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
 
+    // =====================================================================
+    // Registration token handlers
+    // =====================================================================
 
     private void handleRegistrationTokens(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveRegistrationToken(
-                        (String) body.get("deviceId"), (String) body.get("registrationToken"));
+                String deviceId = (String) body.get("deviceId");
+                log.info("[Storage] saveRegistrationToken: deviceId=" + deviceId);
+                storageService.saveRegistrationToken(deviceId, (String) body.get("registrationToken"));
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 4) {
-                Optional<String> token = storageService.findRegistrationToken(segments[3]);
-                if (token.isPresent()) writeJson(ex, 200, Map.of("registrationToken", token.get()));
-                else writeJson(ex, 404, Map.of("error", "No registration token found"));
+                String deviceId = segments[3];
+                log.info("[Storage] findRegistrationToken: deviceId=" + deviceId);
+                Optional<String> token = storageService.findRegistrationToken(deviceId);
+                if (token.isPresent()) {
+                    writeJson(ex, 200, Map.of("registrationToken", token.get()));
+                } else {
+                    log.fine("[Storage] findRegistrationToken: not found deviceId=" + deviceId);
+                    writeJson(ex, 404, Map.of("error", "No registration token found"));
+                }
             } else if ("DELETE".equals(method) && segments.length == 4) {
-                storageService.deleteRegistrationToken(segments[3]);
+                String deviceId = segments[3];
+                log.info("[Storage] deleteRegistrationToken: deviceId=" + deviceId);
+                storageService.deleteRegistrationToken(deviceId);
                 writeJson(ex, 200, Map.of("status", "ok"));
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleRegistrationTokens 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // Device heartbeat handlers
+    // =====================================================================
 
     private void handleDeviceHeartbeats(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveDeviceHeartbeat(
-                        (String) body.get("deviceId"), Instant.parse((String) body.get("heartbeatAt")));
+                String deviceId = (String) body.get("deviceId");
+                String heartbeatAt = (String) body.get("heartbeatAt");
+                log.fine("[Storage] saveDeviceHeartbeat: deviceId=" + deviceId
+                        + " at=" + heartbeatAt);
+                storageService.saveDeviceHeartbeat(deviceId, Instant.parse(heartbeatAt));
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 4) {
-                Optional<Instant> hb = storageService.findDeviceHeartbeat(segments[3]);
-                if (hb.isPresent()) writeJson(ex, 200, Map.of("heartbeatAt", hb.get().toString()));
-                else writeJson(ex, 404, Map.of("error", "No heartbeat found"));
+                String deviceId = segments[3];
+                log.fine("[Storage] findDeviceHeartbeat: deviceId=" + deviceId);
+                Optional<Instant> hb = storageService.findDeviceHeartbeat(deviceId);
+                if (hb.isPresent()) {
+                    writeJson(ex, 200, Map.of("heartbeatAt", hb.get().toString()));
+                } else {
+                    writeJson(ex, 404, Map.of("error", "No heartbeat found"));
+                }
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleDeviceHeartbeats 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // EPS dedup handlers
+    // =====================================================================
 
     private void handleEpsDedup(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveDeduplicationEntry((String) body.get("dedupKey"),
-                        (String) body.get("eventId"), Instant.parse((String) body.get("recordedAt")));
+                String dedupKey = (String) body.get("dedupKey");
+                String eventId  = (String) body.get("eventId");
+                log.info("[Storage] saveDeduplicationEntry: dedupKey=" + dedupKey
+                        + " eventId=" + eventId);
+                storageService.saveDeduplicationEntry(dedupKey, eventId,
+                        Instant.parse((String) body.get("recordedAt")));
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("POST".equals(method) && segments.length == 4 && "cleanup".equals(segments[3])) {
                 Map body = readBody(ex, Map.class);
-                int deleted = storageService.deleteExpiredDeduplicationEntries(
-                        Instant.parse((String) body.get("olderThan")));
+                Instant olderThan = Instant.parse((String) body.get("olderThan"));
+                int deleted = storageService.deleteExpiredDeduplicationEntries(olderThan);
+                log.info("[Storage] deleteExpiredDedup: deleted=" + deleted
+                        + " olderThan=" + olderThan);
                 writeJson(ex, 200, Map.of("deleted", deleted));
             } else if ("GET".equals(method) && segments.length == 4) {
                 String key = URLDecoder.decode(segments[3], StandardCharsets.UTF_8);
+                log.fine("[Storage] findDeduplicationEntry: key=" + key);
                 Optional<Map<String, String>> entry = storageService.findDeduplicationEntry(key);
-                if (entry.isPresent()) writeJson(ex, 200, entry.get());
-                else writeJson(ex, 404, Map.of("error", "Dedup entry not found"));
+                if (entry.isPresent()) {
+                    writeJson(ex, 200, entry.get());
+                } else {
+                    writeJson(ex, 404, Map.of("error", "Dedup entry not found"));
+                }
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleEpsDedup 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // EPS motion cooldown handlers
+    // =====================================================================
 
     private void handleEpsMotionCooldown(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveMotionCooldown(
-                        (String) body.get("deviceId"), Instant.parse((String) body.get("alertAt")));
+                String deviceId = (String) body.get("deviceId");
+                log.info("[Storage] saveMotionCooldown: deviceId=" + deviceId);
+                storageService.saveMotionCooldown(deviceId, Instant.parse((String) body.get("alertAt")));
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 4) {
-                Optional<Instant> cd = storageService.findMotionCooldown(segments[3]);
-                if (cd.isPresent()) writeJson(ex, 200, Map.of("alertAt", cd.get().toString()));
-                else writeJson(ex, 404, Map.of("error", "No motion cooldown found"));
+                String deviceId = segments[3];
+                log.fine("[Storage] findMotionCooldown: deviceId=" + deviceId);
+                Optional<Instant> cd = storageService.findMotionCooldown(deviceId);
+                if (cd.isPresent()) {
+                    writeJson(ex, 200, Map.of("alertAt", cd.get().toString()));
+                } else {
+                    writeJson(ex, 404, Map.of("error", "No motion cooldown found"));
+                }
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleEpsMotionCooldown 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // EPS Lamport clock handlers
+    // =====================================================================
 
     private void handleEpsLamportClock(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveLamportClock(
-                        (String) body.get("nodeId"), ((Number) body.get("value")).longValue());
+                String nodeId = (String) body.get("nodeId");
+                long value    = ((Number) body.get("value")).longValue();
+                log.info("[Storage] saveLamportClock: nodeId=" + nodeId + " value=" + value);
+                storageService.saveLamportClock(nodeId, value);
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 4) {
-                long value = storageService.findLamportClock(segments[3]);
+                String nodeId = segments[3];
+                long value = storageService.findLamportClock(nodeId);
+                log.info("[Storage] findLamportClock: nodeId=" + nodeId + " value=" + value);
                 writeJson(ex, 200, Map.of("value", value));
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleEpsLamportClock 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // Recording session handlers
+    // =====================================================================
 
     private void handleRecordingSessions(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveRecordingSession((String) body.get("sessionId"),
-                        (String) body.get("deviceId"), (String) body.get("ownerId"),
-                        Instant.parse((String) body.get("startedAt")));
+                String sessionId = (String) body.get("sessionId");
+                String deviceId  = (String) body.get("deviceId");
+                log.info("[Storage] saveRecordingSession: sessionId=" + sessionId
+                        + " deviceId=" + deviceId);
+                storageService.saveRecordingSession(sessionId, deviceId,
+                        (String) body.get("ownerId"), Instant.parse((String) body.get("startedAt")));
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 5 && "device".equals(segments[3])) {
-                Optional<String> sid = storageService.findActiveSessionForDevice(segments[4]);
-                if (sid.isPresent()) writeJson(ex, 200, Map.of("sessionId", sid.get()));
-                else writeJson(ex, 404, Map.of("error", "No active session"));
+                String deviceId = segments[4];
+                log.info("[Storage] findActiveSessionForDevice: deviceId=" + deviceId);
+                Optional<String> sid = storageService.findActiveSessionForDevice(deviceId);
+                if (sid.isPresent()) {
+                    writeJson(ex, 200, Map.of("sessionId", sid.get()));
+                } else {
+                    writeJson(ex, 404, Map.of("error", "No active session"));
+                }
             } else if ("GET".equals(method) && segments.length == 4) {
-                Optional<Map<String, String>> session = storageService.findRecordingSession(segments[3]);
-                if (session.isPresent()) writeJson(ex, 200, session.get());
-                else writeJson(ex, 404, Map.of("error", "Session not found"));
+                String sessionId = segments[3];
+                log.info("[Storage] findRecordingSession: sessionId=" + sessionId);
+                Optional<Map<String, String>> session = storageService.findRecordingSession(sessionId);
+                if (session.isPresent()) {
+                    writeJson(ex, 200, session.get());
+                } else {
+                    writeJson(ex, 404, Map.of("error", "Session not found"));
+                }
             } else if ("DELETE".equals(method) && segments.length == 4) {
-                storageService.deleteRecordingSession(segments[3]);
+                String sessionId = segments[3];
+                log.info("[Storage] deleteRecordingSession: sessionId=" + sessionId);
+                storageService.deleteRecordingSession(sessionId);
                 writeJson(ex, 200, Map.of("status", "ok"));
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleRecordingSessions 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
+
+    // =====================================================================
+    // Notification outbox handlers
+    // =====================================================================
 
     private void handleNotificationOutbox(HttpExchange ex) throws IOException {
         try {
             String method = ex.getRequestMethod();
             String[] segments = ex.getRequestURI().getPath().split("/");
+
             if ("POST".equals(method) && segments.length == 3) {
                 Map body = readBody(ex, Map.class);
-                storageService.saveNotificationOutbox((String) body.get("notificationId"),
-                        (String) body.get("token"), (String) body.get("payload"),
-                        ((Number) body.get("attempts")).intValue());
+                String notificationId = (String) body.get("notificationId");
+                int attempts = ((Number) body.get("attempts")).intValue();
+                log.info("[Storage] saveNotificationOutbox: notificationId=" + notificationId
+                        + " attempts=" + attempts);
+                storageService.saveNotificationOutbox(notificationId,
+                        (String) body.get("token"), (String) body.get("payload"), attempts);
                 writeJson(ex, 201, Map.of("status", "ok"));
             } else if ("POST".equals(method) && segments.length == 5 && "attempts".equals(segments[4])) {
                 Map body = readBody(ex, Map.class);
-                storageService.updateNotificationAttempts(segments[3],
-                        ((Number) body.get("attempts")).intValue());
+                int newAttempts = ((Number) body.get("attempts")).intValue();
+                log.info("[Storage] updateNotificationAttempts: notificationId=" + segments[3]
+                        + " attempts=" + newAttempts);
+                storageService.updateNotificationAttempts(segments[3], newAttempts);
                 writeJson(ex, 200, Map.of("status", "ok"));
             } else if ("GET".equals(method) && segments.length == 3) {
                 Map<String, String> params = parseQuery(ex.getRequestURI().getQuery());
                 int max = Integer.parseInt(params.getOrDefault("max", "50"));
-                writeJson(ex, 200, storageService.findPendingNotifications(max));
+                log.fine("[Storage] findPendingNotifications: max=" + max);
+                List<Map<String, Object>> pending = storageService.findPendingNotifications(max);
+                log.info("[Storage] findPendingNotifications: found " + pending.size() + " pending");
+                writeJson(ex, 200, pending);
             } else if ("DELETE".equals(method) && segments.length == 4) {
-                storageService.deleteNotificationOutbox(segments[3]);
+                String notificationId = segments[3];
+                log.info("[Storage] deleteNotificationOutbox: notificationId=" + notificationId);
+                storageService.deleteNotificationOutbox(notificationId);
                 writeJson(ex, 200, Map.of("status", "ok"));
             } else {
                 writeJson(ex, 400, Map.of("error", "Bad request"));
             }
-        } catch (Exception e) { writeJson(ex, 500, Map.of("error", e.getMessage())); }
+        } catch (Exception e) {
+            log.severe("[Storage] handleNotificationOutbox 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
 
     // =====================================================================

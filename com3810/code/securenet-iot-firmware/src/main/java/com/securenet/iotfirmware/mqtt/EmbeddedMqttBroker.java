@@ -6,68 +6,48 @@ import io.moquette.broker.config.MemoryConfig;
 
 import java.io.IOException;
 import java.util.Properties;
+import java.util.logging.Logger;
 
 /**
  * Embedded MQTT broker backed by Moquette.
  *
- * <p>Runs inside the SecureNet orchestrator process (or as a standalone
- * process) and accepts device MQTT connections for command dispatch,
- * event publishing, and heartbeat channels.
- *
- * <p>IDFS subscribes to device event topics via a shared subscription
- * ({@code $share/idfs-cluster/securenet/devices/+/events/#}) and
- * forwards them to the Event Processing Service.
- *
- * <p>The broker listens on the configured TCP port (default 1883) with
- * no TLS for development. Production deployments should enable TLS on
- * port 8883 and configure client certificate authentication.
+ * <p>Runs inside the IDFS process and accepts device MQTT connections
+ * for command dispatch, event publishing, and heartbeat channels.
  */
 public class EmbeddedMqttBroker {
+
+    private static final Logger log = Logger.getLogger(EmbeddedMqttBroker.class.getName());
 
     private final String host;
     private final int port;
     private Server broker;
 
-    /**
-     * @param host bind address (e.g. "0.0.0.0")
-     * @param port MQTT TCP port (default 1883)
-     */
     public EmbeddedMqttBroker(String host, int port) {
         this.host = host;
         this.port = port;
     }
 
-    /**
-     * Starts the embedded MQTT broker.
-     *
-     * <p>Configures Moquette with in-memory persistence and anonymous
-     * access for development. The broker supports MQTT 3.1.1 shared
-     * subscriptions which IDFS uses for load-balanced event ingestion.
-     *
-     * <p>Before binding, checks whether the port is already in use. If it
-     * is, prints a diagnostic message suggesting how to free it.
-     *
-     * @throws IOException if the broker fails to bind to the port
-     */
     public void start() throws IOException {
+        log.info("[MqttBroker] Starting on " + host + ":" + port);
+
         if (!isPortAvailable(host, port)) {
-            System.err.println("[MqttBroker] ERROR: Port " + port + " is already in use.");
-            System.err.println("  Another MQTT broker (Mosquitto?) or a previous run may still be bound.");
-            System.err.println("  On macOS/Linux: lsof -i :" + port + "  then  kill <PID>");
+            log.severe("[MqttBroker] Port " + port + " is already in use."
+                    + " Another MQTT broker or previous run may still be bound."
+                    + " On macOS/Linux: lsof -i :" + port + "  then  kill <PID>");
             throw new IOException("Port " + port + " already in use");
         }
 
         Properties props = new Properties();
-        props.setProperty("host", host);
-        props.setProperty("port", String.valueOf(port));
-        props.setProperty("allow_anonymous", "true");
+        props.setProperty("host",              host);
+        props.setProperty("port",              String.valueOf(port));
+        props.setProperty("allow_anonymous",   "true");
         props.setProperty("persistence_store", "");
 
         IConfig config = new MemoryConfig(props);
         broker = new Server();
         broker.startServer(config);
 
-        System.out.println("[MqttBroker] started on " + host + ":" + port);
+        log.info("[MqttBroker] started on " + host + ":" + port);
     }
 
     private static boolean isPortAvailable(String host, int port) {
@@ -80,9 +60,6 @@ public class EmbeddedMqttBroker {
         }
     }
 
-    /**
-     * Stops the embedded MQTT broker, disconnecting all clients.
-     */
     public void stop() {
         if (broker != null) {
             broker.stopServer();

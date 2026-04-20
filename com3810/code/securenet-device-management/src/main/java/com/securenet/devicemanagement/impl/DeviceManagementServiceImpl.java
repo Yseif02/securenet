@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * Distributed implementation of the Device Management Service.
@@ -33,6 +34,8 @@ import java.util.UUID;
  * the device's MQTT command topic and waits for an ack.
  */
 public class DeviceManagementServiceImpl implements DeviceManagementService {
+
+    private static final Logger log = Logger.getLogger(DeviceManagementServiceImpl.class.getName());
 
     private final StorageGateway storageGateway;
     private final String idfsBaseUrl;
@@ -58,10 +61,15 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         requireNonBlank(ownerId, "ownerId");
         Objects.requireNonNull(deviceType, "deviceType");
 
+        log.info("[DMS] registerDevice: ownerId=" + ownerId + " type=" + deviceType);
+
         ParsedQrPayload parsed = parseQrPayload(qrPayload);
+        log.info("[DMS] QR parsed: deviceId=" + parsed.deviceId());
 
         Device existing = storageGateway.findDeviceById(parsed.deviceId()).orElse(null);
         if (existing != null && existing.status() != DeviceStatus.DEREGISTERED) {
+            log.warning("[DMS] registerDevice failed: device already registered deviceId="
+                    + parsed.deviceId() + " status=" + existing.status());
             throw new DeviceAlreadyRegisteredException(parsed.deviceId());
         }
 
@@ -76,10 +84,10 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         );
 
         storageGateway.saveDevice(device);
-
-        // Store token in PostgreSQL (shared across all DMS instances)
         storageGateway.saveRegistrationToken(parsed.deviceId(), parsed.registrationToken());
 
+        log.info("[DMS] Device registered: deviceId=" + device.deviceId()
+                + " status=" + device.status() + " owner=" + ownerId);
         return device;
     }
 
@@ -89,15 +97,21 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         requireNonBlank(deviceId, "deviceId");
         requireNonBlank(registrationToken, "registrationToken");
 
-        Device device = storageGateway.findDeviceById(deviceId)
-                .orElseThrow(() -> new DeviceNotFoundException(deviceId));
+        log.info("[DMS] acceptDeviceRegistration: deviceId=" + deviceId);
 
-        // Look up token from PostgreSQL (not in-memory)
+        Device device = storageGateway.findDeviceById(deviceId)
+                .orElseThrow(() -> {
+                    log.warning("[DMS] acceptDeviceRegistration failed: device not found deviceId=" + deviceId);
+                    return new DeviceNotFoundException(deviceId);
+                });
+
         String expectedToken = storageGateway.findRegistrationToken(deviceId).orElse(null);
         if (expectedToken == null) {
+            log.warning("[DMS] acceptDeviceRegistration failed: no registration token for deviceId=" + deviceId);
             throw new DeviceNotFoundException(deviceId);
         }
         if (!expectedToken.equals(registrationToken)) {
+            log.warning("[DMS] acceptDeviceRegistration failed: invalid token for deviceId=" + deviceId);
             throw new IllegalArgumentException("Invalid registration token for device: " + deviceId);
         }
 
@@ -106,6 +120,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         if (device.status() == DeviceStatus.PENDING_REGISTRATION) {
             try {
                 storageGateway.updateDevice(device.withStatus(DeviceStatus.ONLINE));
+                log.info("[DMS] Device transitioned to ONLINE: deviceId=" + deviceId);
             } catch (DeviceNotFoundException e) {
                 throw new RuntimeException("Device disappeared during registration", e);
             }
@@ -113,8 +128,9 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                     .orElseThrow(() -> new DeviceNotFoundException(deviceId));
         }
 
-        // Record heartbeat in PostgreSQL
         storageGateway.saveDeviceHeartbeat(deviceId, now);
+        log.info("[DMS] Bootstrap complete: deviceId=" + deviceId
+                + " status=" + device.status() + " firmware=" + device.firmwareVersion());
 
         return buildBootstrapResult(device, now);
     }
@@ -127,13 +143,20 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     public Device getDevice(String deviceId) throws DeviceNotFoundException {
         requireNonBlank(deviceId, "deviceId");
         return storageGateway.findDeviceById(deviceId)
-                .orElseThrow(() -> new DeviceNotFoundException(deviceId));
+                .orElseThrow(() -> {
+                    log.warning("[DMS] getDevice: not found deviceId=" + deviceId);
+                    return new DeviceNotFoundException(deviceId);
+                });
     }
 
     @Override
     public List<Device> listDevicesForOwner(String ownerId) {
         requireNonBlank(ownerId, "ownerId");
-        return storageGateway.findDevicesByOwner(ownerId);
+        log.info("[DMS] listDevicesForOwner: ownerId=" + ownerId);
+        List<Device> devices = storageGateway.findDevicesByOwner(ownerId);
+        log.info("[DMS] listDevicesForOwner: found " + devices.size()
+                + " devices for ownerId=" + ownerId);
+        return devices;
     }
 
     // =====================================================================
@@ -143,15 +166,16 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     @Override
     public void recordHeartbeat(String deviceId) throws DeviceNotFoundException {
         Device device = getDevice(deviceId);
-
-        // Store heartbeat in PostgreSQL (not in-memory)
         storageGateway.saveDeviceHeartbeat(deviceId, Instant.now());
+        log.fine("[DMS] Heartbeat recorded: deviceId=" + deviceId + " status=" + device.status());
 
         if (device.status() == DeviceStatus.OFFLINE ||
                 device.status() == DeviceStatus.UNRESPONSIVE ||
                 device.status() == DeviceStatus.PENDING_REGISTRATION) {
             try {
                 storageGateway.updateDevice(device.withStatus(DeviceStatus.ONLINE));
+                log.info("[DMS] Device recovered to ONLINE via heartbeat: deviceId=" + deviceId
+                        + " previousStatus=" + device.status());
             } catch (DeviceNotFoundException e) {
                 throw new RuntimeException("Device disappeared during heartbeat", e);
             }
@@ -161,6 +185,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     @Override
     public void markDeviceUnresponsive(String deviceId) throws DeviceNotFoundException {
         Device device = getDevice(deviceId);
+        log.warning("[DMS] Marking device UNRESPONSIVE: deviceId=" + deviceId
+                + " previousStatus=" + device.status());
         storageGateway.updateDevice(device.withStatus(DeviceStatus.UNRESPONSIVE));
     }
 
@@ -169,6 +195,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             throws DeviceNotFoundException {
         Objects.requireNonNull(newStatus, "newStatus");
         Device device = getDevice(deviceId);
+        log.info("[DMS] updateDeviceStatus: deviceId=" + deviceId
+                + " " + device.status() + " -> " + newStatus);
         storageGateway.updateDevice(device.withStatus(newStatus));
     }
 
@@ -180,6 +208,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     public boolean sendLockCommand(String deviceId)
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
+        log.info("[DMS] sendLockCommand: deviceId=" + deviceId);
         return dispatchCommand(deviceId, "LOCK");
     }
 
@@ -187,6 +216,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     public boolean sendUnlockCommand(String deviceId)
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
+        log.info("[DMS] sendUnlockCommand: deviceId=" + deviceId);
         return dispatchCommand(deviceId, "UNLOCK");
     }
 
@@ -195,14 +225,15 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             throws DeviceNotFoundException, DeviceOfflineException {
         ensureDeviceReachable(deviceId);
         requireNonBlank(streamTargetUrl, "streamTargetUrl");
+        log.info("[DMS] sendStreamStartCommand: deviceId=" + deviceId
+                + " targetUrl=" + streamTargetUrl);
         dispatchCommand(deviceId, "STREAM_START");
     }
 
     private boolean dispatchCommand(String deviceId, String commandType) {
         String correlationId = UUID.randomUUID().toString();
-
-        System.out.println("[DMS] Dispatching " + commandType + " to " + deviceId +
-                " correlationId=" + correlationId);
+        log.info("[DMS] Dispatching " + commandType + " to " + deviceId
+                + " correlationId=" + correlationId);
 
         try {
             ServiceResponse response = httpClient.post(
@@ -217,17 +248,18 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             if (response.isSuccess()) {
                 java.util.Map result = JsonUtil.fromJson(response.body(), java.util.Map.class);
                 boolean acknowledged = Boolean.TRUE.equals(result.get("acknowledged"));
-                System.out.println("[DMS] Command " + commandType + " for " + deviceId +
-                        " acknowledged=" + acknowledged);
+                log.info("[DMS] Command " + commandType + " for " + deviceId
+                        + " acknowledged=" + acknowledged);
                 return acknowledged;
             }
 
-            System.out.println("[DMS] Command " + commandType + " for " + deviceId +
-                    " failed: HTTP " + response.statusCode() + " " + response.body());
+            log.warning("[DMS] Command " + commandType + " for " + deviceId
+                    + " failed: HTTP " + response.statusCode() + " body=" + response.body());
             return false;
 
         } catch (IOException e) {
-            System.err.println("[DMS] Failed to reach IDFS for command dispatch: " + e.getMessage());
+            log.severe("[DMS] Failed to reach IDFS for command dispatch: deviceId=" + deviceId
+                    + " command=" + commandType + " error=" + e.getMessage());
             return false;
         }
     }
@@ -239,7 +271,10 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     @Override
     public String getLatestFirmwareVersion(DeviceType deviceType) {
         Objects.requireNonNull(deviceType, "deviceType");
-        return storageGateway.getLatestFirmwareVersion(deviceType.name());
+        log.info("[DMS] getLatestFirmwareVersion: deviceType=" + deviceType);
+        String version = storageGateway.getLatestFirmwareVersion(deviceType.name());
+        log.info("[DMS] latestFirmwareVersion: deviceType=" + deviceType + " version=" + version);
+        return version;
     }
 
     @Override
@@ -248,14 +283,18 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         ensureDeviceReachable(deviceId);
         requireNonBlank(firmwareVersion, "firmwareVersion");
 
+        log.info("[DMS] pushFirmwareUpdate: deviceId=" + deviceId + " version=" + firmwareVersion);
+
         Device device = getDevice(deviceId);
         byte[] fw = storageGateway.loadFirmwareBinary(device.type().name(), firmwareVersion);
         if (fw.length == 0) {
+            log.warning("[DMS] pushFirmwareUpdate failed: empty binary for version=" + firmwareVersion);
             throw new IllegalArgumentException("Firmware binary is empty for version: " + firmwareVersion);
         }
 
         try {
             storageGateway.updateDevice(device.withFirmwareVersion(firmwareVersion));
+            log.info("[DMS] Firmware updated: deviceId=" + deviceId + " version=" + firmwareVersion);
         } catch (DeviceNotFoundException e) {
             throw new RuntimeException("Device disappeared during firmware push", e);
         }
@@ -269,15 +308,18 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     public void deregisterDevice(String deviceId, String ownerId)
             throws DeviceNotFoundException, IllegalArgumentException {
         requireNonBlank(ownerId, "ownerId");
+        log.info("[DMS] deregisterDevice: deviceId=" + deviceId + " ownerId=" + ownerId);
+
         Device device = getDevice(deviceId);
 
         if (!device.ownerId().equals(ownerId)) {
+            log.warning("[DMS] deregisterDevice failed: ownerId mismatch deviceId=" + deviceId);
             throw new IllegalArgumentException("ownerId does not match device owner");
         }
 
-        // Clean up from PostgreSQL (not in-memory)
         storageGateway.deleteRegistrationToken(deviceId);
         storageGateway.deleteDevice(deviceId);
+        log.info("[DMS] Device deregistered: deviceId=" + deviceId);
     }
 
     // =====================================================================
@@ -317,6 +359,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                 device.status() == DeviceStatus.UNRESPONSIVE ||
                 device.status() == DeviceStatus.DEREGISTERED ||
                 device.status() == DeviceStatus.PENDING_REGISTRATION) {
+            log.warning("[DMS] ensureDeviceReachable: device not reachable deviceId=" + deviceId
+                    + " status=" + device.status());
             throw new DeviceOfflineException(deviceId);
         }
     }
@@ -325,7 +369,8 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         requireNonBlank(qrPayload, "qrPayload");
         String[] parts = qrPayload.split(":", 2);
         if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
-            throw new IllegalArgumentException("qrPayload must be in the format 'deviceId:registrationToken'");
+            throw new IllegalArgumentException(
+                    "qrPayload must be in the format 'deviceId:registrationToken'");
         }
         return new ParsedQrPayload(parts[0].trim(), parts[1].trim());
     }
@@ -338,10 +383,10 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private static String defaultDisplayName(DeviceType deviceType, String deviceId) {
         return switch (deviceType) {
-            case CAMERA -> "Camera " + deviceId;
-            case SMART_LOCK -> "Smart Lock " + deviceId;
+            case CAMERA       -> "Camera " + deviceId;
+            case SMART_LOCK   -> "Smart Lock " + deviceId;
             case MOTION_SENSOR -> "Motion Sensor " + deviceId;
-            case OTHER -> "Device " + deviceId;
+            case OTHER        -> "Device " + deviceId;
         };
     }
 

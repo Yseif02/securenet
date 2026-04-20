@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 /**
  * Implementation of the Video Streaming Service.
@@ -18,23 +19,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Recording session metadata (sessionId, deviceId, ownerId, startedAt)
  * is persisted in PostgreSQL so that any VSS instance behind the load
  * balancer can look up active sessions. Chunk data is buffered in-memory
- * during the session (transient by nature — chunks are assembled and
- * archived to PostgreSQL when the session closes).
- *
- * <p>The {@code recording_sessions} table in PostgreSQL replaces the
- * old in-memory {@code activeSessions} and {@code deviceToSession} maps.
+ * during the session (transient by nature — assembled and archived to
+ * PostgreSQL when the session closes).
  */
 public class VideoStreamingServiceImpl implements VideoStreamingService {
+
+    private static final Logger log = Logger.getLogger(VideoStreamingServiceImpl.class.getName());
 
     private final StorageGateway storageGateway;
 
     /**
      * In-memory chunk buffer keyed by sessionId.
-     * <p>Chunks are inherently transient — they exist only during an
-     * active recording session and are assembled into a VideoClip when
-     * the session closes. If the VSS instance crashes mid-session, the
-     * chunks are lost (same as real camera streams). Session metadata
-     * is in PostgreSQL so a new VSS instance can detect stale sessions.
+     * Chunks are transient — assembled into a VideoClip on session close.
      */
     private final ConcurrentHashMap<String, TreeMap<Long, byte[]>> sessionChunks =
             new ConcurrentHashMap<>();
@@ -55,12 +51,18 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         requireNonBlank(deviceId, "deviceId");
         requireNonBlank(ownerId, "ownerId");
 
-        storageGateway.findDeviceById(deviceId)
-                .orElseThrow(() -> new DeviceNotFoundException(deviceId));
+        log.info("[VSS] openRecordingSession: deviceId=" + deviceId + " ownerId=" + ownerId);
 
-        // Check for existing active session — from PostgreSQL
+        storageGateway.findDeviceById(deviceId)
+                .orElseThrow(() -> {
+                    log.warning("[VSS] openRecordingSession: device not found deviceId=" + deviceId);
+                    return new DeviceNotFoundException(deviceId);
+                });
+
         Optional<String> existingSession = storageGateway.findActiveSessionForDevice(deviceId);
         if (existingSession.isPresent()) {
+            log.warning("[VSS] openRecordingSession: session already active for deviceId="
+                    + deviceId + " sessionId=" + existingSession.get());
             throw new IllegalStateException(
                     "Recording session already active for device: " + deviceId);
         }
@@ -68,14 +70,11 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         String sessionId = "rec-" + UUID.randomUUID();
         Instant now = Instant.now();
 
-        // Persist session metadata to PostgreSQL
         storageGateway.saveRecordingSession(sessionId, deviceId, ownerId, now);
-
-        // Initialize in-memory chunk buffer
         sessionChunks.put(sessionId, new TreeMap<>());
 
-        System.out.println("[VSS] Opened recording session: " + sessionId +
-                " device=" + deviceId);
+        log.info("[VSS] Recording session opened: sessionId=" + sessionId
+                + " deviceId=" + deviceId + " ownerId=" + ownerId);
         return sessionId;
     }
 
@@ -84,19 +83,22 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
             throws IllegalArgumentException {
         requireNonBlank(recordingSessionId, "recordingSessionId");
 
-        // Look up session metadata from PostgreSQL
-        Map<String, String> session = storageGateway.findRecordingSession(recordingSessionId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Unknown or already closed session: " + recordingSessionId));
+        log.info("[VSS] closeRecordingSession: sessionId=" + recordingSessionId);
 
-        String deviceId = session.get("deviceId");
-        String ownerId = session.get("ownerId");
+        Map<String, String> session = storageGateway.findRecordingSession(recordingSessionId)
+                .orElseThrow(() -> {
+                    log.warning("[VSS] closeRecordingSession: unknown session sessionId="
+                            + recordingSessionId);
+                    return new IllegalArgumentException(
+                            "Unknown or already closed session: " + recordingSessionId);
+                });
+
+        String deviceId  = session.get("deviceId");
+        String ownerId   = session.get("ownerId");
         Instant startedAt = Instant.parse(session.get("startedAt"));
 
-        // Remove from PostgreSQL
         storageGateway.deleteRecordingSession(recordingSessionId);
 
-        // Assemble chunks from in-memory buffer
         TreeMap<Long, byte[]> chunks = sessionChunks.remove(recordingSessionId);
         byte[] assembledBytes;
         if (chunks != null && !chunks.isEmpty()) {
@@ -105,27 +107,26 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
                 out.writeBytes(chunk);
             }
             assembledBytes = out.toByteArray();
+            log.info("[VSS] Assembled " + chunks.size() + " chunks = "
+                    + assembledBytes.length + " bytes for sessionId=" + recordingSessionId);
         } else {
             assembledBytes = new byte[0];
+            log.warning("[VSS] No chunks for sessionId=" + recordingSessionId
+                    + " — skipping archive");
         }
 
-        if (assembledBytes.length == 0) {
-            System.out.println("[VSS] Session " + recordingSessionId +
-                    " closed with no chunks, skipping archive");
-            return;
-        }
+        if (assembledBytes.length == 0) return;
 
         Duration duration = Duration.between(startedAt, Instant.now());
-
         try {
             VideoClip clip = archiveFootage(deviceId, ownerId, startedAt, assembledBytes);
-            System.out.println("[VSS] Session " + recordingSessionId +
-                    " archived as clip " + clip.clipId() +
-                    " (" + assembledBytes.length + " bytes, " +
-                    duration.toSeconds() + "s)");
+            log.info("[VSS] Session archived: sessionId=" + recordingSessionId
+                    + " clipId=" + clip.clipId()
+                    + " bytes=" + assembledBytes.length
+                    + " duration=" + duration.toSeconds() + "s");
         } catch (Exception e) {
-            System.err.println("[VSS] Failed to archive session " +
-                    recordingSessionId + ": " + e.getMessage());
+            log.severe("[VSS] Failed to archive session: sessionId=" + recordingSessionId
+                    + " error=" + e.getMessage());
         }
     }
 
@@ -139,14 +140,19 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         requireNonBlank(recordingSessionId, "recordingSessionId");
         Objects.requireNonNull(chunkBytes, "chunkBytes");
 
-        // Verify session exists in PostgreSQL
         storageGateway.findRecordingSession(recordingSessionId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Unknown or closed session: " + recordingSessionId));
+                .orElseThrow(() -> {
+                    log.warning("[VSS] ingestChunk: unknown session sessionId="
+                            + recordingSessionId);
+                    return new IllegalArgumentException(
+                            "Unknown or closed session: " + recordingSessionId);
+                });
 
-        // Buffer chunk in memory
         sessionChunks.computeIfAbsent(recordingSessionId, k -> new TreeMap<>())
                 .put(sequenceNumber, chunkBytes);
+
+        log.fine("[VSS] Chunk ingested: sessionId=" + recordingSessionId
+                + " seq=" + sequenceNumber + " bytes=" + chunkBytes.length);
     }
 
     // =====================================================================
@@ -160,18 +166,26 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         requireNonBlank(deviceId, "deviceId");
         requireNonBlank(ownerId, "ownerId");
 
-        storageGateway.findDeviceById(deviceId)
-                .orElseThrow(() -> new DeviceNotFoundException(deviceId));
+        log.info("[VSS] archiveFootage: deviceId=" + deviceId + " bytes=" + rawBytes.length);
 
-        String clipId = "clip-" + UUID.randomUUID();
-        String storageKey = "video/" + deviceId + "/" + clipId;
-        Duration duration = Duration.between(segmentStarted, Instant.now());
+        storageGateway.findDeviceById(deviceId)
+                .orElseThrow(() -> {
+                    log.warning("[VSS] archiveFootage: device not found deviceId=" + deviceId);
+                    return new DeviceNotFoundException(deviceId);
+                });
+
+        String clipId      = "clip-" + UUID.randomUUID();
+        String storageKey  = "video/" + deviceId + "/" + clipId;
+        Duration duration  = Duration.between(segmentStarted, Instant.now());
 
         VideoClip clip = new VideoClip(
                 clipId, deviceId, ownerId, segmentStarted,
                 duration, rawBytes.length, storageKey);
 
         storageGateway.saveVideoClip(clip, rawBytes);
+        log.info("[VSS] Footage archived: clipId=" + clipId + " deviceId=" + deviceId
+                + " storageKey=" + storageKey + " bytes=" + rawBytes.length
+                + " duration=" + duration.toSeconds() + "s");
         return clip;
     }
 
@@ -187,10 +201,14 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
             throw new IllegalArgumentException("'to' must not be before 'from'");
         }
 
+        log.info("[VSS] findClips: deviceId=" + deviceId + " from=" + from + " to=" + to);
+
         storageGateway.findDeviceById(deviceId)
                 .orElseThrow(() -> new DeviceNotFoundException(deviceId));
 
-        return storageGateway.findClipsByDevice(deviceId, from, to);
+        List<VideoClip> clips = storageGateway.findClipsByDevice(deviceId, from, to);
+        log.info("[VSS] findClips: found " + clips.size() + " clips for deviceId=" + deviceId);
+        return clips;
     }
 
     @Override
@@ -198,19 +216,24 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
             throws VideoNotFoundException, IllegalArgumentException {
         requireNonBlank(clipId, "clipId");
         if (validForSeconds < 1 || validForSeconds > 3600) {
-            throw new IllegalArgumentException(
-                    "validForSeconds must be between 1 and 3600");
+            throw new IllegalArgumentException("validForSeconds must be between 1 and 3600");
         }
 
+        log.info("[VSS] generateSignedPlaybackUrl: clipId=" + clipId
+                + " validForSeconds=" + validForSeconds);
+
         VideoClip clip = storageGateway.findClipById(clipId)
-                .orElseThrow(() -> new VideoNotFoundException(clipId));
+                .orElseThrow(() -> {
+                    log.warning("[VSS] generateSignedPlaybackUrl: clip not found clipId=" + clipId);
+                    return new VideoNotFoundException(clipId);
+                });
 
-        long expiresAt = System.currentTimeMillis() + (validForSeconds * 1000L);
-        String signature = generateSignature(clip.storageKey(), expiresAt);
+        long expiresAt    = System.currentTimeMillis() + (validForSeconds * 1000L);
+        String signature  = generateSignature(clip.storageKey(), expiresAt);
+        String url        = "/playback/" + clipId + "?expires=" + expiresAt + "&sig=" + signature;
 
-        return "/playback/" + clipId +
-                "?expires=" + expiresAt +
-                "&sig=" + signature;
+        log.info("[VSS] Signed URL generated: clipId=" + clipId + " expiresAt=" + expiresAt);
+        return url;
     }
 
     private static String generateSignature(String storageKey, long expiresAt) {

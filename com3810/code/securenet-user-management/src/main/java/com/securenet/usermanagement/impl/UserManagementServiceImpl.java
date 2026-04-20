@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * Distributed implementation of the User Management Service.
@@ -22,6 +23,8 @@ import java.util.UUID;
  * only the data-access transport has changed.
  */
 public class UserManagementServiceImpl implements UserManagementService {
+
+    private static final Logger log = Logger.getLogger(UserManagementServiceImpl.class.getName());
 
     private static final int MIN_PASSWORD_LENGTH = 8;
     private static final long TOKEN_TTL_SECONDS = 3600;
@@ -42,7 +45,10 @@ public class UserManagementServiceImpl implements UserManagementService {
         validateDisplayName(displayName);
         validatePassword(password);
 
+        log.info("[UMS] Registering user: email=" + email + " displayName=" + displayName);
+
         if (storageGateway.findUserByEmail(email).isPresent()) {
+            log.warning("[UMS] Registration failed: email already registered: " + email);
             throw new IllegalArgumentException("Email already registered: " + email);
         }
 
@@ -51,6 +57,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         storageGateway.saveUser(user);
         storageGateway.savePasswordHash(userId, hashPassword(password));
+        log.info("[UMS] User registered: userId=" + userId + " email=" + email);
         return user;
     }
 
@@ -59,17 +66,27 @@ public class UserManagementServiceImpl implements UserManagementService {
         validateEmail(email);
         Objects.requireNonNull(password, "password");
 
+        log.info("[UMS] Login attempt: email=" + email);
+
         User user = storageGateway.findUserByEmail(email)
-                .orElseThrow(() -> new AuthenticationException("Invalid credentials"));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] Login failed: no account for email=" + email);
+                    return new AuthenticationException("Invalid credentials");
+                });
 
         String storedHash = storageGateway.findPasswordHashByUserId(user.userId())
-                .orElseThrow(() -> new AuthenticationException("Invalid credentials"));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] Login failed: no password hash for userId=" + user.userId());
+                    return new AuthenticationException("Invalid credentials");
+                });
 
         if (!storedHash.equals(hashPassword(password))) {
+            log.warning("[UMS] Login failed: wrong password for userId=" + user.userId());
             throw new AuthenticationException("Invalid credentials");
         }
 
         if (!user.active()) {
+            log.warning("[UMS] Login failed: account deactivated userId=" + user.userId());
             throw new AuthenticationException("Account is deactivated");
         }
 
@@ -82,47 +99,73 @@ public class UserManagementServiceImpl implements UserManagementService {
         );
 
         storageGateway.saveAuthToken(token);
+        log.info("[UMS] Login OK: userId=" + user.userId()
+                + " tokenId=" + token.tokenValue()
+                + " expiresAt=" + token.expiresAt());
         return token;
     }
 
     @Override
     public AuthToken validateToken(String rawBearerToken) throws AuthenticationException {
         if (rawBearerToken == null || rawBearerToken.isBlank()) {
+            log.warning("[UMS] Token validation failed: missing token");
             throw new AuthenticationException("Missing bearer token");
         }
 
         String tokenValue = extractTokenValue(rawBearerToken);
+        log.info("[UMS] Validating token: tokenId=" + tokenValue);
+
         AuthToken token = storageGateway.findAuthToken(tokenValue)
-                .orElseThrow(() -> new AuthenticationException("Unknown token"));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] Token validation failed: unknown tokenId=" + tokenValue);
+                    return new AuthenticationException("Unknown token");
+                });
 
         if (storageGateway.isTokenRevoked(tokenValue)) {
+            log.warning("[UMS] Token validation failed: revoked tokenId=" + tokenValue
+                    + " userId=" + token.userId());
             throw new AuthenticationException("Token has been revoked");
         }
 
         if (!token.isValid()) {
+            log.warning("[UMS] Token validation failed: expired tokenId=" + tokenValue
+                    + " userId=" + token.userId() + " expiredAt=" + token.expiresAt());
             throw new AuthenticationException("Token has expired");
         }
 
         User user = storageGateway.findUserById(token.userId())
-                .orElseThrow(() -> new AuthenticationException("User does not exist"));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] Token validation failed: user not found userId=" + token.userId());
+                    return new AuthenticationException("User does not exist");
+                });
 
         if (!user.active()) {
+            log.warning("[UMS] Token validation failed: account deactivated userId=" + user.userId());
             throw new AuthenticationException("Account is deactivated");
         }
 
+        log.info("[UMS] Token valid: userId=" + token.userId() + " tokenId=" + tokenValue);
         return token;
     }
 
     @Override
     public void revokeToken(AuthToken token) {
         Objects.requireNonNull(token, "token");
+        log.info("[UMS] Revoking token: tokenId=" + token.tokenValue()
+                + " userId=" + token.userId());
         storageGateway.revokeAuthToken(token.tokenValue());
+        log.info("[UMS] Token revoked: tokenId=" + token.tokenValue());
     }
 
     @Override
     public Optional<User> getUserById(String userId) {
         if (userId == null || userId.isBlank()) return Optional.empty();
-        return storageGateway.findUserById(userId);
+        log.info("[UMS] getUserById: userId=" + userId);
+        Optional<User> user = storageGateway.findUserById(userId);
+        if (user.isEmpty()) {
+            log.warning("[UMS] getUserById: not found userId=" + userId);
+        }
+        return user;
     }
 
     @Override
@@ -133,8 +176,13 @@ public class UserManagementServiceImpl implements UserManagementService {
         }
         validateDisplayName(newDisplayName);
 
+        log.info("[UMS] updateDisplayName: userId=" + userId + " newName=" + newDisplayName);
+
         User existing = storageGateway.findUserById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User does not exist: " + userId));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] updateDisplayName failed: user not found userId=" + userId);
+                    return new IllegalArgumentException("User does not exist: " + userId);
+                });
 
         User updated = new User(
                 existing.userId(), existing.email(), newDisplayName.trim(),
@@ -142,6 +190,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         );
 
         storageGateway.updateUser(updated);
+        log.info("[UMS] Display name updated: userId=" + userId);
         return updated;
     }
 
@@ -151,8 +200,13 @@ public class UserManagementServiceImpl implements UserManagementService {
             throw new IllegalArgumentException("userId is required");
         }
 
+        log.info("[UMS] Deactivating user: userId=" + userId);
+
         User existing = storageGateway.findUserById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User does not exist: " + userId));
+                .orElseThrow(() -> {
+                    log.warning("[UMS] deactivateUser failed: user not found userId=" + userId);
+                    return new IllegalArgumentException("User does not exist: " + userId);
+                });
 
         User updated = new User(
                 existing.userId(), existing.email(), existing.displayName(),
@@ -160,6 +214,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         );
 
         storageGateway.updateUser(updated);
+        log.info("[UMS] User deactivated: userId=" + userId);
     }
 
     // =====================================================================

@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 /**
  * HTTP server for the IoT Device Firmware Service (IDFS).
@@ -29,24 +30,20 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h3>Device-facing endpoints</h3>
  * <ul>
- *   <li>{@code POST /register}   — bootstrap registration relay to DMS</li>
- *   <li>{@code POST /provision}  — runtime MQTT credential provisioning</li>
- *   <li>{@code POST /heartbeat}  — heartbeat relay to DMS</li>
+ *   <li>{@code POST /register}  — bootstrap registration relay to DMS</li>
+ *   <li>{@code POST /provision} — runtime MQTT credential provisioning</li>
+ *   <li>{@code POST /heartbeat} — heartbeat relay to DMS</li>
  * </ul>
  *
  * <h3>Platform-facing endpoints (called by DMS)</h3>
  * <ul>
- *   <li>{@code POST /command}    — publish a command to a device's MQTT
- *       command topic and wait for the device's ack (with timeout)</li>
+ *   <li>{@code POST /command} — publish command to device MQTT topic,
+ *       wait for ack</li>
  * </ul>
- *
- * <p>IDFS maintains a persistent MQTT client connection to the broker.
- * It subscribes to all device ack topics
- * ({@code securenet/devices/+/acks}) and uses a correlation-ID-keyed
- * map of {@link CompletableFuture}s to match acks to waiting command
- * requests.
  */
 public class IdfsServer {
+
+    private static final Logger log = Logger.getLogger(IdfsServer.class.getName());
 
     private static final int COMMAND_TIMEOUT_SECONDS = 10;
 
@@ -58,53 +55,42 @@ public class IdfsServer {
     private final ServiceClient httpClient;
     private HttpServer httpServer;
 
-    /** MQTT client used to publish commands and receive acks. */
     private MqttClient mqttClient;
 
     /**
      * Pending command futures keyed by correlationId.
-     * When a device publishes an ack with a matching correlationId,
-     * the future is completed with the ack payload.
+     * Completed when the device publishes an ack with a matching correlationId.
      */
     private final ConcurrentHashMap<String, CompletableFuture<Map>> pendingCommands =
             new ConcurrentHashMap<>();
 
-    /**
-     * @param host           bind address (e.g. "0.0.0.0")
-     * @param port           port to listen on (default 8080)
-     * @param dmsBaseUrl     base URL of the Device Management Service
-     * @param epsBaseUrl     base URL of the Event Processing Service
-     * @param mqttBrokerUrl  MQTT broker URL (e.g. "tcp://localhost:1883")
-     */
     public IdfsServer(String host, int port, String dmsBaseUrl,
                       String epsBaseUrl, String mqttBrokerUrl) {
-        this.host = Objects.requireNonNull(host, "host");
-        this.port = port;
-        this.dmsBaseUrl = Objects.requireNonNull(dmsBaseUrl, "dmsBaseUrl");
-        this.epsBaseUrl = Objects.requireNonNull(epsBaseUrl, "epsBaseUrl");
+        this.host          = Objects.requireNonNull(host, "host");
+        this.port          = port;
+        this.dmsBaseUrl    = Objects.requireNonNull(dmsBaseUrl, "dmsBaseUrl");
+        this.epsBaseUrl    = Objects.requireNonNull(epsBaseUrl, "epsBaseUrl");
         this.mqttBrokerUrl = Objects.requireNonNull(mqttBrokerUrl, "mqttBrokerUrl");
-        this.httpClient = new ServiceClient();
+        this.httpClient    = new ServiceClient();
     }
 
     public void start() throws IOException {
-        // Connect MQTT client for command dispatch / ack listening
         connectMqtt();
 
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
         httpServer.setExecutor(Executors.newFixedThreadPool(16));
 
-        // Device-facing endpoints
-        httpServer.createContext("/register", this::handleBootstrapRegister);
+        httpServer.createContext("/register",  this::handleBootstrapRegister);
         httpServer.createContext("/provision", this::handleRuntimeProvision);
         httpServer.createContext("/heartbeat", this::handleHeartbeat);
-
-        // Platform-facing endpoint (called by DMS)
-        httpServer.createContext("/command", this::handleCommand);
-
-        httpServer.createContext("/health", ex -> writeJson(ex, 200, Map.of("status", "UP")));
+        httpServer.createContext("/command",   this::handleCommand);
+        httpServer.createContext("/health", ex -> {
+            log.fine("[IDFS] Health check from " + ex.getRemoteAddress());
+            writeJson(ex, 200, Map.of("status", "UP"));
+        });
 
         httpServer.start();
-        System.out.println("[IDFS] started on " + host + ":" + port);
+        log.info("[IDFS] started on " + host + ":" + port);
     }
 
     public void stop() {
@@ -116,12 +102,13 @@ public class IdfsServer {
     }
 
     // =====================================================================
-    // MQTT connection for command dispatch
+    // MQTT connection
     // =====================================================================
 
     private void connectMqtt() {
         try {
-            String clientId = "idfs-command-dispatcher-" + UUID.randomUUID().toString().substring(0, 8);
+            String clientId = "idfs-command-dispatcher-"
+                    + UUID.randomUUID().toString().substring(0, 8);
             mqttClient = new MqttClient(mqttBrokerUrl, clientId);
 
             MqttConnectOptions opts = new MqttConnectOptions();
@@ -129,19 +116,16 @@ public class IdfsServer {
             opts.setCleanSession(true);
             mqttClient.connect(opts);
 
-            // Subscribe to all device ack topics
-            String ackTopic = "securenet/devices/+/acks";
-            mqttClient.subscribe(ackTopic, 1, this::onAckReceived);
-
-            // Subscribe to all device event topics — forward to EPS
+            String ackTopic   = "securenet/devices/+/acks";
             String eventTopic = "securenet/devices/+/events/#";
+            mqttClient.subscribe(ackTopic,   1, this::onAckReceived);
             mqttClient.subscribe(eventTopic, 1, this::onDeviceEventReceived);
 
-            System.out.println("[IDFS] MQTT connected to " + mqttBrokerUrl);
-            System.out.println("[IDFS] Subscribed to " + ackTopic);
-            System.out.println("[IDFS] Subscribed to " + eventTopic);
+            log.info("[IDFS] MQTT connected to " + mqttBrokerUrl);
+            log.info("[IDFS] Subscribed to " + ackTopic);
+            log.info("[IDFS] Subscribed to " + eventTopic);
         } catch (MqttException e) {
-            System.err.println("[IDFS] Failed to connect MQTT: " + e.getMessage());
+            log.severe("[IDFS] Failed to connect MQTT: " + e.getMessage());
             throw new RuntimeException("IDFS requires MQTT broker", e);
         }
     }
@@ -151,74 +135,68 @@ public class IdfsServer {
             try {
                 if (mqttClient.isConnected()) mqttClient.disconnect();
                 mqttClient.close();
+                log.info("[IDFS] MQTT disconnected");
             } catch (MqttException e) {
-                System.err.println("[IDFS] Error disconnecting MQTT: " + e.getMessage());
+                log.warning("[IDFS] Error disconnecting MQTT: " + e.getMessage());
             }
         }
     }
 
-    /**
-     * Called when a device publishes an ack on
-     * {@code securenet/devices/{deviceId}/acks}.
-     *
-     * <p>Extracts the correlation_id from the payload and completes the
-     * matching {@link CompletableFuture} in {@link #pendingCommands}.
-     */
+    // =====================================================================
+    // MQTT ack handler
+    // =====================================================================
+
     private void onAckReceived(String topic, MqttMessage message) {
         try {
-            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-            Map ack = JsonUtil.fromJson(payload, Map.class);
-            String correlationId = (String) ack.get("correlation_id");
+            String payload  = new String(message.getPayload(), StandardCharsets.UTF_8);
+            Map ack         = JsonUtil.fromJson(payload, Map.class);
+            String corrId   = (String) ack.get("correlation_id");
 
-            if (correlationId != null) {
-                CompletableFuture<Map> future = pendingCommands.remove(correlationId);
+            if (corrId != null) {
+                CompletableFuture<Map> future = pendingCommands.remove(corrId);
                 if (future != null) {
                     future.complete(ack);
-                    System.out.println("[IDFS] Ack received for correlationId=" + correlationId);
+                    log.info("[IDFS] Ack received for correlationId=" + corrId);
+                } else {
+                    log.warning("[IDFS] Ack for unknown correlationId=" + corrId
+                            + " (already timed out?)");
                 }
+            } else {
+                log.warning("[IDFS] Ack on topic=" + topic + " missing correlation_id");
             }
         } catch (Exception e) {
-            System.err.println("[IDFS] Error processing ack: " + e.getMessage());
+            log.severe("[IDFS] Error processing ack on topic=" + topic
+                    + ": " + e.getMessage());
         }
     }
 
-    /**
-     * Called when a device publishes an event on
-     * {@code securenet/devices/{deviceId}/events/{subtopic}}.
-     *
-     * <p>Extracts the event payload, transforms it into the format
-     * expected by the EPS {@code POST /eps/events/ingest} endpoint,
-     * and forwards it over HTTP.
-     *
-     * <p>This is the bridge between the MQTT event bus and the
-     * HTTP-based Event Processing Service.
-     */
+    // =====================================================================
+    // MQTT event handler — forward to EPS
+    // =====================================================================
+
     private void onDeviceEventReceived(String topic, MqttMessage message) {
         try {
-            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-            Map event = JsonUtil.fromJson(payload, Map.class);
+            String payload  = new String(message.getPayload(), StandardCharsets.UTF_8);
+            Map event       = JsonUtil.fromJson(payload, Map.class);
 
-            String deviceId = (String) event.get("device_id");
+            String deviceId  = (String) event.get("device_id");
             String eventType = (String) event.get("event_type");
 
             if (deviceId == null || eventType == null) {
-                System.err.println("[IDFS] Ignoring malformed event on " + topic);
+                log.warning("[IDFS] Ignoring malformed event on topic=" + topic);
                 return;
             }
 
-            // Extract nonce and timestamp
-            Object nonceObj = event.get("nonce");
-            String nonce = (nonceObj != null) ? String.valueOf(nonceObj) : "";
+            log.info("[IDFS] Device event received: topic=" + topic
+                    + " deviceId=" + deviceId + " type=" + eventType);
 
-            Object occurredAtObj = event.get("occurred_at_ms");
-            String occurredAt;
-            if (occurredAtObj instanceof Number) {
-                occurredAt = Instant.ofEpochMilli(((Number) occurredAtObj).longValue()).toString();
-            } else {
-                occurredAt = Instant.now().toString();
-            }
+            Object nonceObj    = event.get("nonce");
+            String nonce       = (nonceObj != null) ? String.valueOf(nonceObj) : "";
+            Object tsObj       = event.get("occurred_at_ms");
+            String occurredAt  = (tsObj instanceof Number)
+                    ? Instant.ofEpochMilli(((Number) tsObj).longValue()).toString()
+                    : Instant.now().toString();
 
-            // Build metadata from all fields except the top-level ones
             Map<String, String> metadata = new HashMap<>();
             event.forEach((k, v) -> {
                 String key = String.valueOf(k);
@@ -228,142 +206,123 @@ public class IdfsServer {
                 }
             });
 
-            // Forward to EPS
             Map<String, Object> epsRequest = new HashMap<>();
-            epsRequest.put("deviceId", deviceId);
-            epsRequest.put("eventType", eventType);
+            epsRequest.put("deviceId",   deviceId);
+            epsRequest.put("eventType",  eventType);
             epsRequest.put("occurredAt", occurredAt);
-            epsRequest.put("nonce", nonce);
-            epsRequest.put("metadata", metadata);
+            epsRequest.put("nonce",      nonce);
+            epsRequest.put("metadata",   metadata);
 
             ServiceResponse epsResponse = httpClient.post(
                     epsBaseUrl + "/eps/events/ingest", epsRequest);
 
             if (epsResponse.isSuccess()) {
-                System.out.println("[IDFS] Event forwarded to EPS: " + eventType +
-                        " from " + deviceId);
+                log.info("[IDFS] Event forwarded to EPS: " + eventType
+                        + " from " + deviceId);
             } else {
-                System.err.println("[IDFS] EPS rejected event: HTTP " +
-                        epsResponse.statusCode() + " " + epsResponse.body());
+                log.warning("[IDFS] EPS rejected event: HTTP "
+                        + epsResponse.statusCode() + " deviceId=" + deviceId
+                        + " type=" + eventType + " body=" + epsResponse.body());
             }
         } catch (Exception e) {
-            System.err.println("[IDFS] Error forwarding event to EPS: " + e.getMessage());
+            log.severe("[IDFS] Error forwarding event to EPS: " + e.getMessage());
         }
     }
 
     // =====================================================================
-    // POST /command — platform-facing command dispatch
+    // POST /command
     // =====================================================================
 
-    /**
-     * Handles {@code POST /command} from DMS.
-     *
-     * <p>Expected JSON body:
-     * <pre>{@code
-     * {
-     *   "device_id": "lock-001",
-     *   "command_type": "LOCK",
-     *   "correlation_id": "uuid-here"   // optional, generated if absent
-     * }
-     * }</pre>
-     *
-     * <p>Flow:
-     * <ol>
-     *   <li>Generate correlationId if not provided</li>
-     *   <li>Register a CompletableFuture keyed by correlationId</li>
-     *   <li>Publish command to {@code securenet/devices/{deviceId}/commands/{type}}</li>
-     *   <li>Wait for device ack (up to COMMAND_TIMEOUT_SECONDS)</li>
-     *   <li>Return ack result or timeout error</li>
-     * </ol>
-     */
     private void handleCommand(HttpExchange ex) throws IOException {
         if (!"POST".equalsIgnoreCase(ex.getRequestMethod())) {
             writeJson(ex, 405, Map.of("error", "Method Not Allowed"));
             return;
         }
-
         try {
             String requestBody = readBodyString(ex);
             Map body = JsonUtil.fromJson(requestBody, Map.class);
 
-            String deviceId = (String) body.get("device_id");
+            String deviceId    = (String) body.get("device_id");
             String commandType = (String) body.get("command_type");
-            String correlationId = (String) body.get("correlation_id");
+            String corrId      = (String) body.get("correlation_id");
 
             if (isBlank(deviceId) || isBlank(commandType)) {
                 writeJson(ex, 400, Map.of("error", "device_id and command_type are required"));
                 return;
             }
-
-            if (isBlank(correlationId)) {
-                correlationId = UUID.randomUUID().toString();
-            }
+            if (isBlank(corrId)) corrId = UUID.randomUUID().toString();
 
             if (mqttClient == null || !mqttClient.isConnected()) {
+                log.severe("[IDFS] Command dispatch failed: MQTT broker not connected"
+                        + " deviceId=" + deviceId);
                 writeJson(ex, 503, Map.of("error", "MQTT broker not connected"));
                 return;
             }
 
-            System.out.println("[IDFS] Command dispatch: deviceId=" + deviceId +
-                    " command=" + commandType + " correlationId=" + correlationId);
+            log.info("[IDFS] Command dispatch: deviceId=" + deviceId
+                    + " command=" + commandType + " correlationId=" + corrId);
 
-            // Register future before publishing (avoid race with fast ack)
             CompletableFuture<Map> ackFuture = new CompletableFuture<>();
-            pendingCommands.put(correlationId, ackFuture);
+            pendingCommands.put(corrId, ackFuture);
 
-            // Publish command to device's MQTT topic
-            String topic = "securenet/devices/" + deviceId + "/commands/" + commandType.toLowerCase();
+            String topic   = "securenet/devices/" + deviceId + "/commands/"
+                    + commandType.toLowerCase();
             String payload = JsonUtil.toJson(Map.of(
-                    "device_id", deviceId,
-                    "command_type", commandType,
-                    "correlation_id", correlationId
+                    "device_id",     deviceId,
+                    "command_type",  commandType,
+                    "correlation_id", corrId
             ));
 
             mqttClient.publish(topic, payload.getBytes(StandardCharsets.UTF_8), 1, false);
-            System.out.println("[IDFS] Published command to " + topic);
+            log.info("[IDFS] Published command to " + topic);
 
-            // Wait for ack with timeout
             try {
-                Map ack = ackFuture.get(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
+                Map ack     = ackFuture.get(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 Boolean success = (Boolean) ack.get("success");
                 if (Boolean.TRUE.equals(success)) {
+                    log.info("[IDFS] Command acknowledged: deviceId=" + deviceId
+                            + " command=" + commandType + " correlationId=" + corrId);
                     writeJson(ex, 200, Map.of(
                             "acknowledged", true,
-                            "correlation_id", correlationId,
-                            "device_id", deviceId,
-                            "command_type", commandType
-                    ));
+                            "correlation_id", corrId,
+                            "device_id",     deviceId,
+                            "command_type",  commandType));
                 } else {
+                    log.warning("[IDFS] Command failed on device: deviceId=" + deviceId
+                            + " command=" + commandType);
                     writeJson(ex, 200, Map.of(
                             "acknowledged", false,
-                            "correlation_id", correlationId,
-                            "device_id", deviceId,
-                            "command_type", commandType,
-                            "error", "Device reported failure"
-                    ));
+                            "correlation_id", corrId,
+                            "device_id",     deviceId,
+                            "command_type",  commandType,
+                            "error",         "Device reported failure"));
                 }
             } catch (TimeoutException e) {
-                pendingCommands.remove(correlationId);
-                System.out.println("[IDFS] Command timed out: correlationId=" + correlationId);
+                pendingCommands.remove(corrId);
+                log.warning("[IDFS] Command timed out: deviceId=" + deviceId
+                        + " command=" + commandType + " correlationId=" + corrId);
                 writeJson(ex, 504, Map.of(
-                        "acknowledged", false,
-                        "correlation_id", correlationId,
-                        "error", "Device did not acknowledge within " + COMMAND_TIMEOUT_SECONDS + "s"
-                ));
+                        "acknowledged",  false,
+                        "correlation_id", corrId,
+                        "error", "Device did not acknowledge within "
+                                + COMMAND_TIMEOUT_SECONDS + "s"));
+            } catch (InterruptedException | ExecutionException e) {
+                Thread.currentThread().interrupt();
+                log.severe("[IDFS] Command interrupted: " + e.getMessage());
+                writeJson(ex, 500, Map.of("error", "Command interrupted"));
             }
 
         } catch (MqttException e) {
-            System.err.println("[IDFS] MQTT publish error: " + e.getMessage());
+            log.severe("[IDFS] MQTT publish error: " + e.getMessage());
             writeJson(ex, 503, Map.of("error", "Failed to publish command to MQTT"));
         } catch (Exception e) {
-            System.err.println("[IDFS] Command dispatch error: " + e.getMessage());
+            log.severe("[IDFS] Command dispatch error: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", "Internal Server Error"));
         }
     }
 
     // =====================================================================
-    // POST /register — bootstrap registration relay
+    // POST /register
     // =====================================================================
 
     private void handleBootstrapRegister(HttpExchange ex) throws IOException {
@@ -382,55 +341,52 @@ public class IdfsServer {
             String requestBody = readBodyString(ex);
             Map body = JsonUtil.fromJson(requestBody, Map.class);
 
-            String deviceId = (String) body.get("device_id");
+            String deviceId          = (String) body.get("device_id");
             String registrationToken = (String) body.get("registration_token");
 
             if (isBlank(deviceId) || isBlank(registrationToken)) {
-                writeJson(ex, 400, Map.of("error", "device_id and registration_token are required"));
+                writeJson(ex, 400, Map.of("error",
+                        "device_id and registration_token are required"));
                 return;
             }
 
-            System.out.println("[IDFS] Bootstrap registration request: deviceId=" + deviceId);
-
-            Map<String, String> dmsRequest = Map.of(
-                    "deviceId", deviceId,
-                    "registrationToken", registrationToken
-            );
+            log.info("[IDFS] Bootstrap registration request: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.post(
                     dmsBaseUrl + "/dms/devices/accept-registration",
-                    dmsRequest
-            );
+                    Map.of("deviceId", deviceId, "registrationToken", registrationToken));
 
             if (dmsResponse.isSuccess()) {
-                Map dmsResult = JsonUtil.fromJson(dmsResponse.body(), Map.class);
-                Map regInfo = (Map) dmsResult.get("registrationInfo");
+                Map dmsResult    = JsonUtil.fromJson(dmsResponse.body(), Map.class);
+                Map regInfo      = (Map) dmsResult.get("registrationInfo");
                 Map fwAssignment = (Map) dmsResult.get("firmwareAssignment");
 
                 Map<String, String> deviceResponse = Map.of(
-                        "device_id", (String) regInfo.get("deviceId"),
-                        "device_type", (String) regInfo.get("deviceType"),
-                        "registered_at", (String) regInfo.get("registeredAt"),
-                        "firmware_version", (String) fwAssignment.get("firmwareVersion"),
-                        "firmware_url", (String) fwAssignment.get("firmwareUrl"),
-                        "firmware_issued_at", (String) fwAssignment.get("issuedAt")
+                        "device_id",         (String) regInfo.get("deviceId"),
+                        "device_type",       (String) regInfo.get("deviceType"),
+                        "registered_at",     (String) regInfo.get("registeredAt"),
+                        "firmware_version",  (String) fwAssignment.get("firmwareVersion"),
+                        "firmware_url",      (String) fwAssignment.get("firmwareUrl"),
+                        "firmware_issued_at",(String) fwAssignment.get("issuedAt")
                 );
 
-                System.out.println("[IDFS] Bootstrap registration succeeded for deviceId=" + deviceId);
+                log.info("[IDFS] Bootstrap registration succeeded: deviceId=" + deviceId
+                        + " firmwareVersion=" + fwAssignment.get("firmwareVersion"));
                 writeJson(ex, 200, deviceResponse);
             } else {
-                System.out.println("[IDFS] DMS returned " + dmsResponse.statusCode() +
-                        " for deviceId=" + deviceId + ": " + dmsResponse.body());
+                log.warning("[IDFS] DMS returned " + dmsResponse.statusCode()
+                        + " for bootstrap deviceId=" + deviceId
+                        + " body=" + dmsResponse.body());
                 writeRaw(ex, dmsResponse.statusCode(), dmsResponse.body());
             }
         } catch (Exception e) {
-            System.out.println("[IDFS] Bootstrap registration error: " + e.getMessage());
+            log.severe("[IDFS] Bootstrap registration error: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", "Internal Server Error"));
         }
     }
 
     // =====================================================================
-    // POST /provision — runtime MQTT credential provisioning
+    // POST /provision
     // =====================================================================
 
     private void handleRuntimeProvision(HttpExchange ex) throws IOException {
@@ -441,7 +397,7 @@ public class IdfsServer {
             }
 
             String requestBody = readBodyString(ex);
-            Map body = JsonUtil.fromJson(requestBody, Map.class);
+            Map body   = JsonUtil.fromJson(requestBody, Map.class);
             String deviceId = (String) body.get("device_id");
 
             if (isBlank(deviceId)) {
@@ -449,13 +405,13 @@ public class IdfsServer {
                 return;
             }
 
-            System.out.println("[IDFS] Runtime provisioning request: deviceId=" + deviceId);
+            log.info("[IDFS] Runtime provisioning request: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.get(
-                    dmsBaseUrl + "/dms/devices/get?deviceId=" + deviceId
-            );
+                    dmsBaseUrl + "/dms/devices/get?deviceId=" + deviceId);
 
             if (!dmsResponse.isSuccess()) {
+                log.warning("[IDFS] Provisioning failed: device not found deviceId=" + deviceId);
                 writeJson(ex, dmsResponse.statusCode(),
                         Map.of("error", "Device not found or not registered"));
                 return;
@@ -466,23 +422,24 @@ public class IdfsServer {
             String mqttPassword = "mqtt-pass-" + deviceId + "-" + System.currentTimeMillis();
 
             Map<String, String> credentials = Map.of(
-                    "device_id", deviceId,
+                    "device_id",       deviceId,
                     "mqtt_broker_url", mqttBrokerUrl,
-                    "mqtt_client_id", mqttClientId,
-                    "mqtt_username", mqttUsername,
-                    "mqtt_password", mqttPassword
+                    "mqtt_client_id",  mqttClientId,
+                    "mqtt_username",   mqttUsername,
+                    "mqtt_password",   mqttPassword
             );
 
-            System.out.println("[IDFS] Runtime provisioning succeeded for deviceId=" + deviceId);
+            log.info("[IDFS] Runtime provisioning succeeded: deviceId=" + deviceId
+                    + " mqttClientId=" + mqttClientId);
             writeJson(ex, 200, credentials);
         } catch (Exception e) {
-            System.out.println("[IDFS] Runtime provisioning error: " + e.getMessage());
+            log.severe("[IDFS] Runtime provisioning error: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", "Internal Server Error"));
         }
     }
 
     // =====================================================================
-    // POST /heartbeat — relay to DMS
+    // POST /heartbeat
     // =====================================================================
 
     private void handleHeartbeat(HttpExchange ex) throws IOException {
@@ -493,7 +450,7 @@ public class IdfsServer {
             }
 
             String requestBody = readBodyString(ex);
-            Map body = JsonUtil.fromJson(requestBody, Map.class);
+            Map body   = JsonUtil.fromJson(requestBody, Map.class);
             String deviceId = (String) body.get("device_id");
 
             if (isBlank(deviceId)) {
@@ -501,13 +458,15 @@ public class IdfsServer {
                 return;
             }
 
+            log.fine("[IDFS] Heartbeat relay: deviceId=" + deviceId);
+
             ServiceResponse dmsResponse = httpClient.post(
                     dmsBaseUrl + "/dms/devices/heartbeat",
-                    Map.of("deviceId", deviceId)
-            );
+                    Map.of("deviceId", deviceId));
 
             writeRaw(ex, dmsResponse.statusCode(), dmsResponse.body());
         } catch (Exception e) {
+            log.severe("[IDFS] Heartbeat error: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", "Internal Server Error"));
         }
     }
@@ -526,18 +485,14 @@ public class IdfsServer {
         byte[] bytes = JsonUtil.toJson(body).getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         ex.sendResponseHeaders(statusCode, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) {
-            os.write(bytes);
-        }
+        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
 
     private static void writeRaw(HttpExchange ex, int statusCode, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         ex.sendResponseHeaders(statusCode, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) {
-            os.write(bytes);
-        }
+        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
 
     private static boolean isBlank(String value) {

@@ -5,8 +5,12 @@ import com.securenet.gateway.impl.APIGatewayServiceImpl;
 import com.securenet.gateway.server.APIGatewayServer;
 
 import java.util.*;
+import java.util.logging.Logger;
 
 public class GatewayMain {
+
+    private static final Logger log = Logger.getLogger(GatewayMain.class.getName());
+
     public static void main(String[] args) throws Exception {
         int port = 443;
         String host = "0.0.0.0";
@@ -18,40 +22,56 @@ public class GatewayMain {
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--port" -> port = Integer.parseInt(args[++i]);
-                case "--host" -> host = args[++i];
-                case "--ums-urls" -> umsUrls = args[++i];
-                case "--dms-urls" -> dmsUrls = args[++i];
-                case "--eps-urls" -> epsUrls = args[++i];
-                case "--notify-urls" -> notifyUrls = args[++i];
-                case "--vss-urls" -> vssUrls = args[++i];
+                case "--port"        -> port       = Integer.parseInt(args[++i]);
+                case "--host"        -> host        = args[++i];
+                case "--ums-urls"    -> umsUrls     = args[++i];
+                case "--dms-urls"    -> dmsUrls     = args[++i];
+                case "--eps-urls"    -> epsUrls     = args[++i];
+                case "--notify-urls" -> notifyUrls  = args[++i];
+                case "--vss-urls"    -> vssUrls     = args[++i];
             }
         }
 
+        log.info("=== SecureNet API Gateway ===");
+        log.info("  Host:         " + host);
+        log.info("  Port:         " + port);
+        log.info("  UMS URLs:     " + umsUrls);
+        log.info("  DMS URLs:     " + dmsUrls);
+        log.info("  EPS URLs:     " + epsUrls);
+        log.info("  Notify URLs:  " + notifyUrls);
+        log.info("  VSS URLs:     " + vssUrls);
+
         LoadBalancer umsLb = new LoadBalancer("UMS", Arrays.asList(umsUrls.split(",")));
         umsLb.start();
+        log.info("[APIGateway] UMS load balancer started: " + umsUrls);
 
         Map<String, LoadBalancer> serviceLbs = new HashMap<>();
         serviceLbs.put("device-management", createLb("DMS", dmsUrls));
-        serviceLbs.put("event-processing", createLb("EPS", epsUrls));
-        serviceLbs.put("notification", createLb("Notification", notifyUrls));
-        serviceLbs.put("video-streaming", createLb("VSS", vssUrls));
+        serviceLbs.put("event-processing",  createLb("EPS", epsUrls));
+        serviceLbs.put("notification",      createLb("Notification", notifyUrls));
+        serviceLbs.put("video-streaming",   createLb("VSS", vssUrls));
+        log.info("[APIGateway] Service load balancers started: " + serviceLbs.keySet());
 
         APIGatewayServiceImpl gateway = new APIGatewayServiceImpl(umsLb, serviceLbs);
         APIGatewayServer server = new APIGatewayServer(host, port, gateway);
         server.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[APIGateway] Shutdown signal received");
             server.stop();
             umsLb.stop();
             serviceLbs.values().forEach(LoadBalancer::stop);
+            System.out.println("[APIGateway] All load balancers stopped");
         }));
+
+        System.out.println("[APIGateway] Ready — listening on " + host + ":" + port);
         Thread.currentThread().join();
     }
 
     private static LoadBalancer createLb(String name, String urls) {
         LoadBalancer lb = new LoadBalancer(name, Arrays.asList(urls.split(",")));
         lb.start();
+        log.info("[APIGateway] Load balancer created: " + name + " -> " + urls);
         return lb;
     }
 }

@@ -4,7 +4,12 @@ import com.securenet.storage.StorageGateway;
 import com.securenet.videostreaming.impl.VideoStreamingServiceImpl;
 import com.securenet.videostreaming.server.VideoStreamingServer;
 
+import java.util.logging.Logger;
+
 public class VssMain {
+
+    private static final Logger log = Logger.getLogger(VssMain.class.getName());
+
     public static void main(String[] args) throws Exception {
         int port = 9005;
         String host = "0.0.0.0";
@@ -12,18 +17,28 @@ public class VssMain {
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--port" -> port = Integer.parseInt(args[++i]);
-                case "--host" -> host = args[++i];
+                case "--port"        -> port      = Integer.parseInt(args[++i]);
+                case "--host"        -> host       = args[++i];
                 case "--storage-url" -> storageUrl = args[++i];
             }
         }
+
+        log.info("=== SecureNet Video Streaming Service ===");
+        log.info("  Host:         " + host);
+        log.info("  Port:         " + port);
+        log.info("  Storage URL:  " + storageUrl);
 
         StorageGateway gateway = new StorageGateway(storageUrl);
         VideoStreamingServiceImpl service = new VideoStreamingServiceImpl(gateway);
         VideoStreamingServer server = new VideoStreamingServer(host, port, service);
         server.start();
 
-        Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[VSS] Shutdown signal received");
+            server.stop();
+        }));
+
+        log.info("[VSS] Ready — listening on " + host + ":" + port);
         Thread.currentThread().join();
     }
 }

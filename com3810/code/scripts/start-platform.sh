@@ -24,10 +24,18 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOG_DIR="$PROJECT_DIR/logs"
+
+# Each run gets its own timestamped directory
+RUN_TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
+LOG_DIR="$PROJECT_DIR/logs/run_$RUN_TIMESTAMP"
 PID_DIR="$PROJECT_DIR/pids"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
+
+# Write a symlink logs/latest -> current run for convenience
+ln -sfn "$LOG_DIR" "$PROJECT_DIR/logs/latest"
+
+echo "Logs directory: $LOG_DIR"
 
 # Build classpath from packaged JARs + dependencies
 CLASSPATH=""
@@ -44,16 +52,41 @@ if [ -z "$CLASSPATH" ]; then
     exit 1
 fi
 
+# -----------------------------------------------------------------------------
+# start_service <name> <main_class> [args...]
+#
+# Writes a JUL logging.properties file for this service instance so that
+# java.util.logging writes to LOG_DIR/<name>.log instead of stderr.
+# -----------------------------------------------------------------------------
 start_service() {
     local name=$1
     local main_class=$2
     shift 2
 
+    # Write a per-instance JUL logging.properties
+    local log_file="$LOG_DIR/$name.log"
+    local props_file="$LOG_DIR/$name-logging.properties"
+    cat > "$props_file" <<EOF
+handlers=java.util.logging.FileHandler
+java.util.logging.FileHandler.pattern=$log_file
+java.util.logging.FileHandler.formatter=com.securenet.common.LogFormatter
+java.util.logging.FileHandler.append=false
+java.util.logging.FileHandler.limit=50000000
+# Root level — INFO shows normal operations, WARNING/SEVERE for problems
+.level=INFO
+# Suppress noisy JDK internals
+sun.net.level=WARNING
+io.netty.level=WARNING
+io.moquette.level=WARNING
+EOF
+
     echo "  Starting $name..."
-    java -cp "$CLASSPATH" "$main_class" "$@" \
-        > "$LOG_DIR/$name.log" 2>&1 &
+    java -cp "$CLASSPATH" \
+        -Djava.util.logging.config.file="$props_file" \
+        "$main_class" "$@" \
+        >> "$log_file" 2>&1 &
     echo $! > "$PID_DIR/$name.pid"
-    echo "    PID: $(cat "$PID_DIR/$name.pid")"
+    echo "    PID: $(cat "$PID_DIR/$name.pid")  log: logs/run_$RUN_TIMESTAMP/$name.log"
 }
 
 echo "=== Starting SecureNet Platform ==="
@@ -242,6 +275,9 @@ echo ""
 echo "  EPS Raft Cluster (stateful, leader-elected):"
 echo "    API:           localhost:9003, 9103, 9203"
 echo "    Raft RPC:      localhost:9013, 9023, 9033"
+echo ""
+echo "  Logs: $LOG_DIR"
+echo "        (symlinked as logs/latest)"
 echo ""
 echo "  Commands:"
 echo "    Raft status:     curl http://localhost:9013/raft/status"

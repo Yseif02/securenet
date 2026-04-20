@@ -14,37 +14,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
+import java.util.logging.Logger;
 
 /**
  * HTTP server exposing Raft protocol RPCs for inter-node communication.
  *
- * <p>Each EPS node runs one of these alongside its
- * {@link com.securenet.eventprocessing.server.EventProcessingServer}.
- * Peer nodes call these endpoints during leader election and log
- * replication.
- *
  * <h3>Endpoints</h3>
  * <ul>
- *   <li>{@code POST /raft/request-vote}   — RequestVote RPC</li>
- *   <li>{@code POST /raft/append-entries}  — AppendEntries RPC</li>
- *   <li>{@code GET  /raft/status}          — cluster status (debug)</li>
+ *   <li>{@code POST /raft/request-vote}  — RequestVote RPC</li>
+ *   <li>{@code POST /raft/append-entries} — AppendEntries RPC</li>
+ *   <li>{@code GET  /raft/status}         — cluster status (debug)</li>
  * </ul>
  */
 public class RaftRpcServer {
+
+    private static final Logger log = Logger.getLogger(RaftRpcServer.class.getName());
 
     private final String host;
     private final int port;
     private final RaftNode raftNode;
     private HttpServer httpServer;
 
-    /**
-     * @param host     bind address
-     * @param port     Raft RPC port (separate from the EPS API port)
-     * @param raftNode the Raft node this server exposes
-     */
     public RaftRpcServer(String host, int port, RaftNode raftNode) {
-        this.host = Objects.requireNonNull(host, "host");
-        this.port = port;
+        this.host     = Objects.requireNonNull(host, "host");
+        this.port     = port;
         this.raftNode = Objects.requireNonNull(raftNode, "raftNode");
     }
 
@@ -52,12 +45,12 @@ public class RaftRpcServer {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
         httpServer.setExecutor(Executors.newFixedThreadPool(4));
 
-        httpServer.createContext("/raft/request-vote", this::handleRequestVote);
+        httpServer.createContext("/raft/request-vote",   this::handleRequestVote);
         httpServer.createContext("/raft/append-entries", this::handleAppendEntries);
-        httpServer.createContext("/raft/status", this::handleStatus);
+        httpServer.createContext("/raft/status",         this::handleStatus);
 
         httpServer.start();
-        System.out.println("[RaftRPC:" + raftNode.getNodeId() + "] started on " + host + ":" + port);
+        log.info("[RaftRPC:" + raftNode.getNodeId() + "] started on " + host + ":" + port);
     }
 
     public void stop() {
@@ -77,17 +70,24 @@ public class RaftRpcServer {
             return;
         }
         try {
-            Map body = readBody(ex, Map.class);
-            long term = ((Number) body.get("term")).longValue();
+            Map body          = readBody(ex, Map.class);
+            long term         = ((Number) body.get("term")).longValue();
             String candidateId = (String) body.get("candidateId");
             long lastLogIndex = ((Number) body.get("lastLogIndex")).longValue();
-            long lastLogTerm = ((Number) body.get("lastLogTerm")).longValue();
+            long lastLogTerm  = ((Number) body.get("lastLogTerm")).longValue();
+
+            log.fine("[RaftRPC:" + raftNode.getNodeId() + "] RequestVote from "
+                    + candidateId + " term=" + term);
 
             Map<String, Object> result = raftNode.handleRequestVote(
                     term, candidateId, lastLogIndex, lastLogTerm);
 
+            log.fine("[RaftRPC:" + raftNode.getNodeId() + "] RequestVote response: granted="
+                    + result.get("voteGranted"));
             writeJson(ex, 200, result);
         } catch (Exception e) {
+            log.severe("[RaftRPC:" + raftNode.getNodeId() + "] RequestVote error: "
+                    + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -102,14 +102,13 @@ public class RaftRpcServer {
             return;
         }
         try {
-            Map body = readBody(ex, Map.class);
-            long term = ((Number) body.get("term")).longValue();
-            String leaderId = (String) body.get("leaderId");
+            Map body          = readBody(ex, Map.class);
+            long term         = ((Number) body.get("term")).longValue();
+            String leaderId   = (String) body.get("leaderId");
             long prevLogIndex = ((Number) body.get("prevLogIndex")).longValue();
-            long prevLogTerm = ((Number) body.get("prevLogTerm")).longValue();
+            long prevLogTerm  = ((Number) body.get("prevLogTerm")).longValue();
             long leaderCommit = ((Number) body.get("leaderCommit")).longValue();
 
-            // Deserialize entries
             List<LogEntry> entries = List.of();
             Object rawEntries = body.get("entries");
             if (rawEntries != null) {
@@ -118,11 +117,18 @@ public class RaftRpcServer {
                         new TypeToken<List<LogEntry>>(){}.getType());
             }
 
+            if (!entries.isEmpty()) {
+                log.fine("[RaftRPC:" + raftNode.getNodeId() + "] AppendEntries from "
+                        + leaderId + " term=" + term + " entries=" + entries.size());
+            }
+
             Map<String, Object> result = raftNode.handleAppendEntries(
                     term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit);
 
             writeJson(ex, 200, result);
         } catch (Exception e) {
+            log.severe("[RaftRPC:" + raftNode.getNodeId() + "] AppendEntries error: "
+                    + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }
@@ -132,6 +138,7 @@ public class RaftRpcServer {
     // =====================================================================
 
     private void handleStatus(HttpExchange ex) throws IOException {
+        log.fine("[RaftRPC:" + raftNode.getNodeId() + "] Status request");
         writeJson(ex, 200, raftNode.getStatus());
     }
 
