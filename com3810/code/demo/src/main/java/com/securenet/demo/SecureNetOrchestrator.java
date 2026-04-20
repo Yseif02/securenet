@@ -90,8 +90,8 @@ public class SecureNetOrchestrator {
         System.out.println("--- Starting IDFS ---");
         String dmsUrl = LOCALHOST + ":" + DMS_PORT;
         String epsUrl = LOCALHOST + ":" + EPS_PORT;
-        IdfsServer idfsServer = new IdfsServer(BIND_HOST, IDFS_PORT, dmsUrl, epsUrl, MQTT_BROKER_URL);
-        idfsServer.start();
+        //IdfsServer idfsServer = new IdfsServer(BIND_HOST, IDFS_PORT, dmsUrl, epsUrl, MQTT_BROKER_URL);
+        //idfsServer.start();
         Thread.sleep(300);
 
         System.out.println();
@@ -218,7 +218,7 @@ public class SecureNetOrchestrator {
             sensor.shutdown();
             camera.shutdown();
             lock.shutdown();
-            idfsServer.stop();
+            //idfsServer.stop();
             epsServer.stop();
             dmsServer.stop();
             umsServer.stop();

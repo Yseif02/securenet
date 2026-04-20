@@ -2,6 +2,7 @@ package com.securenet.iotfirmware;
 
 import com.securenet.iotfirmware.mqtt.EmbeddedMqttBroker;
 import com.securenet.iotfirmware.server.IdfsServer;
+import com.securenet.storage.StorageGateway;
 
 import java.util.logging.Logger;
 
@@ -17,6 +18,7 @@ public class IdfsMain {
         String epsUrl = "http://localhost:9003";
         String mqttBrokerUrl = "tcp://localhost:1883";
         boolean startBroker = true;
+        String storageUrl = "http://localhost:9000";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -26,6 +28,7 @@ public class IdfsMain {
                 case "--dms-url"         -> dmsUrl        = args[++i];
                 case "--eps-url"         -> epsUrl        = args[++i];
                 case "--mqtt-broker-url" -> mqttBrokerUrl = args[++i];
+                case "--storage-url" -> storageUrl = args[++i];
                 case "--no-broker"       -> startBroker   = false;
             }
         }
@@ -47,7 +50,8 @@ public class IdfsMain {
             Thread.sleep(500);
         }
 
-        IdfsServer idfs = new IdfsServer(host, httpPort, dmsUrl, epsUrl, mqttBrokerUrl);
+        StorageGateway storageGateway = new StorageGateway(storageUrl);
+        IdfsServer idfs = new IdfsServer(host, httpPort, dmsUrl, epsUrl, mqttBrokerUrl, storageGateway);
         idfs.start();
 
         final EmbeddedMqttBroker brokerRef = broker;

@@ -106,10 +106,25 @@ STORAGE_URL="http://localhost:9000"
 # =====================================================================
 echo ""
 echo "--- IDFS + MQTT Broker ---"
-start_service "idfs" "com.securenet.iotfirmware.IdfsMain" \
+start_service "idfs-1" "com.securenet.iotfirmware.IdfsMain" \
     --http-port 8080 --mqtt-port 1883 \
     --dms-url http://localhost:9002 \
-    --eps-url http://localhost:9003
+    --eps-url http://localhost:9003 \
+    --storage-url $STORAGE_URL
+sleep 0.3
+start_service "idfs-2" "com.securenet.iotfirmware.IdfsMain" \
+    --http-port 8081 --no-broker \
+    --dms-url http://localhost:9002 \
+    --eps-url http://localhost:9003 \
+    --storage-url $STORAGE_URL \
+    --mqtt-broker-url tcp://localhost:1883
+sleep 0.3
+start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
+    --http-port 8082 --no-broker \
+    --dms-url http://localhost:9002 \
+    --eps-url http://localhost:9003 \
+    --storage-url $STORAGE_URL \
+    --mqtt-broker-url tcp://localhost:1883
 sleep 2
 
 # =====================================================================
@@ -143,13 +158,16 @@ sleep 0.3
 echo ""
 echo "--- Device Management Service (3 instances) ---"
 start_service "dms-1" "com.securenet.devicemanagement.DmsMain" \
-    --port 9002 --storage-url $STORAGE_URL --idfs-url http://localhost:8080
+    --port 9002 --storage-url $STORAGE_URL \
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
 sleep 0.3
 start_service "dms-2" "com.securenet.devicemanagement.DmsMain" \
-    --port 9012 --storage-url $STORAGE_URL --idfs-url http://localhost:8080
+    --port 9012 --storage-url $STORAGE_URL \
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
 sleep 0.3
 start_service "dms-3" "com.securenet.devicemanagement.DmsMain" \
-    --port 9022 --storage-url $STORAGE_URL --idfs-url http://localhost:8080
+    --port 9022 --storage-url $STORAGE_URL \
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
 sleep 0.3
 
 # =====================================================================
@@ -226,7 +244,9 @@ start_service "cluster-manager" "com.securenet.common.ClusterManagerMain" \
     --port 9090 \
     --check-interval 5000 \
     --failure-threshold 15000 \
-    --instance IDFS:idfs:http://localhost:8080 \
+    --instance IDFS:idfs-1:http://localhost:8080 \
+    --instance IDFS:idfs-2:http://localhost:8081 \
+    --instance IDFS:idfs-3:http://localhost:8082 \
     --instance Storage:storage:http://localhost:9000 \
     --instance UMS:ums-1:http://localhost:9001 \
     --instance UMS:ums-2:http://localhost:9011 \
@@ -251,7 +271,7 @@ sleep 0.5
 # =====================================================================
 echo ""
 echo "================================================================"
-echo "  SecureNet Platform Running — 21 Java processes"
+echo "  SecureNet Platform Running — 23 Java processes"
 echo "================================================================"
 echo ""
 echo "  PostgreSQL Cluster:"
@@ -261,12 +281,12 @@ echo "    Standby 2:     localhost:5434  (read-only)"
 echo ""
 echo "  Infrastructure:"
 echo "    MQTT Broker:   localhost:1883"
-echo "    IDFS:          localhost:8080"
 echo "    Storage:       localhost:9000"
 echo "    API Gateway:   localhost:8443"
 echo "    Cluster Mgr:   localhost:9090"
 echo ""
 echo "  Service Clusters (3 instances each, load balanced by Gateway):"
+echo "    IDFS:          localhost:8080, 8081, 8082"
 echo "    UMS:           localhost:9001, 9011, 9021"
 echo "    DMS:           localhost:9002, 9012, 9022"
 echo "    Notification:  localhost:9004, 9014, 9024"

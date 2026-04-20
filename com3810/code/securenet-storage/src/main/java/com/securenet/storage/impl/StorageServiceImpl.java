@@ -217,7 +217,18 @@ public class StorageServiceImpl implements StorageService {
                 payload         TEXT         NOT NULL,
                 attempts        INT          NOT NULL DEFAULT 0,
                 created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )"""
+            )""",
+
+                // --- Pending IDFS commands ---
+                """
+            CREATE TABLE IF NOT EXISTS pending_commands (
+                correlation_id  VARCHAR(255) PRIMARY KEY,
+                device_id       VARCHAR(255) NOT NULL,
+                command_type    VARCHAR(50)  NOT NULL,
+                dispatched_at   TIMESTAMP    NOT NULL,
+                result          VARCHAR(10),
+                expires_at      TIMESTAMP    NOT NULL
+            )""",
         };
 
         try (Statement stmt = connection.createStatement()) {
@@ -450,6 +461,77 @@ public class StorageServiceImpl implements StorageService {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to delete device", e);
         }
+    }
+
+    // =====================================================================
+    // Pending IDFS commands
+    // =====================================================================
+
+    @Override
+    public void savePendingCommand(String correlationId, String deviceId,
+                                   String commandType, Instant dispatchedAt,
+                                   Instant expiresAt) {
+        String sql = """
+        INSERT INTO pending_commands
+            (correlation_id, device_id, command_type, dispatched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (correlation_id) DO NOTHING
+        """;
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, correlationId);
+            ps.setString(2, deviceId);
+            ps.setString(3, commandType);
+            ps.setTimestamp(4, Timestamp.from(dispatchedAt));
+            ps.setTimestamp(5, Timestamp.from(expiresAt));
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to save pending command", e); }
+    }
+
+    @Override
+    public Optional<Map<String, String>> findPendingCommand(String correlationId) {
+        String sql = "SELECT correlation_id, device_id, command_type, dispatched_at, result, expires_at " +
+                "FROM pending_commands WHERE correlation_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, correlationId);
+            ResultSet rs = ps.executeQuery();
+            if (!rs.next()) return Optional.empty();
+            Map<String, String> row = new HashMap<>();
+            row.put("correlationId", rs.getString("correlation_id"));
+            row.put("deviceId",      rs.getString("device_id"));
+            row.put("commandType",   rs.getString("command_type"));
+            row.put("dispatchedAt",  rs.getTimestamp("dispatched_at").toInstant().toString());
+            row.put("result",        rs.getString("result")); // null if still pending
+            row.put("expiresAt",     rs.getTimestamp("expires_at").toInstant().toString());
+            return Optional.of(row);
+        } catch (SQLException e) { throw new RuntimeException("Failed to find pending command", e); }
+    }
+
+    @Override
+    public void updatePendingCommandResult(String correlationId, String result) {
+        String sql = "UPDATE pending_commands SET result = ? WHERE correlation_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, result);
+            ps.setString(2, correlationId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to update command result", e); }
+    }
+
+    @Override
+    public void deletePendingCommand(String correlationId) {
+        String sql = "DELETE FROM pending_commands WHERE correlation_id = ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, correlationId);
+            ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete pending command", e); }
+    }
+
+    @Override
+    public int deleteExpiredPendingCommands(Instant olderThan) {
+        String sql = "DELETE FROM pending_commands WHERE expires_at < ?";
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.from(olderThan));
+            return ps.executeUpdate();
+        } catch (SQLException e) { throw new RuntimeException("Failed to delete expired commands", e); }
     }
 
     // =====================================================================

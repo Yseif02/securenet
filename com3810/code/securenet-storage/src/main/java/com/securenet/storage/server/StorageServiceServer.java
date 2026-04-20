@@ -61,6 +61,7 @@ public class StorageServiceServer {
         httpServer.createContext("/storage/eps-lamport-clock",    this::handleEpsLamportClock);
         httpServer.createContext("/storage/recording-sessions",   this::handleRecordingSessions);
         httpServer.createContext("/storage/notification-outbox",  this::handleNotificationOutbox);
+        httpServer.createContext("/storage/pending-commands", this::handlePendingCommands);
         httpServer.createContext("/health", ex -> {
             log.fine("[Storage] Health check from " + ex.getRemoteAddress());
             writeJson(ex, 200, Map.of("status", "UP"));
@@ -850,6 +851,64 @@ public class StorageServiceServer {
             }
         } catch (Exception e) {
             log.severe("[Storage] handleNotificationOutbox 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
+    }
+
+    private void handlePendingCommands(HttpExchange ex) throws IOException {
+        try {
+            String method   = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+
+            // POST /storage/pending-commands  — save
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                storageService.savePendingCommand(
+                        (String) body.get("correlationId"),
+                        (String) body.get("deviceId"),
+                        (String) body.get("commandType"),
+                        Instant.parse((String) body.get("dispatchedAt")),
+                        Instant.parse((String) body.get("expiresAt")));
+                log.info("[Storage] savePendingCommand: correlationId=" + body.get("correlationId"));
+                writeJson(ex, 201, Map.of("status", "ok"));
+
+                // POST /storage/pending-commands/cleanup  — expire
+            } else if ("POST".equals(method) && segments.length == 4
+                    && "cleanup".equals(segments[3])) {
+                Map body = readBody(ex, Map.class);
+                int deleted = storageService.deleteExpiredPendingCommands(
+                        Instant.parse((String) body.get("olderThan")));
+                log.info("[Storage] deleteExpiredPendingCommands: deleted=" + deleted);
+                writeJson(ex, 200, Map.of("deleted", deleted));
+
+                // POST /storage/pending-commands/{id}/result  — update result
+            } else if ("POST".equals(method) && segments.length == 5
+                    && "result".equals(segments[4])) {
+                Map body = readBody(ex, Map.class);
+                String result = (String) body.get("result");
+                log.info("[Storage] updatePendingCommandResult: correlationId=" + segments[3]
+                        + " result=" + result);
+                storageService.updatePendingCommandResult(segments[3], result);
+                writeJson(ex, 200, Map.of("status", "ok"));
+
+                // GET /storage/pending-commands/{id}  — find
+            } else if ("GET".equals(method) && segments.length == 4) {
+                log.info("[Storage] findPendingCommand: correlationId=" + segments[3]);
+                Optional<Map<String, String>> cmd = storageService.findPendingCommand(segments[3]);
+                if (cmd.isPresent()) writeJson(ex, 200, cmd.get());
+                else writeJson(ex, 404, Map.of("error", "Pending command not found"));
+
+                // DELETE /storage/pending-commands/{id}  — delete
+            } else if ("DELETE".equals(method) && segments.length == 4) {
+                log.info("[Storage] deletePendingCommand: correlationId=" + segments[3]);
+                storageService.deletePendingCommand(segments[3]);
+                writeJson(ex, 200, Map.of("status", "ok"));
+
+            } else {
+                writeJson(ex, 400, Map.of("error", "Bad request"));
+            }
+        } catch (Exception e) {
+            log.severe("[Storage] handlePendingCommands 500: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }

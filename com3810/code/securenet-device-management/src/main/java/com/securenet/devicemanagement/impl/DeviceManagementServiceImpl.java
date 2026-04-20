@@ -1,6 +1,7 @@
 package com.securenet.devicemanagement.impl;
 
 import com.securenet.common.JsonUtil;
+import com.securenet.common.LoadBalancer;
 import com.securenet.common.ServiceClient;
 import com.securenet.common.ServiceClient.ServiceResponse;
 import com.securenet.devicemanagement.DeviceManagementService;
@@ -15,6 +16,7 @@ import com.securenet.storage.StorageGateway;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -38,16 +40,19 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     private static final Logger log = Logger.getLogger(DeviceManagementServiceImpl.class.getName());
 
     private final StorageGateway storageGateway;
-    private final String idfsBaseUrl;
+    //private final String idfsBaseUrl;
+    private final LoadBalancer idfsLoadBalancer;
+
     private final ServiceClient httpClient;
 
     /**
      * @param storageGateway HTTP client pointing to the remote Storage Service
-     * @param idfsBaseUrl    base URL of the IDFS server, e.g. {@code "http://localhost:8080"}
+     * //@param idfsBaseUrl    base URL of the IDFS server, e.g. {@code "http://localhost:8080"}
      */
-    public DeviceManagementServiceImpl(StorageGateway storageGateway, String idfsBaseUrl) {
+    public DeviceManagementServiceImpl(StorageGateway storageGateway, String idfsUrls) {
         this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
-        this.idfsBaseUrl = Objects.requireNonNull(idfsBaseUrl, "idfsBaseUrl");
+        this.idfsLoadBalancer = new LoadBalancer("IDFS", Arrays.asList(idfsUrls.split(",")));
+        this.idfsLoadBalancer.start();
         this.httpClient = new ServiceClient();
     }
 
@@ -232,12 +237,13 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private boolean dispatchCommand(String deviceId, String commandType) {
         String correlationId = UUID.randomUUID().toString();
+        String idfsUrl = idfsLoadBalancer.nextHealthyUrl();
         log.info("[DMS] Dispatching " + commandType + " to " + deviceId
-                + " correlationId=" + correlationId);
+                + " via " + idfsUrl + " correlationId=" + correlationId);
 
         try {
             ServiceResponse response = httpClient.post(
-                    idfsBaseUrl + "/command",
+                    idfsUrl + "/command",
                     java.util.Map.of(
                             "device_id", deviceId,
                             "command_type", commandType,
@@ -347,7 +353,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
     }
 
     private String buildFirmwareUrl(DeviceType deviceType, String firmwareVersion) {
-        return idfsBaseUrl + "/firmware/" +
+        return idfsLoadBalancer.nextHealthyUrl() + "/firmware/" +
                 deviceType.name().toLowerCase() + "/" +
                 firmwareVersion + ".bin";
     }

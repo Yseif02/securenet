@@ -394,6 +394,43 @@ public class StorageGateway {
     }
 
     // =====================================================================
+    // Pending IDFS commands
+    // =====================================================================
+
+    public void savePendingCommand(String correlationId, String deviceId,
+                                   String commandType, Instant dispatchedAt,
+                                   Instant expiresAt) {
+        post("/storage/pending-commands", Map.of(
+                "correlationId", correlationId,
+                "deviceId",      deviceId,
+                "commandType",   commandType,
+                "dispatchedAt",  dispatchedAt.toString(),
+                "expiresAt",     expiresAt.toString()));
+    }
+
+    public Optional<Map<String, String>> findPendingCommand(String correlationId) {
+        ServiceResponse resp = get("/storage/pending-commands/" + correlationId);
+        if (resp.statusCode() == 404) return Optional.empty();
+        return Optional.of(resp.bodyAs(Map.class));
+    }
+
+    public void updatePendingCommandResult(String correlationId, String result) {
+        post("/storage/pending-commands/" + correlationId + "/result",
+                Map.of("result", result));
+    }
+
+    public void deletePendingCommand(String correlationId) {
+        delete("/storage/pending-commands/" + correlationId);
+    }
+
+    public int deleteExpiredPendingCommands(Instant olderThan) {
+        ServiceResponse resp = post("/storage/pending-commands/cleanup",
+                Map.of("olderThan", olderThan.toString()));
+        Map map = resp.bodyAs(Map.class);
+        return ((Number) map.get("deleted")).intValue();
+    }
+
+    // =====================================================================
     // HTTP helpers
     // =====================================================================
 

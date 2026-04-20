@@ -129,6 +129,21 @@ public interface StorageService {
      */
     void deleteDevice(String deviceId) throws DeviceNotFoundException;
 
+    // =====================================================================
+    // Pending IDFS commands
+    // =====================================================================
+    void savePendingCommand(String correlationId, String deviceId,
+                            String commandType, Instant dispatchedAt,
+                            Instant expiresAt);
+
+    Optional<Map<String, String>> findPendingCommand(String correlationId);
+
+    void updatePendingCommandResult(String correlationId, String result);
+
+    void deletePendingCommand(String correlationId);
+
+    int deleteExpiredPendingCommands(Instant olderThan);
+
     // =========================================================================
     // Security event history
     // =========================================================================

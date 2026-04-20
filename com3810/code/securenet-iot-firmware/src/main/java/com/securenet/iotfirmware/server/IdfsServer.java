@@ -3,6 +3,7 @@ package com.securenet.iotfirmware.server;
 import com.securenet.common.JsonUtil;
 import com.securenet.common.ServiceClient;
 import com.securenet.common.ServiceClient.ServiceResponse;
+import com.securenet.storage.StorageGateway;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.eclipse.paho.client.mqttv3.*;
@@ -13,10 +14,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -54,6 +52,7 @@ public class IdfsServer {
     private final String mqttBrokerUrl;
     private final ServiceClient httpClient;
     private HttpServer httpServer;
+    private final StorageGateway storageGateway;
 
     private MqttClient mqttClient;
 
@@ -61,16 +60,19 @@ public class IdfsServer {
      * Pending command futures keyed by correlationId.
      * Completed when the device publishes an ack with a matching correlationId.
      */
-    private final ConcurrentHashMap<String, CompletableFuture<Map>> pendingCommands =
-            new ConcurrentHashMap<>();
+    //private final ConcurrentHashMap<String, CompletableFuture<Map>> pendingCommands =
+           // new ConcurrentHashMap<>();
 
     public IdfsServer(String host, int port, String dmsBaseUrl,
-                      String epsBaseUrl, String mqttBrokerUrl) {
+                      String epsBaseUrl, String mqttBrokerUrl,
+                      StorageGateway storageGateway) {
         this.host          = Objects.requireNonNull(host, "host");
         this.port          = port;
         this.dmsBaseUrl    = Objects.requireNonNull(dmsBaseUrl, "dmsBaseUrl");
         this.epsBaseUrl    = Objects.requireNonNull(epsBaseUrl, "epsBaseUrl");
         this.mqttBrokerUrl = Objects.requireNonNull(mqttBrokerUrl, "mqttBrokerUrl");
+        this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
+
         this.httpClient    = new ServiceClient();
     }
 
@@ -148,25 +150,20 @@ public class IdfsServer {
 
     private void onAckReceived(String topic, MqttMessage message) {
         try {
-            String payload  = new String(message.getPayload(), StandardCharsets.UTF_8);
-            Map ack         = JsonUtil.fromJson(payload, Map.class);
-            String corrId   = (String) ack.get("correlation_id");
-
-            if (corrId != null) {
-                CompletableFuture<Map> future = pendingCommands.remove(corrId);
-                if (future != null) {
-                    future.complete(ack);
-                    log.info("[IDFS] Ack received for correlationId=" + corrId);
-                } else {
-                    log.warning("[IDFS] Ack for unknown correlationId=" + corrId
-                            + " (already timed out?)");
-                }
-            } else {
-                log.warning("[IDFS] Ack on topic=" + topic + " missing correlation_id");
+            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+            Map ack        = JsonUtil.fromJson(payload, Map.class);
+            String corrId  = (String) ack.get("correlation_id");
+            if (corrId == null) {
+                log.warning("[IDFS] Ack missing correlation_id on topic=" + topic);
+                return;
             }
+            Boolean success = (Boolean) ack.get("success");
+            String result   = Boolean.TRUE.equals(success) ? "SUCCESS" : "FAILURE";
+            storageGateway.updatePendingCommandResult(corrId, result);
+            log.info("[IDFS] Ack received and persisted: correlationId=" + corrId
+                    + " result=" + result);
         } catch (Exception e) {
-            log.severe("[IDFS] Error processing ack on topic=" + topic
-                    + ": " + e.getMessage());
+            log.severe("[IDFS] Error processing ack: " + e.getMessage());
         }
     }
 
@@ -238,6 +235,7 @@ public class IdfsServer {
             writeJson(ex, 405, Map.of("error", "Method Not Allowed"));
             return;
         }
+
         try {
             String requestBody = readBodyString(ex);
             Map body = JsonUtil.fromJson(requestBody, Map.class);
@@ -262,54 +260,66 @@ public class IdfsServer {
             log.info("[IDFS] Command dispatch: deviceId=" + deviceId
                     + " command=" + commandType + " correlationId=" + corrId);
 
-            CompletableFuture<Map> ackFuture = new CompletableFuture<>();
-            pendingCommands.put(corrId, ackFuture);
+            // Save to DB before publishing (so any instance can receive the ack)
+            Instant now       = Instant.now();
+            Instant expiresAt = now.plusSeconds(COMMAND_TIMEOUT_SECONDS);
+            storageGateway.savePendingCommand(corrId, deviceId, commandType, now, expiresAt);
 
-            String topic   = "securenet/devices/" + deviceId + "/commands/"
-                    + commandType.toLowerCase();
+            String topic   = "securenet/devices/" + deviceId + "/commands/" + commandType.toLowerCase();
             String payload = JsonUtil.toJson(Map.of(
-                    "device_id",     deviceId,
-                    "command_type",  commandType,
-                    "correlation_id", corrId
-            ));
+                    "device_id",      deviceId,
+                    "command_type",   commandType,
+                    "correlation_id", corrId));
 
             mqttClient.publish(topic, payload.getBytes(StandardCharsets.UTF_8), 1, false);
             log.info("[IDFS] Published command to " + topic);
 
+            // Poll DB for ack result (any IDFS instance may have written it)
+            long deadline = System.currentTimeMillis() + (COMMAND_TIMEOUT_SECONDS * 1000L);
+            String result = null;
             try {
-                Map ack     = ackFuture.get(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                Boolean success = (Boolean) ack.get("success");
-                if (Boolean.TRUE.equals(success)) {
-                    log.info("[IDFS] Command acknowledged: deviceId=" + deviceId
-                            + " command=" + commandType + " correlationId=" + corrId);
-                    writeJson(ex, 200, Map.of(
-                            "acknowledged", true,
-                            "correlation_id", corrId,
-                            "device_id",     deviceId,
-                            "command_type",  commandType));
-                } else {
-                    log.warning("[IDFS] Command failed on device: deviceId=" + deviceId
-                            + " command=" + commandType);
-                    writeJson(ex, 200, Map.of(
-                            "acknowledged", false,
-                            "correlation_id", corrId,
-                            "device_id",     deviceId,
-                            "command_type",  commandType,
-                            "error",         "Device reported failure"));
+                while (System.currentTimeMillis() < deadline) {
+                    Optional<Map<String, String>> row = storageGateway.findPendingCommand(corrId);
+                    if (row.isPresent() && row.get().get("result") != null) {
+                        result = row.get().get("result");
+                        break;
+                    }
+                    Thread.sleep(100);
                 }
-            } catch (TimeoutException e) {
-                pendingCommands.remove(corrId);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                storageGateway.deletePendingCommand(corrId);
+                log.severe("[IDFS] Command interrupted: " + e.getMessage());
+                writeJson(ex, 500, Map.of("error", "Command interrupted"));
+                return;
+            }
+
+            storageGateway.deletePendingCommand(corrId);
+
+            if (result == null) {
                 log.warning("[IDFS] Command timed out: deviceId=" + deviceId
                         + " command=" + commandType + " correlationId=" + corrId);
                 writeJson(ex, 504, Map.of(
-                        "acknowledged",  false,
+                        "acknowledged",   false,
                         "correlation_id", corrId,
-                        "error", "Device did not acknowledge within "
-                                + COMMAND_TIMEOUT_SECONDS + "s"));
-            } catch (InterruptedException | ExecutionException e) {
-                Thread.currentThread().interrupt();
-                log.severe("[IDFS] Command interrupted: " + e.getMessage());
-                writeJson(ex, 500, Map.of("error", "Command interrupted"));
+                        "error", "Device did not acknowledge within " + COMMAND_TIMEOUT_SECONDS + "s"));
+            } else if ("SUCCESS".equals(result)) {
+                log.info("[IDFS] Command acknowledged: deviceId=" + deviceId
+                        + " command=" + commandType);
+                writeJson(ex, 200, Map.of(
+                        "acknowledged",   true,
+                        "correlation_id", corrId,
+                        "device_id",      deviceId,
+                        "command_type",   commandType));
+            } else {
+                log.warning("[IDFS] Command failed on device: deviceId=" + deviceId
+                        + " command=" + commandType);
+                writeJson(ex, 200, Map.of(
+                        "acknowledged",   false,
+                        "correlation_id", corrId,
+                        "device_id",      deviceId,
+                        "command_type",   commandType,
+                        "error",          "Device reported failure"));
             }
 
         } catch (MqttException e) {
