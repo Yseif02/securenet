@@ -1,43 +1,27 @@
 #!/bin/bash
 # =============================================================================
 # SecureNet Platform — Start all distributed services
-#
-# Starts the full SecureNet platform with:
-#   - PostgreSQL replication cluster (primary + 2 standbys)
-#   - Embedded MQTT broker + 3x IDFS
-#   - 3x Storage Service (HikariCP pool, load balanced)
-#   - 3x UMS, DMS, Notification, VSS instances (stateless, load balanced)
-#   - 3x EPS Raft cluster nodes (stateful, leader-elected)
-#   - API Gateway (client-facing, routes via load balancers)
-#   - Cluster Manager (monitors all instances, detects failures)
-#
-# Prerequisites:
-#   - PostgreSQL cluster: ./scripts/setup-postgres-cluster.sh
-#   - Build: mvn clean package -DskipTests
-#
-# Usage:
-#   ./scripts/start-platform.sh
-#   ./scripts/stop-platform.sh
 # =============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RESTART_DIR="$SCRIPT_DIR/restart"
 
-# Each run gets its own timestamped directory
 RUN_TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
 LOG_DIR="$PROJECT_DIR/logs/run_$RUN_TIMESTAMP"
 PID_DIR="$PROJECT_DIR/pids"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
-
-# Write a symlink logs/latest -> current run for convenience
 ln -sfn "$LOG_DIR" "$PROJECT_DIR/logs/latest"
 
 echo "Logs directory: $LOG_DIR"
 
-# Build classpath from packaged JARs + dependencies
+# Make all restart scripts executable
+chmod +x "$RESTART_DIR"/*.sh
+
+# Build classpath
 CLASSPATH=""
 for jar in "$PROJECT_DIR"/securenet-*/target/*.jar \
            "$PROJECT_DIR"/securenet-*/target/dependency/*.jar \
@@ -52,9 +36,6 @@ if [ -z "$CLASSPATH" ]; then
     exit 1
 fi
 
-# -----------------------------------------------------------------------------
-# start_service <name> <main_class> [args...]
-# -----------------------------------------------------------------------------
 start_service() {
     local name=$1
     local main_class=$2
@@ -94,7 +75,6 @@ echo "--- PostgreSQL Cluster ---"
 "$SCRIPT_DIR/start-postgres-cluster.sh"
 sleep 1
 
-# All three storage instances + their load-balanced URL for downstream services
 STORAGE_URL="http://localhost:9000,http://localhost:9010,http://localhost:9020"
 
 # =====================================================================
@@ -124,7 +104,7 @@ start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
 sleep 2
 
 # =====================================================================
-# 3. Storage Service (3 instances, HikariCP pool, load balanced)
+# 3. Storage Service (3 instances, HikariCP pool)
 # =====================================================================
 echo ""
 echo "--- Storage Service (3 instances) ---"
@@ -246,7 +226,7 @@ start_service "gateway" "com.securenet.gateway.GatewayMain" \
 sleep 0.5
 
 # =====================================================================
-# 10. Cluster Manager (monitors all instances)
+# 10. Cluster Manager
 # =====================================================================
 echo ""
 echo "--- Cluster Manager ---"
@@ -254,28 +234,31 @@ start_service "cluster-manager" "com.securenet.common.ClusterManagerMain" \
     --port 9090 \
     --check-interval 5000 \
     --failure-threshold 15000 \
-    --instance IDFS:idfs-1:http://localhost:8080 \
-    --instance IDFS:idfs-2:http://localhost:8081 \
-    --instance IDFS:idfs-3:http://localhost:8082 \
-    --instance Storage:storage-1:http://localhost:9000 \
-    --instance Storage:storage-2:http://localhost:9010 \
-    --instance Storage:storage-3:http://localhost:9020 \
-    --instance UMS:ums-1:http://localhost:9001 \
-    --instance UMS:ums-2:http://localhost:9011 \
-    --instance UMS:ums-3:http://localhost:9021 \
-    --instance DMS:dms-1:http://localhost:9002 \
-    --instance DMS:dms-2:http://localhost:9012 \
-    --instance DMS:dms-3:http://localhost:9022 \
-    --instance EPS:eps-1:http://localhost:9003 \
-    --instance EPS:eps-2:http://localhost:9103 \
-    --instance EPS:eps-3:http://localhost:9203 \
-    --instance Notification:notify-1:http://localhost:9004 \
-    --instance Notification:notify-2:http://localhost:9014 \
-    --instance Notification:notify-3:http://localhost:9024 \
-    --instance VSS:vss-1:http://localhost:9005 \
-    --instance VSS:vss-2:http://localhost:9015 \
-    --instance VSS:vss-3:http://localhost:9025 \
-    --instance Gateway:gateway:http://localhost:8443
+    --scripts-dir "$RESTART_DIR" \
+    --log-dir "$LOG_DIR" \
+    --initial-delay 30000 \
+    --instance "IDFS:idfs-1:http://localhost:8080" \
+    --instance "IDFS:idfs-2:http://localhost:8081|restart-idfs.sh" \
+    --instance "IDFS:idfs-3:http://localhost:8082|restart-idfs.sh" \
+    --instance "Storage:storage-1:http://localhost:9000|restart-storage.sh" \
+    --instance "Storage:storage-2:http://localhost:9010|restart-storage.sh" \
+    --instance "Storage:storage-3:http://localhost:9020|restart-storage.sh" \
+    --instance "UMS:ums-1:http://localhost:9001|restart-ums.sh" \
+    --instance "UMS:ums-2:http://localhost:9011|restart-ums.sh" \
+    --instance "UMS:ums-3:http://localhost:9021|restart-ums.sh" \
+    --instance "DMS:dms-1:http://localhost:9002|restart-dms.sh" \
+    --instance "DMS:dms-2:http://localhost:9012|restart-dms.sh" \
+    --instance "DMS:dms-3:http://localhost:9022|restart-dms.sh" \
+    --instance "EPS:eps-1:http://localhost:9003|restart-eps.sh" \
+    --instance "EPS:eps-2:http://localhost:9103|restart-eps.sh" \
+    --instance "EPS:eps-3:http://localhost:9203|restart-eps.sh" \
+    --instance "Notification:notify-1:http://localhost:9004|restart-notification.sh" \
+    --instance "Notification:notify-2:http://localhost:9014|restart-notification.sh" \
+    --instance "Notification:notify-3:http://localhost:9024|restart-notification.sh" \
+    --instance "VSS:vss-1:http://localhost:9005|restart-vss.sh" \
+    --instance "VSS:vss-2:http://localhost:9015|restart-vss.sh" \
+    --instance "VSS:vss-3:http://localhost:9025|restart-vss.sh" \
+    --instance "Gateway:gateway:http://localhost:8443"
 sleep 0.5
 
 # =====================================================================
@@ -296,7 +279,7 @@ echo "    MQTT Broker:   localhost:1883"
 echo "    API Gateway:   localhost:8443"
 echo "    Cluster Mgr:   localhost:9090"
 echo ""
-echo "  Service Clusters (3 instances each, load balanced):"
+echo "  Service Clusters (3 instances, load balanced, auto-restart):"
 echo "    IDFS:          localhost:8080, 8081, 8082"
 echo "    Storage:       localhost:9000, 9010, 9020  (HikariCP pool x3)"
 echo "    UMS:           localhost:9001, 9011, 9021"
@@ -304,11 +287,12 @@ echo "    DMS:           localhost:9002, 9012, 9022"
 echo "    Notification:  localhost:9004, 9014, 9024"
 echo "    VSS:           localhost:9005, 9015, 9025"
 echo ""
-echo "  EPS Raft Cluster (stateful, leader-elected):"
+echo "  EPS Raft Cluster (stateful, auto-restart on original ports):"
 echo "    API:           localhost:9003, 9103, 9203"
 echo "    Raft RPC:      localhost:9013, 9023, 9033"
 echo ""
-echo "  Logs: $LOG_DIR"
+echo "  Restart scripts: $RESTART_DIR"
+echo "  Logs:            $LOG_DIR"
 echo "        (symlinked as logs/latest)"
 echo ""
 echo "  Commands:"

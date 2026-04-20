@@ -28,6 +28,22 @@ for pid_file in "$PID_DIR"/*.pid; do
     rm -f "$pid_file"
 done
 
+# Also stop any processes restarted by the Cluster Manager
+# (their PID files are written to the log directory by restart scripts)
+LATEST_LOG="$PROJECT_DIR/logs/latest"
+if [ -d "$LATEST_LOG" ]; then
+    for pid_file in "$LATEST_LOG"/*.pid; do
+        [ -f "$pid_file" ] || continue
+        name=$(basename "$pid_file" .pid)
+        PID=$(cat "$pid_file")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "  Stopping restarted $name (PID $PID)..."
+            kill "$PID"
+        fi
+        rm -f "$pid_file"
+    done
+fi
+
 # Optionally stop PostgreSQL cluster
 if [ "$1" = "--with-pg" ]; then
     echo ""
