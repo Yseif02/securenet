@@ -84,21 +84,21 @@ echo ""
 echo "--- IDFS + MQTT Broker (3 instances) ---"
 start_service "idfs-1" "com.securenet.iotfirmware.IdfsMain" \
     --http-port 8080 --mqtt-port 1883 \
-    --dms-url http://localhost:9002 \
-    --eps-url http://localhost:9003 \
+    --dms-url http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --eps-url http://localhost:9003,http://localhost:9103,http://localhost:9203 \
     --storage-url $STORAGE_URL
 sleep 0.3
 start_service "idfs-2" "com.securenet.iotfirmware.IdfsMain" \
     --http-port 8081 --no-broker \
-    --dms-url http://localhost:9002 \
-    --eps-url http://localhost:9003 \
+    --dms-url http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --eps-url http://localhost:9003,http://localhost:9103,http://localhost:9203 \
     --storage-url $STORAGE_URL \
     --mqtt-broker-url tcp://localhost:1883
 sleep 0.3
 start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
     --http-port 8082 --no-broker \
-    --dms-url http://localhost:9002 \
-    --eps-url http://localhost:9003 \
+    --dms-url http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --eps-url http://localhost:9003,http://localhost:9103,http://localhost:9203 \
     --storage-url $STORAGE_URL \
     --mqtt-broker-url tcp://localhost:1883
 sleep 2
@@ -146,15 +146,18 @@ echo ""
 echo "--- Device Management Service (3 instances) ---"
 start_service "dms-1" "com.securenet.devicemanagement.DmsMain" \
     --port 9002 --storage-url $STORAGE_URL \
-    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082 \
+    --cluster-manager-url http://localhost:9090
 sleep 0.3
 start_service "dms-2" "com.securenet.devicemanagement.DmsMain" \
     --port 9012 --storage-url $STORAGE_URL \
-    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082 \
+    --cluster-manager-url http://localhost:9090
 sleep 0.3
 start_service "dms-3" "com.securenet.devicemanagement.DmsMain" \
     --port 9022 --storage-url $STORAGE_URL \
-    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082
+    --idfs-url http://localhost:8080,http://localhost:8081,http://localhost:8082 \
+    --cluster-manager-url http://localhost:9090
 sleep 0.3
 
 # =====================================================================
@@ -165,19 +168,22 @@ echo "--- Event Processing Service (3-node Raft cluster) ---"
 start_service "eps-1" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-1 --api-port 9003 --raft-port 9013 \
     --storage-url $STORAGE_URL \
-    --dms-url http://localhost:9002 \
+    --dms-urls http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --cluster-manager-url http://localhost:9090 \
     --peers http://localhost:9023,http://localhost:9033
 sleep 0.5
 start_service "eps-2" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-2 --api-port 9103 --raft-port 9023 \
     --storage-url $STORAGE_URL \
-    --dms-url http://localhost:9002 \
+    --dms-urls http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --cluster-manager-url http://localhost:9090 \
     --peers http://localhost:9013,http://localhost:9033
 sleep 0.5
 start_service "eps-3" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-3 --api-port 9203 --raft-port 9033 \
     --storage-url $STORAGE_URL \
-    --dms-url http://localhost:9002 \
+    --dms-urls http://localhost:9002,http://localhost:9012,http://localhost:9022 \
+    --cluster-manager-url http://localhost:9090 \
     --peers http://localhost:9013,http://localhost:9023
 sleep 1
 
@@ -222,7 +228,8 @@ start_service "gateway" "com.securenet.gateway.GatewayMain" \
     --dms-urls http://localhost:9002,http://localhost:9012,http://localhost:9022 \
     --eps-urls http://localhost:9003,http://localhost:9103,http://localhost:9203 \
     --notify-urls http://localhost:9004,http://localhost:9014,http://localhost:9024 \
-    --vss-urls http://localhost:9005,http://localhost:9015,http://localhost:9025
+    --vss-urls http://localhost:9005,http://localhost:9015,http://localhost:9025 \
+    --cluster-manager-url http://localhost:9090
 sleep 0.5
 
 # =====================================================================

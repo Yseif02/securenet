@@ -55,12 +55,11 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     /**
      * @param storageGateway HTTP client pointing to the remote Storage Service
-     * @param idfsUrls       comma-separated IDFS URLs for load balancing
+     * @param loadBalancer       loadbalancer
      */
-    public DeviceManagementServiceImpl(StorageGateway storageGateway, String idfsUrls) {
+    public DeviceManagementServiceImpl(StorageGateway storageGateway, LoadBalancer loadBalancer) {
         this.storageGateway   = Objects.requireNonNull(storageGateway, "storageGateway");
-        this.idfsLoadBalancer = new LoadBalancer("IDFS", Arrays.asList(idfsUrls.split(",")));
-        this.idfsLoadBalancer.start();
+        this.idfsLoadBalancer = loadBalancer;
         this.vssBaseUrl  = "http://localhost:9005";
         this.httpClient  = new ServiceClient();
     }

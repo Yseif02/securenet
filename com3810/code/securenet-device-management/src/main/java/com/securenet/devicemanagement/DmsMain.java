@@ -1,9 +1,11 @@
 package com.securenet.devicemanagement;
 
+import com.securenet.common.LoadBalancer;
 import com.securenet.devicemanagement.impl.DeviceManagementServiceImpl;
 import com.securenet.devicemanagement.server.DeviceManagementServer;
 import com.securenet.storage.StorageGateway;
 
+import java.util.Arrays;
 import java.util.logging.Logger;
 
 public class DmsMain {
@@ -15,6 +17,8 @@ public class DmsMain {
         String host = "0.0.0.0";
         String storageUrl = "http://localhost:9000";
         String idfsUrl = "http://localhost:8080";
+        String clusterManagerUrl = "http://localhost:9090";
+
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -22,6 +26,9 @@ public class DmsMain {
                 case "--host"        -> host        = args[++i];
                 case "--storage-url" -> storageUrl  = args[++i];
                 case "--idfs-url"    -> idfsUrl     = args[++i];
+                case "--cluster-manager-url" -> clusterManagerUrl = args[++i];
+
+
             }
         }
 
@@ -30,9 +37,13 @@ public class DmsMain {
         log.info("  Port:         " + port);
         log.info("  Storage URL:  " + storageUrl);
         log.info("  IDFS URL:     " + idfsUrl);
+        log.info("  Cluster Manager Url:     " + clusterManagerUrl);
 
         StorageGateway gateway = new StorageGateway(storageUrl);
-        DeviceManagementServiceImpl service = new DeviceManagementServiceImpl(gateway, idfsUrl);
+        LoadBalancer idfsLoadBalancer = new LoadBalancer("IDFS", Arrays.asList(idfsUrl.split(",")));
+        idfsLoadBalancer.watchClusterManager(clusterManagerUrl, "IDFS");
+        idfsLoadBalancer.start();
+        DeviceManagementServiceImpl service = new DeviceManagementServiceImpl(gateway, idfsLoadBalancer);
         DeviceManagementServer server = new DeviceManagementServer(host, port, service);
         server.start();
 

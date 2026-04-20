@@ -1,6 +1,7 @@
 package com.securenet.iotfirmware.server;
 
 import com.securenet.common.JsonUtil;
+import com.securenet.common.LoadBalancer;
 import com.securenet.common.ServiceClient;
 import com.securenet.common.ServiceClient.ServiceResponse;
 import com.securenet.storage.StorageGateway;
@@ -47,8 +48,8 @@ public class IdfsServer {
 
     private final String host;
     private final int port;
-    private final String dmsBaseUrl;
-    private final String epsBaseUrl;
+    private final LoadBalancer dmsLoadBalancer;
+    private final LoadBalancer epsLoadBalancer;
     private final String mqttBrokerUrl;
     private final ServiceClient httpClient;
     private HttpServer httpServer;
@@ -63,17 +64,16 @@ public class IdfsServer {
     //private final ConcurrentHashMap<String, CompletableFuture<Map>> pendingCommands =
            // new ConcurrentHashMap<>();
 
-    public IdfsServer(String host, int port, String dmsBaseUrl,
-                      String epsBaseUrl, String mqttBrokerUrl,
+    public IdfsServer(String host, int port, LoadBalancer dmsLoadBalancer,
+                      LoadBalancer epsLoadBalancer, String mqttBrokerUrl,
                       StorageGateway storageGateway) {
-        this.host          = Objects.requireNonNull(host, "host");
-        this.port          = port;
-        this.dmsBaseUrl    = Objects.requireNonNull(dmsBaseUrl, "dmsBaseUrl");
-        this.epsBaseUrl    = Objects.requireNonNull(epsBaseUrl, "epsBaseUrl");
-        this.mqttBrokerUrl = Objects.requireNonNull(mqttBrokerUrl, "mqttBrokerUrl");
-        this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
-
-        this.httpClient    = new ServiceClient();
+        this.host             = Objects.requireNonNull(host);
+        this.port             = port;
+        this.dmsLoadBalancer  = Objects.requireNonNull(dmsLoadBalancer);
+        this.epsLoadBalancer  = Objects.requireNonNull(epsLoadBalancer);
+        this.mqttBrokerUrl    = Objects.requireNonNull(mqttBrokerUrl);
+        this.storageGateway   = Objects.requireNonNull(storageGateway);
+        this.httpClient       = new ServiceClient();
     }
 
     public void start() throws IOException {
@@ -211,7 +211,7 @@ public class IdfsServer {
             epsRequest.put("metadata",   metadata);
 
             ServiceResponse epsResponse = httpClient.post(
-                    epsBaseUrl + "/eps/events/ingest", epsRequest);
+                    epsLoadBalancer.nextHealthyUrl() + "/eps/events/ingest", epsRequest);
 
             if (epsResponse.isSuccess()) {
                 log.info("[IDFS] Event forwarded to EPS: " + eventType
@@ -364,7 +364,7 @@ public class IdfsServer {
             log.info("[IDFS] Bootstrap registration request: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.post(
-                    dmsBaseUrl + "/dms/devices/accept-registration",
+                    dmsLoadBalancer.nextHealthyUrl() + "/dms/devices/accept-registration",
                     Map.of("deviceId", deviceId, "registrationToken", registrationToken));
 
             if (dmsResponse.isSuccess()) {
@@ -419,7 +419,7 @@ public class IdfsServer {
             log.info("[IDFS] Runtime provisioning request: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.get(
-                    dmsBaseUrl + "/dms/devices/get?deviceId=" + deviceId);
+                    dmsLoadBalancer.nextHealthyUrl() + "/dms/devices/get?deviceId=" + deviceId);
 
             if (!dmsResponse.isSuccess()) {
                 log.warning("[IDFS] Provisioning failed: device not found deviceId=" + deviceId);
@@ -472,7 +472,7 @@ public class IdfsServer {
             log.fine("[IDFS] Heartbeat relay: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.post(
-                    dmsBaseUrl + "/dms/devices/heartbeat",
+                    dmsLoadBalancer.nextHealthyUrl() + "/dms/devices/heartbeat",
                     Map.of("deviceId", deviceId));
 
             writeRaw(ex, dmsResponse.statusCode(), dmsResponse.body());

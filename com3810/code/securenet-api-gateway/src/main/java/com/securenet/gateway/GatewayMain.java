@@ -19,6 +19,7 @@ public class GatewayMain {
         String epsUrls = "http://localhost:9003";
         String notifyUrls = "http://localhost:9004";
         String vssUrls = "http://localhost:9005";
+        String clusterManagerUrl = "http://localhost:9090";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -29,6 +30,7 @@ public class GatewayMain {
                 case "--eps-urls"    -> epsUrls     = args[++i];
                 case "--notify-urls" -> notifyUrls  = args[++i];
                 case "--vss-urls"    -> vssUrls     = args[++i];
+                case "--cluster-manager-url" -> clusterManagerUrl = args[++i];
             }
         }
 
@@ -40,16 +42,22 @@ public class GatewayMain {
         log.info("  EPS URLs:     " + epsUrls);
         log.info("  Notify URLs:  " + notifyUrls);
         log.info("  VSS URLs:     " + vssUrls);
+        log.info("  Cluster Manager Url:     " + clusterManagerUrl);
 
         LoadBalancer umsLb = new LoadBalancer("UMS", Arrays.asList(umsUrls.split(",")));
+        umsLb.watchClusterManager(clusterManagerUrl, "UMS");
         umsLb.start();
         log.info("[APIGateway] UMS load balancer started: " + umsUrls);
 
         Map<String, LoadBalancer> serviceLbs = new HashMap<>();
-        serviceLbs.put("device-management", createLb("DMS", dmsUrls));
-        serviceLbs.put("event-processing",  createLb("EPS", epsUrls));
-        serviceLbs.put("notification",      createLb("Notification", notifyUrls));
-        serviceLbs.put("video-streaming",   createLb("VSS", vssUrls));
+        LoadBalancer dmsLoadBalancer = createLb("DMS", dmsUrls, clusterManagerUrl);
+        serviceLbs.put("device-management", dmsLoadBalancer);
+        LoadBalancer epsLoadBalancer = createLb("EPS", epsUrls, clusterManagerUrl);
+        serviceLbs.put("event-processing", epsLoadBalancer);
+        LoadBalancer notifLoadBalancer = createLb("Notification", notifyUrls, clusterManagerUrl);
+        serviceLbs.put("notification", notifLoadBalancer);
+        LoadBalancer vssLoadBalancer = createLb("VSS", vssUrls, clusterManagerUrl);
+        serviceLbs.put("video-streaming", vssLoadBalancer);
         log.info("[APIGateway] Service load balancers started: " + serviceLbs.keySet());
 
         APIGatewayServiceImpl gateway = new APIGatewayServiceImpl(umsLb, serviceLbs);
@@ -68,9 +76,9 @@ public class GatewayMain {
         Thread.currentThread().join();
     }
 
-    private static LoadBalancer createLb(String name, String urls) {
+    private static LoadBalancer createLb(String name, String urls, String clusterManagerUrl) {
         LoadBalancer lb = new LoadBalancer(name, Arrays.asList(urls.split(",")));
-        lb.start();
+        lb.watchClusterManager(clusterManagerUrl, name);        lb.start();
         log.info("[APIGateway] Load balancer created: " + name + " -> " + urls);
         return lb;
     }

@@ -1,5 +1,6 @@
 package com.securenet.eventprocessing.impl;
 
+import com.securenet.common.LoadBalancer;
 import com.securenet.common.ServiceClient;
 import com.securenet.eventprocessing.EventProcessingService;
 import com.securenet.eventprocessing.raft.LogEntry;
@@ -42,7 +43,9 @@ public class EventProcessingServiceImpl implements EventProcessingService {
     private final StorageGateway storageGateway;
     private final ServiceClient httpClient;
     private final String notificationServiceUrl;
-    private final String dmsServiceUrl;
+    private final LoadBalancer dmsLoadBalancer;
+    //private final String dmsServiceUrl;
+
     private final String nodeId;
 
     private volatile RaftNode raftNode;
@@ -51,15 +54,16 @@ public class EventProcessingServiceImpl implements EventProcessingService {
      * @param storageGateway         HTTP client to the Storage Service
      * @param notificationServiceUrl base URL of Notification Service (nullable)
      * @param nodeId                 this EPS node's identifier (for Lamport clock key)
-     * @param dmsServiceUrl          base URL of DMS for triggering camera streams (nullable)
+     * @param dmsLoadBalancer          base URLs of DMS for triggering camera streams (nullable)
      */
     public EventProcessingServiceImpl(StorageGateway storageGateway,
                                       String notificationServiceUrl,
                                       String nodeId,
-                                      String dmsServiceUrl) {
+                                      LoadBalancer dmsLoadBalancer) {
         this.storageGateway = Objects.requireNonNull(storageGateway, "storageGateway");
         this.notificationServiceUrl = notificationServiceUrl;
-        this.dmsServiceUrl = dmsServiceUrl;
+        //this.dmsServiceUrl = dmsServiceUrl;
+        this.dmsLoadBalancer = dmsLoadBalancer;
         this.nodeId = (nodeId != null) ? nodeId : "global";
         this.httpClient = new ServiceClient();
         log.info("[EPS:" + this.nodeId + "] Service initialized");
@@ -334,7 +338,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
         }
 
         // Trigger camera stream on motion events
-        if (event.type() == EventType.MOTION_DETECTED && dmsServiceUrl != null) {
+        if (event.type() == EventType.MOTION_DETECTED && dmsLoadBalancer.nextHealthyUrl() != null) {
             try {
                 List<Device> ownerDevices =
                         storageGateway.findDevicesByOwner(event.ownerId());
@@ -344,7 +348,7 @@ public class EventProcessingServiceImpl implements EventProcessingService {
                         log.info("[EPS:" + nodeId + "] Triggering stream: camera="
                                 + d.deviceId() + " triggered by motion on "
                                 + event.deviceId());
-                        httpClient.post(dmsServiceUrl + "/dms/devices/stream-start",
+                        httpClient.post(dmsLoadBalancer + "/dms/devices/stream-start",
                                 Map.of("deviceId",        d.deviceId(),
                                         "streamTargetUrl", "http://localhost:9005/vss/ingest"));
                         break; // one camera per motion event

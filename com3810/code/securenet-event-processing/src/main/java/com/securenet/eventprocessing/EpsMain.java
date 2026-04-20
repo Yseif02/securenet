@@ -1,5 +1,6 @@
 package com.securenet.eventprocessing;
 
+import com.securenet.common.LoadBalancer;
 import com.securenet.eventprocessing.impl.EventProcessingServiceImpl;
 import com.securenet.eventprocessing.raft.RaftNode;
 import com.securenet.eventprocessing.raft.RaftRpcServer;
@@ -7,6 +8,7 @@ import com.securenet.eventprocessing.server.EventProcessingServer;
 import com.securenet.storage.StorageGateway;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -29,9 +31,10 @@ public class EpsMain {
         int    raftPort        = 9013;
         String storageUrl      = "http://localhost:9000";
         String notificationUrl = null;
-        String dmsUrl = null;
+        String dmsUrls = null;
         List<String> peers     = new ArrayList<>();
         String bindHost        = "0.0.0.0";
+        String clusterManagerUrl = "http://localhost:9090";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -40,7 +43,8 @@ public class EpsMain {
                 case "--raft-port"        -> raftPort        = Integer.parseInt(args[++i]);
                 case "--storage-url"      -> storageUrl      = args[++i];
                 case "--notification-url" -> notificationUrl = args[++i];
-                case "--dms-url" -> dmsUrl = args[++i];
+                case "--dms-urls" -> dmsUrls = args[++i];
+                case "--cluster-manager-url" -> clusterManagerUrl = args[++i];
                 case "--peers"            -> {
                     for (String peer : args[++i].split(",")) {
                         String trimmed = peer.trim();
@@ -52,17 +56,22 @@ public class EpsMain {
             }
         }
 
+        LoadBalancer dmsLoadBalancer = new LoadBalancer("DMS", Arrays.asList(dmsUrls.split(",")));
+        dmsLoadBalancer.watchClusterManager(clusterManagerUrl, "DMS");
+        dmsLoadBalancer.start();
+
+
         log.info("=== EPS Node: " + nodeId + " ===");
         log.info("  API port:     " + apiPort);
         log.info("  Raft port:    " + raftPort);
         log.info("  Storage:      " + storageUrl);
-        log.info("  DMS URL:      " + dmsUrl);
+        log.info("  DMS URL:      " + dmsUrls);
         log.info("  Peers:        " + peers);
 
         StorageGateway storageGateway = new StorageGateway(storageUrl);
 
         EventProcessingServiceImpl epsService = new EventProcessingServiceImpl(
-            storageGateway, notificationUrl, nodeId, dmsUrl);
+            storageGateway, notificationUrl, nodeId, dmsLoadBalancer);
 
         RaftNode raftNode = new RaftNode(nodeId, peers, epsService::onRaftCommit);
         epsService.setRaftNode(raftNode);
