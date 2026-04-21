@@ -180,7 +180,13 @@ public class ClusterManager {
 
     private void restartInstance(ManagedInstance inst) {
         try {
-            int newPort         = findFreePort();
+            int newPort;
+            if ("EPS".equals(inst.serviceName)) {
+                // Extract original port from URL: "http://localhost:9103" → 9103
+                newPort = Integer.parseInt(inst.url.replaceAll(".*:(\\d+)$", "$1"));
+            } else {
+                newPort = findFreePort();
+            }
             String newInstanceId = inst.instanceId + "-r" + (inst.restartCount + 1);
             String newUrl       = "http://localhost:" + newPort;
 

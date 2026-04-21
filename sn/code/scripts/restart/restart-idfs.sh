@@ -25,7 +25,7 @@ java -cp "$CLASSPATH" \
     com.securenet.iotfirmware.IdfsMain \
     --http-port "$NEW_PORT" \
     --no-broker \
-    --dms-url "$DMS_URL" \
+    --dms-urls "$DMS_URL" \
     --eps-url "$EPS_URL" \
     --storage-url "$STORAGE_URL" \
     --mqtt-broker-url "$MQTT_URL" \
