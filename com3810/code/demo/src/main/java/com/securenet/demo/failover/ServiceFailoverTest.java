@@ -1,13 +1,12 @@
 package com.securenet.demo.failover;
 
+import com.securenet.common.JsonUtil;
 import com.securenet.common.LoadBalancer;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,14 +19,26 @@ import java.util.concurrent.atomic.AtomicInteger;
  * HTTP GET /health requests and tracks which port responded to verify
  * round-robin distribution and post-restart discovery.
  *
+ * <p>Instance selection for killing is done by querying the ClusterManager
+ * status endpoint directly — not by reading PID files. This means the test
+ * works correctly on repeated runs even after instances have been restarted
+ * on new ports by the ClusterManager.
+ *
+ * <h3>Kill selection strategy</h3>
+ * <p>Queries {@code GET /cluster/status}, collects all HEALTHY URLs for the
+ * target service, sorts by port ascending, skips the lowest-port instance
+ * (treated as primary — e.g. idfs-1 hosts the MQTT broker), and picks the
+ * next one. The process listening on that port is found via {@code lsof}
+ * and sent SIGTERM.
+ *
  * <h3>Test phases</h3>
  * <ol>
  *   <li>Verify all 3 instances healthy</li>
  *   <li>Send N requests → confirm all 3 ports got traffic</li>
- *   <li>Kill instance-2 via its PID file</li>
+ *   <li>Query ClusterManager → pick a non-primary instance → kill it</li>
  *   <li>Wait for LB to drop it (healthy count drops to 2)</li>
  *   <li>Send N requests → confirm only 2 ports get traffic</li>
- *   <li>Wait for ClusterManager to detect failure + restart (healthy count back to 3)</li>
+ *   <li>Wait for ClusterManager to detect failure + restart</li>
  *   <li>Send N requests → confirm 3 distinct ports get traffic</li>
  * </ol>
  */
@@ -35,26 +46,29 @@ public class ServiceFailoverTest {
 
     private static final int REQUESTS_PER_PHASE = 9;
     private static final int LB_DROP_TIMEOUT_MS = 20_000;
-    private static final int RESTART_TIMEOUT_MS = 90_000; // ClusterManager: 15s threshold + restart time
+    private static final int RESTART_TIMEOUT_MS = 90_000;
     private static final int POLL_INTERVAL_MS   = 500;
 
     private final String serviceName;
-    private final String pidFile2;       // path to pids/<service>-2.pid
-    private final List<String> allUrls;  // all 3 original URLs
+    private final List<String> allUrls;
     private final String clusterManagerUrl;
-    private final boolean epsMode;       // EPS restarts on same port — different assertion
+    private final boolean epsMode;
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(2))
             .build();
 
+    /**
+     * @param serviceName       name matching ClusterManager registration (e.g. "DMS")
+     * @param allUrls           initial 3 URLs to seed the LoadBalancer
+     * @param clusterManagerUrl base URL of ClusterManager (e.g. "http://localhost:9090")
+     * @param epsMode           true for EPS — restarts on same port, different phase 6 assertion
+     */
     public ServiceFailoverTest(String serviceName,
-                               String pidFile2,
                                List<String> allUrls,
                                String clusterManagerUrl,
                                boolean epsMode) {
         this.serviceName       = serviceName;
-        this.pidFile2          = pidFile2;
         this.allUrls           = allUrls;
         this.clusterManagerUrl = clusterManagerUrl;
         this.epsMode           = epsMode;
@@ -66,9 +80,7 @@ public class ServiceFailoverTest {
         print("  Testing: " + serviceName + " failover");
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-        // Build a load balancer for this service, watching ClusterManager
-        LoadBalancer lb = new LoadBalancer(serviceName,
-                new ArrayList<>(allUrls));
+        LoadBalancer lb = new LoadBalancer(serviceName, new ArrayList<>(allUrls));
         lb.watchClusterManager(clusterManagerUrl, serviceName);
         lb.start();
 
@@ -88,11 +100,18 @@ public class ServiceFailoverTest {
                         + " ports received traffic, expected 3. Counts: " + formatCounts(counts));
             print("  ✓ All 3 ports received traffic");
 
-            // ── Phase 3: Kill instance-2 ──────────────────────────────────
-            print("\n[Phase 3] Killing " + serviceName + "-2 (PID file: " + pidFile2 + ")...");
-            String killErr = killInstance(pidFile2);
+            // ── Phase 3: Select and kill a non-primary instance ───────────
+            print("\n[Phase 3] Querying ClusterManager to select a non-primary instance to kill...");
+            KillTarget target = findKillTarget();
+            if (target == null)
+                return fail(start, "Phase 3 failed: could not find a killable instance "
+                        + "for " + serviceName + " in ClusterManager status");
+            print("  Selected: " + target.instanceId() + " at " + target.url()
+                    + " (PID " + target.pid() + ")");
+
+            String killErr = killProcess(target.pid());
             if (killErr != null) return fail(start, "Phase 3 failed: " + killErr);
-            print("  ✓ Kill signal sent");
+            print("  ✓ Kill signal sent to " + target.instanceId() + " on " + target.url());
 
             // ── Phase 4: Wait for LB to drop it ──────────────────────────
             print("\n[Phase 4] Waiting for LB to detect failure (up to "
@@ -112,20 +131,22 @@ public class ServiceFailoverTest {
 
             // ── Phase 6: Wait for ClusterManager restart ──────────────────
             if (epsMode) {
-                // EPS restarts on same port — wait for healthy count to recover to 3
-                print("\n[Phase 6] EPS mode: waiting for port to recover on same URL (up to "
-                        + RESTART_TIMEOUT_MS / 1000 + "s)...");
-                err = waitForHealthyCount(lb, 3, RESTART_TIMEOUT_MS);
-                if (err != null) return fail(start, "Phase 6 (EPS) failed — port did not recover: " + err);
-                print("  ✓ EPS instance recovered on original port");
+                // EPS restarts on same port — wait for the killed URL to recover
+                String killedUrl = target.url();
+                print("\n[Phase 6] EPS mode: waiting for " + killedUrl
+                        + " to recover (up to " + RESTART_TIMEOUT_MS / 1000 + "s)...");
+                err = waitForUrlRecovery(lb, killedUrl, RESTART_TIMEOUT_MS);
+                if (err != null) return fail(start, "Phase 6 (EPS) failed: " + err);
+                print("  ✓ EPS instance recovered on " + killedUrl);
             } else {
-                // Standard services: wait for a NEW url to appear (healthy count back to 3)
+                // Standard services: wait for a NEW url to appear
+                // Snapshot current known URLs before waiting so we detect genuinely new ones
+                Set<String> urlsBeforeKill = new HashSet<>(lb.getStatus().keySet());
                 print("\n[Phase 6] Waiting for ClusterManager to restart on new port (up to "
                         + RESTART_TIMEOUT_MS / 1000 + "s)...");
-                Set<String> originalUrls = new HashSet<>(allUrls);
-                err = waitForNewInstance(lb, originalUrls, RESTART_TIMEOUT_MS);
-                if (err != null) return fail(start, "Phase 6 failed — no new instance discovered: " + err);
-                print("  ✓ LB discovered restarted instance on new port");
+                err = waitForNewInstance(lb, urlsBeforeKill, RESTART_TIMEOUT_MS);
+                if (err != null) return fail(start, "Phase 6 failed: " + err);
+                print("  ✓ LB discovered restarted instance");
             }
 
             // ── Phase 7: All 3 ports get traffic again ────────────────────
@@ -149,46 +170,137 @@ public class ServiceFailoverTest {
     }
 
     // =========================================================================
-    // Helpers
+    // ClusterManager-based kill target selection
     // =========================================================================
 
     /**
-     * Sends N GET /health requests through the load balancer and counts
-     * how many times each port was selected.
+     * Queries ClusterManager status, collects all HEALTHY instances for this
+     * service, sorts by port ascending, skips the lowest-port instance
+     * (the "primary"), and returns the next one as the kill target.
+     *
+     * <p>Works across repeated runs because ClusterManager tracks the current
+     * URL of each instance regardless of restarts.
      */
+    @SuppressWarnings("unchecked")
+    private KillTarget findKillTarget() {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(clusterManagerUrl + "/cluster/status"))
+                    .GET().timeout(Duration.ofSeconds(3))
+                    .build();
+            HttpResponse<String> resp = http.send(req,
+                    HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) return null;
+
+            Map<String, Map<String, Object>> status =
+                    (Map<String, Map<String, Object>>) JsonUtil.fromJson(
+                            resp.body(), Map.class);
+
+            // Collect all HEALTHY instances for our service
+            List<CandidateInstance> candidates = new ArrayList<>();
+            for (Map.Entry<String, Map<String, Object>> entry : status.entrySet()) {
+                Map<String, Object> inst = entry.getValue();
+                if (!serviceName.equals(inst.get("service"))) continue;
+                if (!"HEALTHY".equals(inst.get("status"))) continue;
+                String url = (String) inst.get("url");
+                int port = Integer.parseInt(url.replaceAll(".*:(\\d+)$", "$1"));
+                candidates.add(new CandidateInstance(entry.getKey(), url, port));
+            }
+
+            if (candidates.size() < 2) {
+                print("  Only " + candidates.size()
+                        + " healthy instance(s) found — need at least 2 to safely kill one");
+                return null;
+            }
+
+            // Sort by port ascending — lowest port is the primary (skip it)
+            candidates.sort(Comparator.comparingInt(CandidateInstance::port));
+
+            print("  Healthy instances found: " + candidates.stream()
+                    .map(c -> c.instanceId() + "@" + c.port())
+                    .collect(java.util.stream.Collectors.joining(", ")));
+
+            // Pick the second-lowest port — not primary, leaves primary + one other healthy
+            CandidateInstance chosen = candidates.get(1);
+
+            // Find PID via lsof
+            long pid = findPidOnPort(chosen.port());
+            if (pid < 0) {
+                print("  Could not find PID on port " + chosen.port()
+                        + " via lsof — is the process running?");
+                return null;
+            }
+
+            return new KillTarget(chosen.instanceId(), chosen.url(), pid);
+
+        } catch (Exception e) {
+            print("  findKillTarget error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Uses {@code lsof -ti :<port>} to find the PID listening on a port.
+     * Returns -1 if not found or on error.
+     */
+    private long findPidOnPort(int port) {
+        try {
+            Process p = new ProcessBuilder(
+                    "lsof", "-ti", ":" + port, "-sTCP:LISTEN").start();
+            String output = new String(p.getInputStream().readAllBytes()).trim();
+            p.waitFor();
+            if (output.isEmpty()) return -1;
+            // lsof may return multiple lines (IPv4 + IPv6) — take the first valid PID
+            for (String line : output.split("\\s+")) {
+                try { return Long.parseLong(line.trim()); } catch (NumberFormatException ignore) {}
+            }
+            return -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Sends SIGTERM to the given PID. */
+    private String killProcess(long pid) {
+        Optional<ProcessHandle> handle = ProcessHandle.of(pid);
+        if (handle.isEmpty()) return "Process " + pid + " not found (already dead?)";
+        handle.get().destroy();
+        return null;
+    }
+
+    // =========================================================================
+    // Request sending
+    // =========================================================================
+
     private Map<String, AtomicInteger> sendRequests(LoadBalancer lb, int count) {
         Map<String, AtomicInteger> portCounts = new ConcurrentHashMap<>();
         for (int i = 0; i < count; i++) {
             try {
                 String url = lb.nextHealthyUrl();
-                // Extract port from URL for display
                 String port = url.replaceAll(".*:(\\d+)$", "$1");
                 portCounts.computeIfAbsent(port, k -> new AtomicInteger()).incrementAndGet();
-
-                // Actually send the request so the LB health check also sees traffic
                 HttpRequest req = HttpRequest.newBuilder()
                         .uri(URI.create(url + "/health"))
-                        .GET()
-                        .timeout(Duration.ofSeconds(2))
+                        .GET().timeout(Duration.ofSeconds(2))
                         .build();
                 http.send(req, HttpResponse.BodyHandlers.ofString());
-
-                Thread.sleep(50); // small gap to avoid burst
+                Thread.sleep(50);
             } catch (Exception e) {
-                // LB may throw if no healthy instances — count as a miss
                 portCounts.computeIfAbsent("ERROR", k -> new AtomicInteger()).incrementAndGet();
             }
         }
         return portCounts;
     }
 
-    /** Waits until lb.healthyCount() == target, up to timeoutMs. */
+    // =========================================================================
+    // Wait helpers
+    // =========================================================================
+
     private String waitForHealthyCount(LoadBalancer lb, int target, int timeoutMs)
             throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            int count = lb.healthyCount();
-            if (count == target) return null;
+            if (lb.healthyCount() == target) return null;
             System.out.print(".");
             System.out.flush();
             Thread.sleep(POLL_INTERVAL_MS);
@@ -198,25 +310,19 @@ public class ServiceFailoverTest {
                 + target + " healthy instances (current: " + lb.healthyCount() + ")";
     }
 
-    /**
-     * Waits until a URL not in originalUrls appears in lb.getStatus() and is healthy.
-     * This is the signal that ClusterManager restarted on a new port and LB discovered it.
-     */
-    private String waitForNewInstance(LoadBalancer lb, Set<String> originalUrls, int timeoutMs)
-            throws InterruptedException {
+    private String waitForNewInstance(LoadBalancer lb, Set<String> urlsBeforeKill,
+                                      int timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            Map<String, Boolean> status = lb.getStatus();
-            for (Map.Entry<String, Boolean> e : status.entrySet()) {
-                // URL format is http://localhost:PORT — reconstruct to compare
-                if (!originalUrls.contains(e.getKey()) && Boolean.TRUE.equals(e.getValue())) {
+            Map<String, Boolean> lbStatus = lb.getStatus();
+            for (Map.Entry<String, Boolean> e : lbStatus.entrySet()) {
+                if (!urlsBeforeKill.contains(e.getKey())
+                        && Boolean.TRUE.equals(e.getValue())) {
                     System.out.println();
                     print("  New instance discovered: " + e.getKey());
-                    return null; // found a new healthy URL
+                    return null;
                 }
             }
-            // Also accept: healthy count back to 3 with any URLs
-            // (covers edge case where ClusterManager reuses the same port)
             if (lb.healthyCount() >= 3) {
                 System.out.println();
                 return null;
@@ -229,28 +335,28 @@ public class ServiceFailoverTest {
         return "Timed out after " + timeoutMs / 1000 + "s. LB status: " + lb.getStatus();
     }
 
-    /** Reads PID from file and sends SIGTERM. */
-    private String killInstance(String pidFilePath) {
-        try {
-            Path path = Path.of(pidFilePath);
-            if (!Files.exists(path)) {
-                return "PID file not found: " + pidFilePath;
+    private String waitForUrlRecovery(LoadBalancer lb, String targetUrl,
+                                      int timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (Boolean.TRUE.equals(lb.getStatus().get(targetUrl))) {
+                System.out.println();
+                return null;
             }
-            String pidStr = Files.readString(path).trim();
-            long pid = Long.parseLong(pidStr);
-
-            // Use ProcessHandle for clean cross-platform kill
-            Optional<ProcessHandle> handle = ProcessHandle.of(pid);
-            if (handle.isEmpty()) {
-                return "Process " + pid + " not found (already dead?)";
-            }
-            handle.get().destroy(); // SIGTERM
-            print("  Sent SIGTERM to PID " + pid);
-            return null;
-        } catch (Exception e) {
-            return "Failed to kill instance: " + e.getMessage();
+            System.out.print(".");
+            System.out.flush();
+            Thread.sleep(POLL_INTERVAL_MS);
         }
+        System.out.println();
+        return "Timed out after " + timeoutMs / 1000 + "s. LB status: " + lb.getStatus();
     }
+
+    // =========================================================================
+    // Internal types
+    // =========================================================================
+
+    private record CandidateInstance(String instanceId, String url, int port) {}
+    private record KillTarget(String instanceId, String url, long pid) {}
 
     private FailoverResult fail(long start, String message) {
         long elapsed = System.currentTimeMillis() - start;
@@ -267,7 +373,5 @@ public class ServiceFailoverTest {
         return sb.toString();
     }
 
-    private static void print(String msg) {
-        System.out.println(msg);
-    }
+    private static void print(String msg) { System.out.println(msg); }
 }

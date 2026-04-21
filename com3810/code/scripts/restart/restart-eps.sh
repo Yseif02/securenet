@@ -61,7 +61,7 @@ java -cp "$CLASSPATH" \
     --api-port "$API_PORT" \
     --raft-port "$RAFT_PORT" \
     --storage-url "$STORAGE_URL" \
-    --dms-url "$DMS_URL" \
+    --dms-urls "$DMS_URL" \
     --peers "$PEERS" \
     >> "$LOG_DIR/$INSTANCE_ID-restarted.log" 2>&1 &
 

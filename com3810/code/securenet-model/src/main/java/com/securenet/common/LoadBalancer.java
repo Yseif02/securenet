@@ -64,7 +64,7 @@ public class LoadBalancer {
         this.httpClient  = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(HEALTH_CHECK_TIMEOUT_MS))
                 .build();
-        this.scheduler   = Executors.newSingleThreadScheduledExecutor(r -> {
+        this.scheduler   = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "lb-" + serviceName);
             t.setDaemon(true);
             return t;

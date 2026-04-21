@@ -180,9 +180,19 @@ public class ClusterManager {
 
     private void restartInstance(ManagedInstance inst) {
         try {
-            int newPort         = findFreePort();
-            String newInstanceId = inst.instanceId + "-r" + (inst.restartCount + 1);
-            String newUrl       = "http://localhost:" + newPort;
+            int newPort;
+            if ("EPS".equals(inst.serviceName)) {
+                // Extract original port from URL: "http://localhost:9103" → 9103
+                newPort = Integer.parseInt(inst.url.replaceAll(".*:(\\d+)$", "$1"));
+            } else {
+                newPort = findFreePort();
+            }
+
+            // Always name restarts from the original ID so we get
+            // eps-2-r1, eps-2-r2, eps-2-r3 rather than eps-2-r1-r1-r1
+            int nextRestartCount = inst.restartCount + 1;
+            String newInstanceId = inst.originalInstanceId + "-r" + nextRestartCount;
+            String newUrl        = "http://localhost:" + newPort;
 
             log.info("[ClusterManager] Restarting " + inst.serviceName
                     + ": " + inst.instanceId + " → " + newInstanceId
@@ -193,7 +203,6 @@ public class ClusterManager {
                     String.valueOf(newPort),
                     newInstanceId
             );
-            // Pass LOG_DIR so the restart script writes to the current run's log dir
             pb.environment().put("LOG_DIR", logDir);
             pb.redirectErrorStream(true);
             pb.redirectOutput(ProcessBuilder.Redirect.appendTo(
@@ -210,18 +219,23 @@ public class ClusterManager {
                 return;
             }
 
-            // Mark original as replaced, register the replacement
-            inst.restartCount++;
+            // Mark original as replaced
+            inst.restartCount = nextRestartCount;
             inst.status = InstanceStatus.REPLACED;
             log.info("[ClusterManager] " + inst.instanceId
                     + " → REPLACED by " + newInstanceId);
 
-            registerInstance(inst.serviceName, newInstanceId, newUrl,
-                    inst.restartScript);
+            // Register replacement, carrying originalInstanceId and restartCount
+            // forward so subsequent restarts continue the sequence (r2, r3, ...)
+            instances.put(newInstanceId, new ManagedInstance(
+                    inst.serviceName, newInstanceId, newUrl, inst.restartScript,
+                    InstanceStatus.HEALTHY, System.currentTimeMillis(),
+                    inst.originalInstanceId, nextRestartCount));
+
             log.info("[ClusterManager] Replacement " + newInstanceId
                     + " registered at " + newUrl
-                    + " (restart #" + inst.restartCount + " for "
-                    + inst.serviceName + ")");
+                    + " (restart #" + nextRestartCount + " for "
+                    + inst.originalInstanceId + ")");
 
         } catch (Exception e) {
             log.severe("[ClusterManager] Exception during restart of "
@@ -249,22 +263,37 @@ public class ClusterManager {
     private static class ManagedInstance {
         final String serviceName;
         final String instanceId;
+        /** The very first instanceId before any restarts — used to name restarts
+         *  as eps-2-r1, eps-2-r2, eps-2-r3 rather than eps-2-r1-r1-r1. */
+        final String originalInstanceId;
         final String restartScript;
         volatile String url;
         volatile InstanceStatus status;
         volatile long lastHealthyTime;
         volatile int restartCount;
 
+        /** Constructor for freshly registered instances (restartCount starts at 0). */
         ManagedInstance(String serviceName, String instanceId, String url,
                         String restartScript, InstanceStatus status,
                         long lastHealthyTime) {
-            this.serviceName     = serviceName;
-            this.instanceId      = instanceId;
-            this.url             = url;
-            this.restartScript   = restartScript;
-            this.status          = status;
-            this.lastHealthyTime = lastHealthyTime;
-            this.restartCount    = 0;
+            this(serviceName, instanceId, url, restartScript, status,
+                    lastHealthyTime, instanceId, 0);
+        }
+
+        /** Full constructor — used when registering replacements so that
+         *  originalInstanceId and restartCount are carried forward. */
+        ManagedInstance(String serviceName, String instanceId, String url,
+                        String restartScript, InstanceStatus status,
+                        long lastHealthyTime, String originalInstanceId,
+                        int restartCount) {
+            this.serviceName        = serviceName;
+            this.instanceId         = instanceId;
+            this.originalInstanceId = originalInstanceId;
+            this.url                = url;
+            this.restartScript      = restartScript;
+            this.status             = status;
+            this.lastHealthyTime    = lastHealthyTime;
+            this.restartCount       = restartCount;
         }
     }
 }

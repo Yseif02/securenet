@@ -14,6 +14,7 @@ LOG_DIR="$PROJECT_DIR/logs/run_$RUN_TIMESTAMP"
 PID_DIR="$PROJECT_DIR/pids"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
+rm -f "$PID_DIR"/*.pid   # clear stale PIDs from previous run
 ln -sfn "$LOG_DIR" "$PROJECT_DIR/logs/latest"
 
 echo "Logs directory: $LOG_DIR"
@@ -56,13 +57,13 @@ io.moquette.level=WARNING
 com.zaxxer.hikari.level=WARNING
 EOF
 
-    echo "  Starting $name..."
     java -cp "$CLASSPATH" \
         -Djava.util.logging.config.file="$props_file" \
+        -Dinstance.name="$name" \
         "$main_class" "$@" \
         >> "$log_file" 2>&1 &
     echo $! > "$PID_DIR/$name.pid"
-    echo "    PID: $(cat "$PID_DIR/$name.pid")  log: logs/run_$RUN_TIMESTAMP/$name.log"
+    echo "    Started $name  PID=$(cat "$PID_DIR/$name.pid")  log: logs/run_$RUN_TIMESTAMP/$name.log"
 }
 
 echo "=== Starting SecureNet Platform ==="
@@ -112,12 +113,12 @@ start_service "storage-1" "com.securenet.storage.StorageMain" \
     --port 9000 \
     --jdbc-url jdbc:postgresql://localhost:5432/securenet \
     --pool-size 10
-sleep 0.3
+sleep 1
 start_service "storage-2" "com.securenet.storage.StorageMain" \
     --port 9010 \
     --jdbc-url jdbc:postgresql://localhost:5432/securenet \
     --pool-size 10
-sleep 0.3
+sleep 1
 start_service "storage-3" "com.securenet.storage.StorageMain" \
     --port 9020 \
     --jdbc-url jdbc:postgresql://localhost:5432/securenet \
