@@ -47,7 +47,23 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         log.info("[UMS] Registering user: email=" + email + " displayName=" + displayName);
 
-        if (storageGateway.findUserByEmail(email).isPresent()) {
+        // Idempotent registration: if the email already exists, check whether
+        // the password matches. If it does, this is a safe retry of a request
+        // whose write succeeded but whose HTTP response was lost in transit
+        // (e.g. due to a network fault or service restart mid-request).
+        // Returning the existing user makes registration idempotent so callers
+        // can safely retry without getting a spurious "already registered" error.
+        Optional<User> existing = storageGateway.findUserByEmail(email);
+        if (existing.isPresent()) {
+            String storedHash = storageGateway
+                    .findPasswordHashByUserId(existing.get().userId())
+                    .orElse(null);
+            if (storedHash != null && storedHash.equals(hashPassword(password))) {
+                log.info("[UMS] Idempotent re-registration: returning existing user "
+                        + "userId=" + existing.get().userId() + " email=" + email);
+                return existing.get();
+            }
+            // Different password — this is a genuine duplicate email conflict
             log.warning("[UMS] Registration failed: email already registered: " + email);
             throw new IllegalArgumentException("Email already registered: " + email);
         }

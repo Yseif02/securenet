@@ -134,11 +134,30 @@ public class ClientApplicationServiceImpl implements ClientApplicationService {
                             "deviceType", deviceType,
                             "qrPayload", qrPayloadOrDeviceId));
             if (resp.isSuccess()) {
+                // Guard against malformed responses — parse as a raw map first
+                // to check that required Device fields are present before
+                // attempting typed deserialization. A response that looks like
+                // {"error":"..."} or has null fields will crash the Device
+                // record constructor with a misleading NullPointerException.
+                Map<?, ?> raw = JsonUtil.fromJson(resp.body(), Map.class);
+                String deviceId = raw.get("deviceId") instanceof String s ? s : null;
+                if (deviceId == null) {
+                    // Server returned 2xx but body is not a valid Device — treat as error
+                    System.err.println("[Client] Onboarding failed: unexpected response body: "
+                            + resp.body());
+                    throw new IllegalArgumentException(
+                            "Onboarding response missing deviceId: " + resp.body());
+                }
                 Device device = JsonUtil.fromJson(resp.body(), Device.class);
                 System.out.println("[Client] Onboarding started: " + device.deviceId());
             } else {
+                // Non-2xx response — log and throw so callers can handle/retry
+                String errorMsg = extractErrorMessage(resp.body());
                 System.err.println("[Client] Onboarding failed: " + resp.body());
+                throw new IllegalArgumentException("Onboarding failed: " + errorMsg);
             }
+        } catch (IllegalArgumentException e) {
+            throw e; // re-throw as-is — already descriptive
         } catch (Exception e) {
             throw new IllegalArgumentException("Onboarding failed: " + e.getMessage());
         }
@@ -228,6 +247,7 @@ public class ClientApplicationServiceImpl implements ClientApplicationService {
             throw e;
         } catch (Exception e) {
             System.err.println("[Client] Stream failed: " + e.getMessage());
+            throw new RuntimeException("Stream failed: " + e.getMessage(), e); // add this
         }
     }
 
@@ -327,5 +347,18 @@ public class ClientApplicationServiceImpl implements ClientApplicationService {
     private void requireLoggedIn() {
         if (bearerToken == null)
             throw new IllegalStateException("Not logged in — call login() first");
+    }
+
+    /**
+     * Extracts the "error" field from a JSON error response body, falling
+     * back to the raw body if parsing fails.
+     */
+    private static String extractErrorMessage(String responseBody) {
+        try {
+            Map<?, ?> parsed = JsonUtil.fromJson(responseBody, Map.class);
+            Object error = parsed.get("error");
+            if (error instanceof String s) return s;
+        } catch (Exception ignored) {}
+        return responseBody;
     }
 }
