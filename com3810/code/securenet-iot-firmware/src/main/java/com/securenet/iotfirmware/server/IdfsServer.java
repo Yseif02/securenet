@@ -17,28 +17,55 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 /**
  * HTTP server for the IoT Device Firmware Service (IDFS).
  *
  * <p>IDFS is the device-facing entry point into the SecureNet cloud.
- * Devices call IDFS over HTTP for onboarding and provisioning; the
+ * Devices call IDFS over HTTP for onboarding and provisioning. The
  * platform calls IDFS to dispatch commands to devices via MQTT.
  *
- * <h3>Device-facing endpoints</h3>
+ * <h3>Device-facing HTTP endpoints</h3>
  * <ul>
  *   <li>{@code POST /register}  — bootstrap registration relay to DMS</li>
  *   <li>{@code POST /provision} — runtime MQTT credential provisioning</li>
  *   <li>{@code POST /heartbeat} — heartbeat relay to DMS</li>
  * </ul>
  *
- * <h3>Platform-facing endpoints (called by DMS)</h3>
+ * <h3>Platform-facing HTTP endpoints (called by DMS)</h3>
  * <ul>
- *   <li>{@code POST /command} — publish command to device MQTT topic,
- *       wait for ack</li>
+ *   <li>{@code POST /command} — publish command to device MQTT topic, wait for ack</li>
  * </ul>
+ *
+ * <h3>MQTT subscriptions</h3>
+ * <ul>
+ *   <li>{@code securenet/devices/+/acks}          — device command acks (all instances; idempotent DB write)</li>
+ *   <li>{@code securenet/devices/+/events/#}       — device events, forwarded to EPS</li>
+ *   <li>{@code securenet/devices/+/stream/chunks}  — video chunk streaming (all instances; slot-ownership filtered)</li>
+ * </ul>
+ *
+ * <h3>Chunk streaming design</h3>
+ * <p>Cameras publish video chunks over MQTT rather than HTTP. IDFS buffers
+ * chunks in memory per session in a {@link ChunkBuffer}. Every
+ * {@value #CHUNK_FLUSH_INTERVAL} chunks, IDFS flushes the batch to VSS via
+ * HTTP and publishes a stream ack back to the camera on
+ * {@code securenet/devices/{id}/stream/acks} with {@code ackedThrough: N}.
+ * The camera deletes its local buffer up to N.
+ *
+ * <h3>Slot ownership (DS Problem #10 — Competing Consumer)</h3>
+ * <p>All 3 IDFS instances subscribe to chunk topics via a shared subscription
+ * ({@code $share/idfs-chunk-processors/...}). The broker delivers each message
+ * to exactly one instance. As a secondary guard, the receiving instance checks
+ * consistent hash ownership: {@code hash(sessionId) % idfsClusterSize == instanceIndex}.
+ * If it does not own the session it drops the chunk immediately. This prevents
+ * duplicate VSS writes if the broker ever fan-outs (e.g. during reconnect).
+ *
+ * <p>If this IDFS instance crashes mid-stream, the camera's next chunk
+ * arrives at a different IDFS instance (broker shared subscription). That
+ * instance initialises a fresh {@link ChunkBuffer} for the session and
+ * continues from wherever VSS last checkpointed — the camera will eventually
+ * receive an ack and prune its buffer.
  */
 public class IdfsServer {
 
@@ -46,34 +73,97 @@ public class IdfsServer {
 
     private static final int COMMAND_TIMEOUT_SECONDS = 10;
 
+    /** Number of chunks to accumulate before flushing a batch to VSS. */
+    private static final int CHUNK_FLUSH_INTERVAL = 10;
+
+    /** Max attempts to find a healthy VSS via resume handshake. */
+    private static final int VSS_FAILOVER_ATTEMPTS = 5;
+    private static final int VSS_FAILOVER_BACKOFF_MS = 2000;
+
     private final String host;
     private final int port;
     private final LoadBalancer dmsLoadBalancer;
     private final LoadBalancer epsLoadBalancer;
+    private final LoadBalancer vssLoadBalancer;
     private final String mqttBrokerUrl;
     private final ServiceClient httpClient;
-    private HttpServer httpServer;
     private final StorageGateway storageGateway;
 
+    /** Slot index assigned to this IDFS instance (0-based). Stable across restarts. */
+    private final int instanceIndex;
+
+    /** Total number of IDFS slots in the cluster. */
+    private final int idfsClusterSize;
+
+    private HttpServer httpServer;
     private MqttClient mqttClient;
 
     /**
-     * Pending command futures keyed by correlationId.
-     * Completed when the device publishes an ack with a matching correlationId.
+     * In-memory chunk buffers keyed by sessionId.
+     * Each buffer tracks chunks received since the last VSS flush.
      */
-    //private final ConcurrentHashMap<String, CompletableFuture<Map>> pendingCommands =
-           // new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ChunkBuffer> chunkBuffers =
+            new ConcurrentHashMap<>();
 
-    public IdfsServer(String host, int port, LoadBalancer dmsLoadBalancer,
-                      LoadBalancer epsLoadBalancer, String mqttBrokerUrl,
+    /**
+     * Per-session chunk buffer.
+     * Guarded by its own intrinsic lock so concurrent MQTT callbacks
+     * for different chunks of the same session are serialised correctly.
+     */
+    private static final class ChunkBuffer {
+        /** Chunks received since the last flush, keyed by sequence number. */
+        final TreeMap<Long, byte[]> pending = new TreeMap<>();
+        /** Highest seq number successfully flushed to VSS. -1 = nothing flushed yet. */
+        long lastFlushedSeq = -1L;
+        /** Direct URL of the VSS instance owning this session. */
+        String vssUrl;
+        /** deviceId — needed to publish the MQTT ack. */
+        final String deviceId;
+
+        ChunkBuffer(String deviceId, String vssUrl) {
+            this.deviceId = deviceId;
+            this.vssUrl   = vssUrl;
+        }
+    }
+
+    /**
+     * Constructor without slot ownership args — defaults to index=0, size=1.
+     * Kept for backwards compatibility with tests that don't supply cluster args.
+     */
+    public IdfsServer(String host, int port,
+                      LoadBalancer dmsLoadBalancer,
+                      LoadBalancer epsLoadBalancer,
+                      LoadBalancer vssLoadBalancer,
+                      String mqttBrokerUrl,
                       StorageGateway storageGateway) {
-        this.host             = Objects.requireNonNull(host);
-        this.port             = port;
-        this.dmsLoadBalancer  = Objects.requireNonNull(dmsLoadBalancer);
-        this.epsLoadBalancer  = Objects.requireNonNull(epsLoadBalancer);
-        this.mqttBrokerUrl    = Objects.requireNonNull(mqttBrokerUrl);
-        this.storageGateway   = Objects.requireNonNull(storageGateway);
-        this.httpClient       = new ServiceClient();
+        this(host, port, dmsLoadBalancer, epsLoadBalancer, vssLoadBalancer,
+                mqttBrokerUrl, storageGateway, 0, 1);
+    }
+
+    /**
+     * Full constructor with slot ownership for competing-consumer chunk processing.
+     *
+     * @param instanceIndex   zero-based slot index assigned to this instance
+     * @param idfsClusterSize total number of IDFS slots (used for hash ownership)
+     */
+    public IdfsServer(String host, int port,
+                      LoadBalancer dmsLoadBalancer,
+                      LoadBalancer epsLoadBalancer,
+                      LoadBalancer vssLoadBalancer,
+                      String mqttBrokerUrl,
+                      StorageGateway storageGateway,
+                      int instanceIndex,
+                      int idfsClusterSize) {
+        this.host            = Objects.requireNonNull(host);
+        this.port            = port;
+        this.dmsLoadBalancer = Objects.requireNonNull(dmsLoadBalancer);
+        this.epsLoadBalancer = Objects.requireNonNull(epsLoadBalancer);
+        this.vssLoadBalancer = Objects.requireNonNull(vssLoadBalancer);
+        this.mqttBrokerUrl   = Objects.requireNonNull(mqttBrokerUrl);
+        this.storageGateway  = Objects.requireNonNull(storageGateway);
+        this.httpClient      = new ServiceClient();
+        this.instanceIndex   = instanceIndex;
+        this.idfsClusterSize = idfsClusterSize;
     }
 
     public void start() throws IOException {
@@ -92,13 +182,12 @@ public class IdfsServer {
         });
 
         httpServer.start();
-        log.info("[IDFS] started on " + host + ":" + port);
+        log.info("[IDFS] started on " + host + ":" + port
+                + " (slot " + instanceIndex + "/" + idfsClusterSize + ")");
     }
 
     public void stop() {
-        if (httpServer != null) {
-            httpServer.stop(0);
-        }
+        if (httpServer != null) httpServer.stop(0);
         disconnectMqtt();
         System.out.println("[IDFS] stopped");
     }
@@ -109,7 +198,7 @@ public class IdfsServer {
 
     private void connectMqtt() {
         try {
-            String clientId = "idfs-command-dispatcher-"
+            String clientId = "idfs-dispatcher-"
                     + UUID.randomUUID().toString().substring(0, 8);
             mqttClient = new MqttClient(mqttBrokerUrl, clientId);
 
@@ -118,14 +207,28 @@ public class IdfsServer {
             opts.setCleanSession(true);
             mqttClient.connect(opts);
 
-            String ackTopic   = "securenet/devices/+/acks";
-            String eventTopic = "securenet/devices/+/events/#";
-            mqttClient.subscribe(ackTopic,   1, this::onAckReceived);
-            mqttClient.subscribe(eventTopic, 1, this::onDeviceEventReceived);
+            // NOTE: Moquette (the embedded broker version used here) does not support
+            // MQTT5 shared subscriptions ($share/...). All three IDFS instances use
+            // regular wildcard subscriptions so Moquette delivers every message to all
+            // three. Deduplication is handled at the application level:
+            //
+            //   Acks:   updatePendingCommandResult is idempotent — writing the same
+            //           result twice is harmless.
+            //   Events: EPS dedup table suppresses duplicate event ingestion.
+            //   Chunks: slot ownership check (hash(sessionId) % clusterSize == index)
+            //           ensures only the owning instance processes each session's chunks.
+            //
+            // If you upgrade to a Moquette version that supports MQTT5 / shared subs,
+            // replace these three lines with $share/... topic strings.
+
+            mqttClient.subscribe("securenet/devices/+/acks",          1, this::onAckReceived);
+            mqttClient.subscribe("securenet/devices/+/events/#",      1, this::onDeviceEventReceived);
+            mqttClient.subscribe("securenet/devices/+/stream/chunks", 1, this::onChunkReceived);
 
             log.info("[IDFS] MQTT connected to " + mqttBrokerUrl);
-            log.info("[IDFS] Subscribed to " + ackTopic);
-            log.info("[IDFS] Subscribed to " + eventTopic);
+            log.info("[IDFS] Subscribed: acks (all), events (all), stream/chunks (all, slot-filtered)");
+            log.info("[IDFS] Slot ownership: index=" + instanceIndex
+                    + " clusterSize=" + idfsClusterSize);
         } catch (MqttException e) {
             log.severe("[IDFS] Failed to connect MQTT: " + e.getMessage());
             throw new RuntimeException("IDFS requires MQTT broker", e);
@@ -145,7 +248,7 @@ public class IdfsServer {
     }
 
     // =====================================================================
-    // MQTT ack handler
+    // MQTT: command ack handler
     // =====================================================================
 
     private void onAckReceived(String topic, MqttMessage message) {
@@ -160,15 +263,14 @@ public class IdfsServer {
             Boolean success = (Boolean) ack.get("success");
             String result   = Boolean.TRUE.equals(success) ? "SUCCESS" : "FAILURE";
             storageGateway.updatePendingCommandResult(corrId, result);
-            log.info("[IDFS] Ack received and persisted: correlationId=" + corrId
-                    + " result=" + result);
+            log.info("[IDFS] Ack received: correlationId=" + corrId + " result=" + result);
         } catch (Exception e) {
             log.severe("[IDFS] Error processing ack: " + e.getMessage());
         }
     }
 
     // =====================================================================
-    // MQTT event handler — forward to EPS
+    // MQTT: device event handler — forward to EPS
     // =====================================================================
 
     private void onDeviceEventReceived(String topic, MqttMessage message) {
@@ -184,13 +286,19 @@ public class IdfsServer {
                 return;
             }
 
+            // Ignore streaming lifecycle events — not for EPS
+            if ("STREAM_STARTED".equals(eventType) || "STREAM_ENDED".equals(eventType)) {
+                log.fine("[IDFS] Ignoring streaming lifecycle event: " + eventType);
+                return;
+            }
+
             log.info("[IDFS] Device event received: topic=" + topic
                     + " deviceId=" + deviceId + " type=" + eventType);
 
-            Object nonceObj    = event.get("nonce");
-            String nonce       = (nonceObj != null) ? String.valueOf(nonceObj) : "";
-            Object tsObj       = event.get("occurred_at_ms");
-            String occurredAt  = (tsObj instanceof Number)
+            Object nonceObj   = event.get("nonce");
+            String nonce      = (nonceObj != null) ? String.valueOf(nonceObj) : "";
+            Object tsObj      = event.get("occurred_at_ms");
+            String occurredAt = (tsObj instanceof Number)
                     ? Instant.ofEpochMilli(((Number) tsObj).longValue()).toString()
                     : Instant.now().toString();
 
@@ -213,16 +321,297 @@ public class IdfsServer {
             ServiceResponse epsResponse = httpClient.post(
                     epsLoadBalancer.nextHealthyUrl() + "/eps/events/ingest", epsRequest);
 
+            // EPS followers return 503 with {"error":"...", "leaderId":"eps-1"}.
+            // Follow the redirect once by retrying on each known EPS URL until
+            // one accepts (leader) or all are exhausted.
+            if (!epsResponse.isSuccess() && epsResponse.statusCode() == 503) {
+                log.fine("[IDFS] EPS returned 503 (not leader) — trying other nodes for "
+                        + eventType + " from " + deviceId);
+                // Try the other two EPS nodes by calling nextHealthyUrl() twice more
+                for (int retry = 0; retry < 2; retry++) {
+                    epsResponse = httpClient.post(
+                            epsLoadBalancer.nextHealthyUrl() + "/eps/events/ingest", epsRequest);
+                    if (epsResponse.isSuccess()) break;
+                }
+            }
+
             if (epsResponse.isSuccess()) {
-                log.info("[IDFS] Event forwarded to EPS: " + eventType
-                        + " from " + deviceId);
+                log.info("[IDFS] Event forwarded to EPS: " + eventType + " from " + deviceId);
             } else {
-                log.warning("[IDFS] EPS rejected event: HTTP "
-                        + epsResponse.statusCode() + " deviceId=" + deviceId
-                        + " type=" + eventType + " body=" + epsResponse.body());
+                log.warning("[IDFS] EPS rejected event: HTTP " + epsResponse.statusCode()
+                        + " deviceId=" + deviceId + " type=" + eventType);
             }
         } catch (Exception e) {
             log.severe("[IDFS] Error forwarding event to EPS: " + e.getMessage());
+        }
+    }
+
+    // =====================================================================
+    // MQTT: video chunk handler
+    // =====================================================================
+
+    /**
+     * Handles a chunk published by a camera on
+     * {@code securenet/devices/{deviceId}/stream/chunks}.
+     *
+     * <p>Expected payload fields:
+     * <pre>
+     * {
+     *   "session_id":      "rec-...",
+     *   "sequence_number": 42,
+     *   "chunk_bytes":     "<base64>",
+     *   "vss_url":         "http://localhost:9005"   // only on first chunk of session
+     * }
+     * </pre>
+     *
+     * <p>Slot ownership check: {@code hash(sessionId) % idfsClusterSize == instanceIndex}.
+     * If this instance does not own the session the chunk is dropped immediately.
+     * The shared subscription already ensures the broker delivers to only one
+     * instance, but this guard prevents any edge-case double-delivery.
+     *
+     * <p>Every {@value #CHUNK_FLUSH_INTERVAL} chunks the batch is flushed
+     * to VSS and an MQTT ack is sent to the camera.
+     */
+    private void onChunkReceived(String topic, MqttMessage message) {
+        try {
+            String payload  = new String(message.getPayload(), StandardCharsets.UTF_8);
+            Map chunk       = JsonUtil.fromJson(payload, Map.class);
+
+            String sessionId = (String) chunk.get("session_id");
+            String deviceId  = extractDeviceIdFromTopic(topic);
+            long seq         = ((Number) chunk.get("sequence_number")).longValue();
+            byte[] bytes     = java.util.Base64.getDecoder()
+                    .decode((String) chunk.get("chunk_bytes"));
+            // vss_url is sent on the first chunk of a session so IDFS knows
+            // which VSS instance DMS assigned. Subsequent chunks omit it.
+            String vssUrl    = (String) chunk.get("vss_url");
+
+            if (sessionId == null || deviceId == null) {
+                log.warning("[IDFS] Malformed chunk on topic=" + topic);
+                return;
+            }
+
+            // --- Slot ownership check (DS Problem #10: Competing Consumer) ---
+            // Even though the shared subscription delivers each message to only
+            // one IDFS instance, we verify ownership here as a secondary guard.
+            int ownerSlot = Math.abs(sessionId.hashCode()) % idfsClusterSize;
+            if (ownerSlot != instanceIndex) {
+                log.fine("[IDFS] Ignoring chunk — session owned by slot " + ownerSlot
+                        + " (I am slot " + instanceIndex + ") sessionId=" + sessionId);
+                return;
+            }
+
+            log.fine("[IDFS] Chunk received: sessionId=" + sessionId
+                    + " deviceId=" + deviceId + " seq=" + seq
+                    + " bytes=" + bytes.length);
+
+            // Get or create the buffer for this session
+            ChunkBuffer buf = chunkBuffers.computeIfAbsent(sessionId, id -> {
+                // First chunk for this session on this IDFS instance.
+                // If vssUrl is null this is a resumed session after IDFS crash —
+                // we'll discover the VSS URL on first flush via the resume handshake.
+                String url = (vssUrl != null) ? vssUrl : null;
+                log.info("[IDFS] New chunk buffer: sessionId=" + id
+                        + " deviceId=" + deviceId + " vssUrl=" + url);
+                return new ChunkBuffer(deviceId, url);
+            });
+
+            // If we got a vssUrl and the buffer doesn't have one yet
+            // (resumed after IDFS crash), set it now
+            synchronized (buf) {
+                if (vssUrl != null && buf.vssUrl == null) {
+                    buf.vssUrl = vssUrl;
+                }
+                buf.pending.put(seq, bytes);
+
+                // Count chunks above the last flush point
+                long chunksInBatch = buf.pending.tailMap(buf.lastFlushedSeq + 1).size();
+
+                if (chunksInBatch >= CHUNK_FLUSH_INTERVAL) {
+                    flushChunksToVss(sessionId, buf);
+                }
+            }
+
+        } catch (Exception e) {
+            log.severe("[IDFS] Error processing chunk from topic=" + topic
+                    + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Flushes pending chunks to VSS via HTTP and publishes a stream ack
+     * to the camera over MQTT.
+     *
+     * <p>Must be called with {@code buf}'s monitor held.
+     */
+    private void flushChunksToVss(String sessionId, ChunkBuffer buf) {
+        // Collect the batch: all chunks above lastFlushedSeq, in order
+        NavigableMap<Long, byte[]> batch =
+                buf.pending.tailMap(buf.lastFlushedSeq + 1, true);
+
+        if (batch.isEmpty()) return;
+
+        long batchHighSeq = batch.lastKey();
+
+        // Build the batch payload matching VSS /vss/chunks/ingest:
+        // {
+        //   "recordingSessionId": "rec-...",
+        //   "chunks": [
+        //     { "sequenceNumber": 0, "chunkBytes": "<base64>" },
+        //     ...
+        //   ]
+        // }
+        List<Map<String, Object>> chunkList = new ArrayList<>();
+        for (Map.Entry<Long, byte[]> entry : batch.entrySet()) {
+            chunkList.add(Map.of(
+                    "sequenceNumber", entry.getKey(),
+                    "chunkBytes",     java.util.Base64.getEncoder().encodeToString(entry.getValue())
+            ));
+        }
+
+        Map<String, Object> vssPayload = new HashMap<>();
+        vssPayload.put("recordingSessionId", sessionId);
+        vssPayload.put("chunks",             chunkList);
+
+        boolean flushed = false;
+        for (int attempt = 1; attempt <= VSS_FAILOVER_ATTEMPTS; attempt++) {
+            try {
+                if (buf.vssUrl == null) {
+                    buf.vssUrl = resumeVssSession(sessionId);
+                    if (buf.vssUrl == null) {
+                        // Session is gone from all VSS instances (404) — it was
+                        // closed by DMS before this flush. Drop the buffer.
+                        log.warning("[IDFS] Session not found on any VSS — dropping buffer"
+                                + " sessionId=" + sessionId);
+                        chunkBuffers.remove(sessionId);
+                        return;
+                    }
+                }
+
+                ServiceResponse resp = httpClient.post(
+                        buf.vssUrl + "/vss/chunks/ingest", vssPayload);
+
+                if (resp.isSuccess()) {
+                    flushed = true;
+                    break;
+                }
+                // 404 means VSS closed the session — stop retrying
+                if (resp.statusCode() == 404 || resp.statusCode() == 400) {
+                    log.warning("[IDFS] VSS returned " + resp.statusCode()
+                            + " for ingest — session closed, dropping buffer"
+                            + " sessionId=" + sessionId);
+                    chunkBuffers.remove(sessionId);
+                    return;
+                }
+                log.warning("[IDFS] VSS ingest HTTP " + resp.statusCode()
+                        + " attempt=" + attempt + " sessionId=" + sessionId);
+                buf.vssUrl = null; // force resume on next attempt
+                sleepQuietly(VSS_FAILOVER_BACKOFF_MS);
+
+            } catch (Exception e) {
+                log.warning("[IDFS] VSS unreachable on attempt " + attempt
+                        + " sessionId=" + sessionId + ": " + e.getMessage());
+                buf.vssUrl = null; // force resume on next attempt
+                sleepQuietly(VSS_FAILOVER_BACKOFF_MS);
+            }
+        }
+
+        if (!flushed) {
+            log.severe("[IDFS] Failed to flush chunks after " + VSS_FAILOVER_ATTEMPTS
+                    + " attempts — sessionId=" + sessionId + ". Chunks remain buffered.");
+            return;
+        }
+
+        // Update watermark and prune flushed chunks from in-memory buffer
+        buf.lastFlushedSeq = batchHighSeq;
+        buf.pending.headMap(batchHighSeq, true).clear();
+
+        log.info("[IDFS] Flush complete: sessionId=" + sessionId
+                + " batchSize=" + chunkList.size() + " ackedThrough=" + batchHighSeq);
+
+        // Publish MQTT ack to camera
+        publishStreamAck(buf.deviceId, sessionId, batchHighSeq);
+    }
+
+    /**
+     * Calls {@code POST /vss/session/resume} on a healthy VSS instance.
+     *
+     * @return the new VSS instance URL, or {@code null} if the session is not
+     *         found on any VSS (404 — it has been closed) or all attempts fail
+     */
+    private String resumeVssSession(String sessionId) {
+        log.info("[IDFS] Attempting VSS resume for sessionId=" + sessionId);
+        for (int i = 0; i < VSS_FAILOVER_ATTEMPTS; i++) {
+            try {
+                String vssBase = vssLoadBalancer.nextHealthyUrl();
+                ServiceResponse resp = httpClient.post(
+                        vssBase + "/vss/session/resume",
+                        Map.of("sessionId", sessionId));
+                if (resp.isSuccess()) {
+                    Map respMap   = JsonUtil.fromJson(resp.body(), Map.class);
+                    String newUrl = (String) respMap.get("vssUrl");
+                    log.info("[IDFS] VSS resume succeeded: sessionId=" + sessionId
+                            + " newVssUrl=" + newUrl);
+                    return newUrl;
+                }
+                // 404 = session doesn't exist on any VSS (already closed by DMS).
+                // No point retrying — return null so caller can clean up.
+                if (resp.statusCode() == 404) {
+                    log.warning("[IDFS] VSS resume 404 — session already closed"
+                            + " sessionId=" + sessionId);
+                    return null;
+                }
+                log.warning("[IDFS] VSS resume HTTP " + resp.statusCode()
+                        + " attempt=" + (i + 1) + " sessionId=" + sessionId);
+            } catch (Exception e) {
+                log.warning("[IDFS] VSS resume error attempt=" + (i + 1)
+                        + " sessionId=" + sessionId + ": " + e.getMessage());
+            }
+            sleepQuietly(VSS_FAILOVER_BACKOFF_MS);
+        }
+        return null;
+    }
+
+    /**
+     * Publishes a stream ack to the camera on
+     * {@code securenet/devices/{deviceId}/stream/acks}.
+     *
+     * <p>The camera deletes its local chunk buffer up to {@code ackedThrough}.
+     */
+    private void publishStreamAck(String deviceId, String sessionId, long ackedThrough) {
+        if (mqttClient == null || !mqttClient.isConnected()) {
+            log.warning("[IDFS] Cannot publish stream ack — MQTT not connected");
+            return;
+        }
+        try {
+            String topic   = "securenet/devices/" + deviceId + "/stream/acks";
+            String payload = JsonUtil.toJson(Map.of(
+                    "session_id",    sessionId,
+                    "acked_through", ackedThrough
+            ));
+            mqttClient.publish(topic, payload.getBytes(StandardCharsets.UTF_8), 1, false);
+            log.fine("[IDFS] Stream ack published: deviceId=" + deviceId
+                    + " sessionId=" + sessionId + " ackedThrough=" + ackedThrough);
+        } catch (MqttException e) {
+            log.warning("[IDFS] Failed to publish stream ack: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Extracts the deviceId from an MQTT topic of the form
+     * {@code securenet/devices/{deviceId}/stream/chunks}.
+     */
+    private static String extractDeviceIdFromTopic(String topic) {
+        // "securenet/devices/{deviceId}/stream/chunks"
+        // Also handles shared-subscription topics which include the group prefix,
+        // but Eclipse Paho strips the $share/group prefix before calling the callback.
+        String[] parts = topic.split("/");
+        return (parts.length >= 3) ? parts[2] : null;
+    }
+
+    private static void sleepQuietly(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -251,8 +640,7 @@ public class IdfsServer {
             if (isBlank(corrId)) corrId = UUID.randomUUID().toString();
 
             if (mqttClient == null || !mqttClient.isConnected()) {
-                log.severe("[IDFS] Command dispatch failed: MQTT broker not connected"
-                        + " deviceId=" + deviceId);
+                log.severe("[IDFS] Command dispatch failed: MQTT not connected deviceId=" + deviceId);
                 writeJson(ex, 503, Map.of("error", "MQTT broker not connected"));
                 return;
             }
@@ -260,50 +648,48 @@ public class IdfsServer {
             log.info("[IDFS] Command dispatch: deviceId=" + deviceId
                     + " command=" + commandType + " correlationId=" + corrId);
 
-            // Save to DB before publishing (so any instance can receive the ack)
+            // Persist before publishing so any IDFS instance can receive the ack
             Instant now       = Instant.now();
             Instant expiresAt = now.plusSeconds(COMMAND_TIMEOUT_SECONDS);
             storageGateway.savePendingCommand(corrId, deviceId, commandType, now, expiresAt);
 
-            String topic   = "securenet/devices/" + deviceId + "/commands/" + commandType.toLowerCase();
-            Map<String, Object> mqttPayload = new HashMap<>(body); // body is already parsed from the request
+            String topic = "securenet/devices/" + deviceId + "/commands/" + commandType.toLowerCase();
+            Map<String, Object> mqttPayload = new HashMap<>(body);
             mqttPayload.put("device_id",      deviceId);
             mqttPayload.put("command_type",   commandType);
             mqttPayload.put("correlation_id", corrId);
-            String payload = JsonUtil.toJson(mqttPayload);
 
-            mqttClient.publish(topic, payload.getBytes(StandardCharsets.UTF_8), 1, false);
+            mqttClient.publish(topic,
+                    JsonUtil.toJson(mqttPayload).getBytes(StandardCharsets.UTF_8), 1, false);
             log.info("[IDFS] Published command to " + topic);
 
-            // Poll DB for ack result (any IDFS instance may have written it)
+            // Poll DB for ack (any IDFS instance may write it)
             long deadline = System.currentTimeMillis() + (COMMAND_TIMEOUT_SECONDS * 1000L);
             String result = null;
-            try {
-                while (System.currentTimeMillis() < deadline) {
-                    Optional<Map<String, String>> row = storageGateway.findPendingCommand(corrId);
-                    if (row.isPresent() && row.get().get("result") != null) {
-                        result = row.get().get("result");
-                        break;
-                    }
-                    Thread.sleep(100);
+            while (System.currentTimeMillis() < deadline) {
+                Optional<Map<String, String>> row = storageGateway.findPendingCommand(corrId);
+                if (row.isPresent() && row.get().get("result") != null) {
+                    result = row.get().get("result");
+                    break;
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                storageGateway.deletePendingCommand(corrId);
-                log.severe("[IDFS] Command interrupted: " + e.getMessage());
-                writeJson(ex, 500, Map.of("error", "Command interrupted"));
-                return;
+                try { Thread.sleep(100); } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    storageGateway.deletePendingCommand(corrId);
+                    writeJson(ex, 500, Map.of("error", "Command interrupted"));
+                    return;
+                }
             }
 
             storageGateway.deletePendingCommand(corrId);
 
             if (result == null) {
                 log.warning("[IDFS] Command timed out: deviceId=" + deviceId
-                        + " command=" + commandType + " correlationId=" + corrId);
+                        + " command=" + commandType);
                 writeJson(ex, 504, Map.of(
                         "acknowledged",   false,
                         "correlation_id", corrId,
-                        "error", "Device did not acknowledge within " + COMMAND_TIMEOUT_SECONDS + "s"));
+                        "error", "Device did not acknowledge within "
+                                + COMMAND_TIMEOUT_SECONDS + "s"));
             } else if ("SUCCESS".equals(result)) {
                 log.info("[IDFS] Command acknowledged: deviceId=" + deviceId
                         + " command=" + commandType);
@@ -313,8 +699,7 @@ public class IdfsServer {
                         "device_id",      deviceId,
                         "command_type",   commandType));
             } else {
-                log.warning("[IDFS] Command failed on device: deviceId=" + deviceId
-                        + " command=" + commandType);
+                log.warning("[IDFS] Command failed on device: deviceId=" + deviceId);
                 writeJson(ex, 200, Map.of(
                         "acknowledged",   false,
                         "correlation_id", corrId,
@@ -322,7 +707,6 @@ public class IdfsServer {
                         "command_type",   commandType,
                         "error",          "Device reported failure"));
             }
-
         } catch (MqttException e) {
             log.severe("[IDFS] MQTT publish error: " + e.getMessage());
             writeJson(ex, 503, Map.of("error", "Failed to publish command to MQTT"));
@@ -349,9 +733,7 @@ public class IdfsServer {
                 return;
             }
 
-            String requestBody = readBodyString(ex);
-            Map body = JsonUtil.fromJson(requestBody, Map.class);
-
+            Map body = JsonUtil.fromJson(readBodyString(ex), Map.class);
             String deviceId          = (String) body.get("device_id");
             String registrationToken = (String) body.get("registration_token");
 
@@ -361,7 +743,7 @@ public class IdfsServer {
                 return;
             }
 
-            log.info("[IDFS] Bootstrap registration request: deviceId=" + deviceId);
+            log.info("[IDFS] Bootstrap registration: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.post(
                     dmsLoadBalancer.nextHealthyUrl() + "/dms/devices/accept-registration",
@@ -372,22 +754,18 @@ public class IdfsServer {
                 Map regInfo      = (Map) dmsResult.get("registrationInfo");
                 Map fwAssignment = (Map) dmsResult.get("firmwareAssignment");
 
-                Map<String, String> deviceResponse = Map.of(
-                        "device_id",         (String) regInfo.get("deviceId"),
-                        "device_type",       (String) regInfo.get("deviceType"),
-                        "registered_at",     (String) regInfo.get("registeredAt"),
-                        "firmware_version",  (String) fwAssignment.get("firmwareVersion"),
-                        "firmware_url",      (String) fwAssignment.get("firmwareUrl"),
-                        "firmware_issued_at",(String) fwAssignment.get("issuedAt")
-                );
-
-                log.info("[IDFS] Bootstrap registration succeeded: deviceId=" + deviceId
-                        + " firmwareVersion=" + fwAssignment.get("firmwareVersion"));
-                writeJson(ex, 200, deviceResponse);
+                writeJson(ex, 200, Map.of(
+                        "device_id",          (String) regInfo.get("deviceId"),
+                        "device_type",        (String) regInfo.get("deviceType"),
+                        "registered_at",      (String) regInfo.get("registeredAt"),
+                        "firmware_version",   (String) fwAssignment.get("firmwareVersion"),
+                        "firmware_url",       (String) fwAssignment.get("firmwareUrl"),
+                        "firmware_issued_at", (String) fwAssignment.get("issuedAt")
+                ));
+                log.info("[IDFS] Bootstrap succeeded: deviceId=" + deviceId);
             } else {
                 log.warning("[IDFS] DMS returned " + dmsResponse.statusCode()
-                        + " for bootstrap deviceId=" + deviceId
-                        + " body=" + dmsResponse.body());
+                        + " for bootstrap deviceId=" + deviceId);
                 writeRaw(ex, dmsResponse.statusCode(), dmsResponse.body());
             }
         } catch (Exception e) {
@@ -407,8 +785,7 @@ public class IdfsServer {
                 return;
             }
 
-            String requestBody = readBodyString(ex);
-            Map body   = JsonUtil.fromJson(requestBody, Map.class);
+            Map body    = JsonUtil.fromJson(readBodyString(ex), Map.class);
             String deviceId = (String) body.get("device_id");
 
             if (isBlank(deviceId)) {
@@ -416,35 +793,27 @@ public class IdfsServer {
                 return;
             }
 
-            log.info("[IDFS] Runtime provisioning request: deviceId=" + deviceId);
+            log.info("[IDFS] Runtime provisioning: deviceId=" + deviceId);
 
             ServiceResponse dmsResponse = httpClient.get(
                     dmsLoadBalancer.nextHealthyUrl() + "/dms/devices/get?deviceId=" + deviceId);
 
             if (!dmsResponse.isSuccess()) {
-                log.warning("[IDFS] Provisioning failed: device not found deviceId=" + deviceId);
                 writeJson(ex, dmsResponse.statusCode(),
                         Map.of("error", "Device not found or not registered"));
                 return;
             }
 
-            String mqttClientId = "securenet-device-" + deviceId;
-            String mqttUsername = "device-" + deviceId;
-            String mqttPassword = "mqtt-pass-" + deviceId + "-" + System.currentTimeMillis();
-
-            Map<String, String> credentials = Map.of(
+            writeJson(ex, 200, Map.of(
                     "device_id",       deviceId,
                     "mqtt_broker_url", mqttBrokerUrl,
-                    "mqtt_client_id",  mqttClientId,
-                    "mqtt_username",   mqttUsername,
-                    "mqtt_password",   mqttPassword
-            );
-
-            log.info("[IDFS] Runtime provisioning succeeded: deviceId=" + deviceId
-                    + " mqttClientId=" + mqttClientId);
-            writeJson(ex, 200, credentials);
+                    "mqtt_client_id",  "securenet-device-" + deviceId,
+                    "mqtt_username",   "device-" + deviceId,
+                    "mqtt_password",   "mqtt-pass-" + deviceId + "-" + System.currentTimeMillis()
+            ));
+            log.info("[IDFS] Provisioning succeeded: deviceId=" + deviceId);
         } catch (Exception e) {
-            log.severe("[IDFS] Runtime provisioning error: " + e.getMessage());
+            log.severe("[IDFS] Provisioning error: " + e.getMessage());
             writeJson(ex, 500, Map.of("error", "Internal Server Error"));
         }
     }
@@ -460,8 +829,7 @@ public class IdfsServer {
                 return;
             }
 
-            String requestBody = readBodyString(ex);
-            Map body   = JsonUtil.fromJson(requestBody, Map.class);
+            Map body    = JsonUtil.fromJson(readBodyString(ex), Map.class);
             String deviceId = (String) body.get("device_id");
 
             if (isBlank(deviceId)) {

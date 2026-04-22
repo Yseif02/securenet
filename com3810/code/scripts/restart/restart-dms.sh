@@ -22,6 +22,8 @@ java -cp "$CLASSPATH" \
     --port "$NEW_PORT" \
     --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URL" \
+    --vss-urls "$VSS_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     >> "$LOG_DIR/$INSTANCE_ID.log" 2>&1 &
 
 PID=$!

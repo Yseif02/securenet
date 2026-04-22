@@ -1,37 +1,60 @@
 package com.securenet.demo;
 
 import com.securenet.common.JsonUtil;
-import com.securenet.common.ServiceClient;
 import com.securenet.model.DeviceType;
+import org.eclipse.paho.client.mqttv3.MqttException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Mock camera device.
+ * Mock camera device with MQTT-based chunk streaming and durable local buffering.
  *
- * <p>Combines motion detection (like {@link MockSensor}) with video
- * streaming capability. Publishes periodic {@code MOTION_DETECTED}
- * events and responds to {@code STREAM_START} / {@code STREAM_STOP}
- * commands.
+ * <h3>Chunk streaming protocol</h3>
+ * <ol>
+ *   <li>On STREAM_START, the camera receives a {@code session_id} and
+ *       {@code vss_url} (which IDFS needs to know which VSS instance owns
+ *       the session). The camera starts publishing chunks over MQTT to
+ *       {@code securenet/devices/{id}/stream/chunks}, including {@code vss_url}
+ *       only on the first chunk of the session.</li>
+ *   <li>Each chunk is kept in a local {@code localChunkBuffer} (TreeMap keyed
+ *       by sequence number) until acked.</li>
+ *   <li>IDFS receives the chunks, batches them, flushes to VSS, then publishes
+ *       an ack on {@code securenet/devices/{id}/stream/acks} with
+ *       {@code acked_through: N}.</li>
+ *   <li>On receiving the ack, the camera deletes chunks 0..N from its local
+ *       buffer.</li>
+ * </ol>
  *
- * <p>On {@code STREAM_START}, the camera receives a {@code session_id}
- * and {@code vss_url} in the command payload. It then sends simulated
- * video chunks directly to the Video Streaming Service via
- * {@code POST /vss/chunks/ingest} until {@code STREAM_STOP} is received.
+ * <p>The camera has no knowledge of VSS. If IDFS or VSS fails, IDFS handles
+ * the resume handshake transparently. The camera just keeps publishing chunks
+ * over MQTT and waiting for acks.
  */
 public class MockCamera extends AbstractMockDevice {
 
     private static final int MOTION_EVENT_INTERVAL = 3;
     private static final int CHUNK_INTERVAL_MS     = 500;
 
-    private final AtomicBoolean streaming        = new AtomicBoolean(false);
-    private final AtomicReference<String> activeSessionId = new AtomicReference<>(null);
-    private final AtomicReference<String> activeVssUrl    = new AtomicReference<>(null);
-    private final AtomicLong chunkSequence       = new AtomicLong(0);
+    private final AtomicBoolean streaming                  = new AtomicBoolean(false);
+    private final AtomicReference<String> activeSessionId  = new AtomicReference<>(null);
+    private final AtomicReference<String> activeVssUrl     = new AtomicReference<>(null);
+
+    /**
+     * Local chunk buffer. Chunks are kept here until IDFS acks them
+     * via MQTT stream ack. Key = sequence number.
+     */
+    private final TreeMap<Long, byte[]> localChunkBuffer = new TreeMap<>();
+    private final Object bufferLock = new Object();
+
+    /** Highest sequence number acked by IDFS. -1 = nothing acked yet. */
+    private final AtomicLong lastAckedSeq = new AtomicLong(-1L);
+
+    /** Whether this is the first chunk of the stream (vss_url must be included). */
+    private final AtomicBoolean firstChunk = new AtomicBoolean(true);
 
     public MockCamera(String deviceId, String registrationToken, String idfsBaseUrl) {
         super(deviceId, registrationToken, DeviceType.CAMERA, idfsBaseUrl);
@@ -39,9 +62,12 @@ public class MockCamera extends AbstractMockDevice {
 
     public boolean isStreaming() { return streaming.get(); }
 
+    // =====================================================================
+    // Steady state
+    // =====================================================================
+
     @Override
     protected void onSteadyStateTick(String tag, int heartbeatCount) {
-        // Publish motion events periodically
         if (heartbeatCount > 0 && heartbeatCount % MOTION_EVENT_INTERVAL == 0) {
             long nonce = nextNonce();
             publishEvent("motion", Map.of(
@@ -55,40 +81,26 @@ public class MockCamera extends AbstractMockDevice {
         }
 
         if (streaming.get() && heartbeatCount % 2 == 0) {
-            System.out.println(tag + " Streaming video chunks to VSS...");
+            System.out.println(tag + " Streaming video chunks via MQTT...");
         }
     }
 
-    /**
-     * Called by {@link AbstractMockDevice} when an MQTT command arrives.
-     * For STREAM_START, the full payload including session_id and vss_url
-     * is extracted via {@link #onFullCommandReceived}.
-     */
+    // =====================================================================
+    // MQTT command handling
+    // =====================================================================
+
     @Override
     protected void onCommandReceived(String tag, String commandType, String correlationId) {
-        // session_id / vss_url are set by onFullCommandReceived before this
-        // is called — see the override below. For commands that don't need
-        // extra fields (STREAM_STOP) this path is sufficient.
         handleCommand(tag, commandType, correlationId, null, null);
     }
 
-    /**
-     * Override point — AbstractMockDevice's MQTT callback calls this with
-     * the full parsed command map so we can extract session_id and vss_url.
-     * We re-route through here by overriding the MQTT message handler in
-     * connectMqtt — but since connectMqtt is private in the base class,
-     * we use a different approach: store extra fields in atomic refs before
-     * delegating to onCommandReceived.
-     *
-     * <p>This is called directly from our custom MQTT subscription set up
-     * in the first onSteadyStateTick after MQTT connects.
-     */
+    @Override
     public void onFullCommandReceived(String tag, Map cmd) {
-        String commandType   = (String) cmd.get("command_type");
-        String correlationId = (String) cmd.get("correlation_id");
-        String sessionId     = (String) cmd.get("session_id");
-        String vssUrl        = (String) cmd.get("vss_url");
-        handleCommand(tag, commandType, correlationId, sessionId, vssUrl);
+        handleCommand(tag,
+                (String) cmd.get("command_type"),
+                (String) cmd.get("correlation_id"),
+                (String) cmd.get("session_id"),
+                (String) cmd.get("vss_url"));
     }
 
     private void handleCommand(String tag, String commandType, String correlationId,
@@ -103,10 +115,15 @@ public class MockCamera extends AbstractMockDevice {
                 if (streaming.compareAndSet(false, true)) {
                     activeSessionId.set(sessionId);
                     activeVssUrl.set(vssUrl);
-                    chunkSequence.set(0);
+                    lastAckedSeq.set(-1L);
+                    firstChunk.set(true);
+                    synchronized (bufferLock) { localChunkBuffer.clear(); }
 
-                    System.out.println(tag + " Camera capture started — streaming"
-                            + " sessionId=" + sessionId + " vssUrl=" + vssUrl);
+                    System.out.println(tag + " STREAM_START: sessionId=" + sessionId
+                            + " vssUrl=" + vssUrl);
+
+                    // Subscribe to stream acks from IDFS
+                    subscribeToStreamAcks(tag);
 
                     publishEvent("stream", Map.of(
                             "device_id",      getDeviceId(),
@@ -116,8 +133,7 @@ public class MockCamera extends AbstractMockDevice {
                     ));
                     publishAck(correlationId, commandType, true);
 
-                    // Start sending chunks to VSS if we have a session
-                    if (sessionId != null && vssUrl != null) {
+                    if (sessionId != null) {
                         startChunkSender(tag, sessionId, vssUrl);
                     }
                 } else {
@@ -128,7 +144,7 @@ public class MockCamera extends AbstractMockDevice {
 
             case "STREAM_STOP" -> {
                 if (streaming.compareAndSet(true, false)) {
-                    System.out.println(tag + " Camera capture stopped");
+                    System.out.println(tag + " STREAM_STOP received");
                     activeSessionId.set(null);
                     activeVssUrl.set(null);
 
@@ -152,52 +168,142 @@ public class MockCamera extends AbstractMockDevice {
         }
     }
 
+    // =====================================================================
+    // MQTT stream ack subscription
+    // =====================================================================
+
     /**
-     * Sends simulated video chunks to the VSS recording session.
-     * Runs in a daemon thread until streaming stops or the session ends.
-     * Each chunk is a small byte array representing a video frame.
+     * Subscribes to IDFS stream acks on
+     * {@code securenet/devices/{id}/stream/acks}.
+     *
+     * <p>When IDFS successfully flushes a batch to VSS it publishes:
+     * <pre>{ "session_id": "rec-...", "acked_through": 19 }</pre>
+     * The camera prunes its local buffer up to seq 19.
+     */
+    private void subscribeToStreamAcks(String tag) {
+        if (mqttClient == null || !mqttClient.isConnected()) return;
+        try {
+            String ackTopic = "securenet/devices/" + getDeviceId() + "/stream/acks";
+            mqttClient.subscribe(ackTopic, 1, (topic, message) -> {
+                try {
+                    String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+                    Map ack        = JsonUtil.fromJson(payload, Map.class);
+                    String sid     = (String) ack.get("session_id");
+                    long ackedThrough = ((Number) ack.get("acked_through")).longValue();
+
+                    if (!getDeviceId().equals(extractDeviceId()) ||
+                            !sid.equals(activeSessionId.get())) {
+                        return; // stale ack from a previous session
+                    }
+
+                    pruneLocalBuffer(ackedThrough);
+                    lastAckedSeq.set(ackedThrough);
+                    System.out.println(tag + " Stream ack received: ackedThrough=" + ackedThrough
+                            + " localBufferSize=" + localChunkBufferSize());
+                } catch (Exception e) {
+                    System.err.println(tag + " Error processing stream ack: " + e.getMessage());
+                }
+            });
+            System.out.println(tag + " Subscribed to stream acks on " + ackTopic);
+        } catch (MqttException e) {
+            System.err.println(tag + " Failed to subscribe to stream acks: " + e.getMessage());
+        }
+    }
+
+    // =====================================================================
+    // MQTT chunk sender
+    // =====================================================================
+
+    /**
+     * Publishes simulated video chunks over MQTT to
+     * {@code securenet/devices/{id}/stream/chunks}.
+     *
+     * <p>Chunks are buffered locally until IDFS sends an ack. The first
+     * chunk of the session includes {@code vss_url} so IDFS knows which
+     * VSS instance DMS assigned to this session.
      */
     private void startChunkSender(String tag, String sessionId, String vssUrl) {
         Thread sender = new Thread(() -> {
-            ServiceClient chunkClient = new ServiceClient();
             System.out.println(tag + " Chunk sender started: sessionId=" + sessionId);
             long seq = 0;
+
             while (streaming.get()) {
                 try {
-                    // Simulate a video chunk — in production this would be
-                    // H.264/H.265 encoded frame data from the camera sensor
                     byte[] frameData = ("FRAME_" + getDeviceId() + "_"
-                            + seq + "_" + System.currentTimeMillis()).getBytes(
-                            StandardCharsets.UTF_8);
-                    String b64 = java.util.Base64.getEncoder()
-                            .encodeToString(frameData);
+                            + seq + "_" + System.currentTimeMillis())
+                            .getBytes(StandardCharsets.UTF_8);
+                    String b64 = java.util.Base64.getEncoder().encodeToString(frameData);
 
-                    ServiceClient.ServiceResponse resp = chunkClient.post(
-                            vssUrl + "/vss/chunks/ingest",
-                            Map.of("recordingSessionId", sessionId,
-                                    "sequenceNumber",     seq,
-                                    "chunkBytes",         b64));
-
-                    if (resp.isSuccess()) {
-                        System.out.println(tag + " Chunk sent: seq=" + seq
-                                + " bytes=" + frameData.length);
-                    } else {
-                        System.err.println(tag + " Chunk rejected: seq=" + seq
-                                + " HTTP=" + resp.statusCode());
+                    // Buffer locally before publishing
+                    synchronized (bufferLock) {
+                        localChunkBuffer.put(seq, frameData);
                     }
+
+                    // Build the MQTT payload
+                    // vss_url is only included on the first chunk so IDFS
+                    // knows which VSS instance owns this session.
+                    // Subsequent chunks omit it to save bandwidth.
+                    java.util.Map<String, Object> chunkPayload = new java.util.HashMap<>();
+                    chunkPayload.put("session_id",      sessionId);
+                    chunkPayload.put("sequence_number", seq);
+                    chunkPayload.put("chunk_bytes",     b64);
+                    if (firstChunk.getAndSet(false)) {
+                        chunkPayload.put("vss_url", vssUrl);
+                        System.out.println(tag + " First chunk — including vss_url=" + vssUrl);
+                    }
+
+                    String topic   = "securenet/devices/" + getDeviceId() + "/stream/chunks";
+                    String payload = JsonUtil.toJson(chunkPayload);
+
+                    if (mqttClient != null && mqttClient.isConnected()) {
+                        mqttClient.publish(topic,
+                                payload.getBytes(StandardCharsets.UTF_8), 1, false);
+                        System.out.println(tag + " Chunk published via MQTT: seq=" + seq
+                                + " bytes=" + frameData.length
+                                + " localBuffer=" + localChunkBufferSize());
+                    } else {
+                        System.err.println(tag + " MQTT not connected, chunk seq=" + seq
+                                + " remains in local buffer");
+                    }
+
                     seq++;
                     Thread.sleep(CHUNK_INTERVAL_MS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
+                } catch (MqttException e) {
+                    System.err.println(tag + " MQTT publish error seq=" + seq
+                            + ": " + e.getMessage());
+                    // Chunk stays in local buffer — MQTT auto-reconnects
+                    try { Thread.sleep(1000); } catch (InterruptedException ie) { break; }
                 } catch (Exception e) {
-                    System.err.println(tag + " Chunk send error: " + e.getMessage());
+                    System.err.println(tag + " Chunk sender error seq=" + seq
+                            + ": " + e.getMessage());
                     try { Thread.sleep(1000); } catch (InterruptedException ie) { break; }
                 }
             }
-            System.out.println(tag + " Chunk sender stopped after " + seq + " chunks");
+            System.out.println(tag + " Chunk sender stopped after " + seq + " chunks."
+                    + " Unacked chunks in buffer: " + localChunkBufferSize());
         }, "chunk-sender-" + getDeviceId());
         sender.setDaemon(true);
         sender.start();
     }
+
+    // =====================================================================
+    // Local buffer helpers
+    // =====================================================================
+
+    private void pruneLocalBuffer(long ackedThrough) {
+        synchronized (bufferLock) {
+            // headMap(key, inclusive=true) → all keys <= ackedThrough
+            localChunkBuffer.headMap(ackedThrough, true).clear();
+        }
+    }
+
+    private int localChunkBufferSize() {
+        synchronized (bufferLock) { return localChunkBuffer.size(); }
+    }
+
+    /** Extracts deviceId — used for ack filtering. Returns this device's ID. */
+    private String extractDeviceId() { return getDeviceId(); }
 }

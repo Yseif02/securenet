@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 /**
  * Public API of the SecureNet Data Storage Layer.
@@ -235,6 +236,12 @@ public interface StorageService {
      * @throws VideoNotFoundException if no data exists for the given storage key
      */
     byte[] loadVideoBytes(String storageKey) throws VideoNotFoundException;
+
+
+    void saveChunkCheckpoint(String sessionId, long sequenceNumber, byte[] chunkBytes);
+    TreeMap<Long, byte[]> loadCheckpointedChunks(String sessionId);
+    long getMaxCheckpointedSeq(String sessionId);
+    void deleteCheckpointedChunks(String sessionId);
 
     // =========================================================================
     // Firmware binaries

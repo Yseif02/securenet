@@ -50,18 +50,21 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
 
     private final StorageGateway storageGateway;
     private final LoadBalancer idfsLoadBalancer;
-    private final String vssBaseUrl;
+    private final LoadBalancer vssLoadBalancer;
     private final ServiceClient httpClient;
 
     /**
-     * @param storageGateway HTTP client pointing to the remote Storage Service
-     * @param loadBalancer       loadbalancer
+     * @param storageGateway  HTTP client pointing to the remote Storage Service
+     * @param idfsLoadBalancer load balancer for IDFS instances
+     * @param vssLoadBalancer  load balancer for VSS instances
      */
-    public DeviceManagementServiceImpl(StorageGateway storageGateway, LoadBalancer loadBalancer) {
+    public DeviceManagementServiceImpl(StorageGateway storageGateway,
+                                       LoadBalancer idfsLoadBalancer,
+                                       LoadBalancer vssLoadBalancer) {
         this.storageGateway   = Objects.requireNonNull(storageGateway, "storageGateway");
-        this.idfsLoadBalancer = loadBalancer;
-        this.vssBaseUrl  = "http://localhost:9005";
-        this.httpClient  = new ServiceClient();
+        this.idfsLoadBalancer = idfsLoadBalancer;
+        this.vssLoadBalancer  = Objects.requireNonNull(vssLoadBalancer, "vssLoadBalancer");
+        this.httpClient       = new ServiceClient();
     }
 
     // =====================================================================
@@ -253,11 +256,15 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         log.info("[DMS] sendStreamStartCommand: deviceId=" + deviceId
                 + " ownerId=" + device.ownerId());
 
+        // Pick a single VSS instance for this session — open, STREAM_START payload,
+        // and close must all target the same instance so the session stays consistent.
+        String vssUrl = vssLoadBalancer.nextHealthyUrl();
+
         // Open VSS recording session before telling camera to stream
         String sessionId = null;
         try {
             ServiceResponse vssResp = httpClient.post(
-                    vssBaseUrl + "/vss/session/open",
+                    vssUrl + "/vss/session/open",
                     Map.of("deviceId", deviceId, "ownerId", device.ownerId()));
             if (vssResp.isSuccess()) {
                 Map result = JsonUtil.fromJson(vssResp.body(), Map.class);
@@ -272,17 +279,18 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             log.warning("[DMS] Could not open VSS session: " + e.getMessage());
         }
 
-        // Dispatch STREAM_START, passing sessionId and vssBaseUrl so the
+        // Dispatch STREAM_START, passing sessionId and vssUrl so the
         // camera firmware knows where to POST chunks
         Map<String, Object> extra = new HashMap<>();
         if (sessionId != null) {
             extra.put("session_id", sessionId);
-            extra.put("vss_url",    vssBaseUrl);
+            extra.put("vss_url",    vssUrl);
         }
         dispatchCommand(deviceId, "STREAM_START", extra);
 
         // Schedule STREAM_STOP + session close after fixed duration
         final String finalSessionId = sessionId;
+        final String finalVssUrl    = vssUrl;
         Thread closer = new Thread(() -> {
             try {
                 Thread.sleep(STREAM_DURATION_MS);
@@ -290,7 +298,7 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
                         + " sessionId=" + finalSessionId);
                 dispatchCommand(deviceId, "STREAM_STOP", Map.of());
                 if (finalSessionId != null) {
-                    httpClient.post(vssBaseUrl + "/vss/session/close",
+                    httpClient.post(finalVssUrl + "/vss/session/close",
                             Map.of("recordingSessionId", finalSessionId));
                     log.info("[DMS] VSS session closed: sessionId=" + finalSessionId);
                 }

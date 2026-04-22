@@ -53,7 +53,7 @@ public class DeviceManagementServer {
 
     public void start() throws IOException {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
-        httpServer.setExecutor(Executors.newFixedThreadPool(8));
+        httpServer.setExecutor(Executors.newFixedThreadPool(32));
 
         httpServer.createContext("/dms/devices/register",            this::handleRegisterDevice);
         httpServer.createContext("/dms/devices/accept-registration", this::handleAcceptRegistration);

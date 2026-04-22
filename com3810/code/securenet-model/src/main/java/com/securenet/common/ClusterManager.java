@@ -30,7 +30,10 @@ import java.util.logging.Logger;
  * </ol>
  *
  * <p>EPS nodes are stateful (Raft log) and must restart on their
- * original port. Their restart script handles this case.
+ * original port. MqttBroker must also restart on its original port (1883)
+ * because all devices and IDFS instances have the broker URL hardcoded /
+ * configured at startup. Their restart scripts are responsible for killing
+ * the old process before binding.
  */
 public class ClusterManager {
 
@@ -74,7 +77,7 @@ public class ClusterManager {
      *
      * @param restartScript absolute path to the shell script that starts a
      *                      replacement, called as:
-     *                      {@code script <NEW_PORT> <NEW_INSTANCE_ID>}
+     *                      {@code script <NEW_PORT> <NEW_INSTANCE_ID> <ORIGINAL_INSTANCE_ID>}
      */
     public void registerInstance(String serviceName, String instanceId,
                                  String url, String restartScript) {
@@ -178,18 +181,28 @@ public class ClusterManager {
     // Auto-restart
     // =====================================================================
 
+    /**
+     * Services that must restart on their original port rather than a new free port.
+     * EPS: Raft log is tied to the port (peer addresses in the cluster config).
+     * MqttBroker: devices and IDFS instances connect to tcp://localhost:1883; they
+     *             cannot discover a new broker port at runtime.
+     */
+    private static boolean usesFixedPort(String serviceName) {
+        return "EPS".equals(serviceName) || "MqttBroker".equals(serviceName);
+    }
+
     private void restartInstance(ManagedInstance inst) {
         try {
             int newPort;
-            if ("EPS".equals(inst.serviceName)) {
-                // Extract original port from URL: "http://localhost:9103" → 9103
+            if (usesFixedPort(inst.serviceName)) {
+                // Extract original port from URL: "http://localhost:1883" → 1883
                 newPort = Integer.parseInt(inst.url.replaceAll(".*:(\\d+)$", "$1"));
             } else {
                 newPort = findFreePort();
             }
 
             // Always name restarts from the original ID so we get
-            // eps-2-r1, eps-2-r2, eps-2-r3 rather than eps-2-r1-r1-r1
+            // mqtt-broker-r1, mqtt-broker-r2 rather than mqtt-broker-r1-r1
             int nextRestartCount = inst.restartCount + 1;
             String newInstanceId = inst.originalInstanceId + "-r" + nextRestartCount;
             String newUrl        = "http://localhost:" + newPort;
@@ -200,8 +213,9 @@ public class ClusterManager {
 
             ProcessBuilder pb = new ProcessBuilder(
                     inst.restartScript,
-                    String.valueOf(newPort),
-                    newInstanceId
+                    String.valueOf(newPort),   // $1 — port to bind
+                    newInstanceId,             // $2 — new instance ID (for log/pid file naming)
+                    inst.originalInstanceId    // $3 — original instance ID (for PID file lookup)
             );
             pb.environment().put("LOG_DIR", logDir);
             pb.redirectErrorStream(true);

@@ -21,6 +21,8 @@ java -cp "$CLASSPATH" \
     com.securenet.videostreaming.VssMain \
     --port "$NEW_PORT" \
     --storage-url "$STORAGE_URL" \
+    --self-url "http://localhost:$NEW_PORT" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     >> "$LOG_DIR/$INSTANCE_ID.log" 2>&1 &
 
 PID=$!

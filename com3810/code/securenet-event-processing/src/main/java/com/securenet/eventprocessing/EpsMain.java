@@ -68,10 +68,10 @@ public class EpsMain {
         log.info("  DMS URL:      " + dmsUrls);
         log.info("  Peers:        " + peers);
 
-        StorageGateway storageGateway = new StorageGateway(storageUrl);
+        StorageGateway storageGateway = new StorageGateway(storageUrl, clusterManagerUrl);
 
         EventProcessingServiceImpl epsService = new EventProcessingServiceImpl(
-            storageGateway, notificationUrl, nodeId, dmsLoadBalancer);
+                storageGateway, notificationUrl, nodeId, dmsLoadBalancer);
 
         RaftNode raftNode = new RaftNode(nodeId, peers, epsService::onRaftCommit);
         epsService.setRaftNode(raftNode);
