@@ -19,11 +19,11 @@ import java.util.logging.Logger;
  *
  * <h3>Chunk durability design</h3>
  * <p>Chunks arrive from IDFS (not directly from the camera). IDFS receives
- * raw chunks over MQTT, buffers them, and flushes batches of 10 to VSS via
- * HTTP. VSS checkpoints every chunk it receives immediately to the
- * {@code vss_pending_chunks} PostgreSQL table ({@code CHECKPOINT_INTERVAL=1}).
- * Once the full batch is persisted, IDFS publishes a stream ack to the
- * camera over MQTT. The camera deletes its local buffer up to that seq.
+ * raw chunks over MQTT and forwards them to VSS via HTTP. VSS checkpoints
+ * chunks in batches to the {@code vss_pending_chunks} PostgreSQL table
+ * ({@code CHECKPOINT_INTERVAL=10}). Once a batch is persisted, IDFS publishes
+ * a stream ack to the camera over MQTT. The camera deletes its local buffer
+ * up to that seq.
  *
  * <p>If this VSS instance crashes mid-stream, IDFS performs the resume
  * handshake by calling {@code POST /vss/session/resume} on a healthy VSS
@@ -41,12 +41,12 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
     private static final Logger log = Logger.getLogger(VideoStreamingServiceImpl.class.getName());
 
     /**
-     * VSS checkpoints every chunk it receives from IDFS.
-     * Batching is IDFS's responsibility — it accumulates 10 chunks then
-     * sends them one-at-a-time to VSS. VSS just needs to persist each
-     * one immediately so the batch is durable before IDFS acks the camera.
+     * VSS checkpoints every 10 chunks to avoid one DB round trip per frame.
+     * Uncheckpointed chunks remain in memory and are merged on normal close;
+     * if VSS crashes mid-batch, the camera keeps those chunks locally because
+     * no ack is emitted until the batch is durable.
      */
-    static final int CHECKPOINT_INTERVAL = 1;
+    static final int CHECKPOINT_INTERVAL = 10;
 
     private static final String SIGNING_SECRET = "securenet-vss-signing-key";
 

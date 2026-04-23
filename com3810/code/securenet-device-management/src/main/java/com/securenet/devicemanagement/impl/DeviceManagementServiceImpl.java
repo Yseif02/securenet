@@ -279,14 +279,22 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
             log.warning("[DMS] Could not open VSS session: " + e.getMessage());
         }
 
+        if (sessionId == null) {
+            throw new DeviceOfflineException(deviceId);
+        }
+
         // Dispatch STREAM_START, passing sessionId and vssUrl so the
         // camera firmware knows where to POST chunks
         Map<String, Object> extra = new HashMap<>();
-        if (sessionId != null) {
-            extra.put("session_id", sessionId);
-            extra.put("vss_url",    vssUrl);
+        extra.put("session_id", sessionId);
+        extra.put("vss_url",    vssUrl);
+
+        boolean started = dispatchCommand(deviceId, "STREAM_START", extra);
+        if (!started) {
+            closeVssSessionQuietly(vssUrl, sessionId,
+                    "STREAM_START was not acknowledged for deviceId=" + deviceId);
+            throw new DeviceOfflineException(deviceId);
         }
-        dispatchCommand(deviceId, "STREAM_START", extra);
 
         // Schedule STREAM_STOP + session close after fixed duration
         final String finalSessionId = sessionId;
@@ -308,6 +316,19 @@ public class DeviceManagementServiceImpl implements DeviceManagementService {
         }, "vss-closer-" + deviceId);
         closer.setDaemon(true);
         closer.start();
+    }
+
+    private void closeVssSessionQuietly(String vssUrl, String sessionId, String reason) {
+        if (sessionId == null) return;
+        try {
+            log.info("[DMS] Closing VSS session early: sessionId=" + sessionId
+                    + " reason=" + reason);
+            httpClient.post(vssUrl + "/vss/session/close",
+                    Map.of("recordingSessionId", sessionId));
+        } catch (Exception e) {
+            log.warning("[DMS] Failed to close VSS session after failed stream start: sessionId="
+                    + sessionId + " error=" + e.getMessage());
+        }
     }
 
     /**
