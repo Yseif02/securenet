@@ -1,5 +1,6 @@
 package com.securenet.iotfirmware;
 
+import com.securenet.common.EpsLoadBalancer;
 import com.securenet.common.LoadBalancer;
 import com.securenet.iotfirmware.server.IdfsServer;
 import com.securenet.storage.StorageGateway;
@@ -73,7 +74,7 @@ public class IdfsMain {
         dmsLoadBalancer.watchClusterManager(clusterManagerUrl, "DMS");
         dmsLoadBalancer.start();
 
-        LoadBalancer epsLoadBalancer = new LoadBalancer("EPS", Arrays.asList(epsUrls.split(",")));
+        LoadBalancer epsLoadBalancer = new EpsLoadBalancer(Arrays.asList(epsUrls.split(",")));
         epsLoadBalancer.watchClusterManager(clusterManagerUrl, "EPS");
         epsLoadBalancer.start();
 

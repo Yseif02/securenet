@@ -31,6 +31,7 @@ DMS_URL="http://localhost:9002,http://localhost:9012,http://localhost:9022"
 
 # EPS URLs — all three, load balanced
 EPS_URL="http://localhost:9003,http://localhost:9103,http://localhost:9203"
+EPS_API_URLS="eps-1=http://localhost:9003,eps-2=http://localhost:9103,eps-3=http://localhost:9203"
 
 # VSS URLs — all three instances, load balanced
 VSS_URL="http://localhost:9005,http://localhost:9015,http://localhost:9025"

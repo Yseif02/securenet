@@ -61,6 +61,13 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
             new ConcurrentHashMap<>();
 
     /**
+     * Per-session mutexes. Chunk ingest, resume, and close must not mutate
+     * the same session state concurrently.
+     */
+    private final ConcurrentHashMap<String, Object> sessionLocks =
+            new ConcurrentHashMap<>();
+
+    /**
      * Tracks the highest sequence number that has been checkpointed to
      * Postgres for each session. -1 means nothing checkpointed yet.
      */
@@ -101,6 +108,7 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         Instant now = Instant.now();
 
         storageGateway.saveRecordingSession(sessionId, deviceId, ownerId, now);
+        sessionLocks.put(sessionId, new Object());
         sessionChunks.put(sessionId, new TreeMap<>());
         lastCheckpointedSeq.put(sessionId, -1L);
 
@@ -115,61 +123,64 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         requireNonBlank(recordingSessionId, "recordingSessionId");
 
         log.info("[VSS] closeRecordingSession: sessionId=" + recordingSessionId);
+        Object sessionLock = getSessionLock(recordingSessionId);
+        synchronized (sessionLock) {
+            try {
+                Map<String, String> session = storageGateway.findRecordingSession(recordingSessionId)
+                        .orElseThrow(() -> {
+                            log.warning("[VSS] closeRecordingSession: unknown session sessionId="
+                                    + recordingSessionId);
+                            return new IllegalArgumentException(
+                                    "Unknown or already closed session: " + recordingSessionId);
+                        });
 
-        Map<String, String> session = storageGateway.findRecordingSession(recordingSessionId)
-                .orElseThrow(() -> {
-                    log.warning("[VSS] closeRecordingSession: unknown session sessionId="
-                            + recordingSessionId);
-                    return new IllegalArgumentException(
-                            "Unknown or already closed session: " + recordingSessionId);
-                });
+                String deviceId   = session.get("deviceId");
+                String ownerId    = session.get("ownerId");
+                Instant startedAt = Instant.parse(session.get("startedAt"));
 
-        String deviceId   = session.get("deviceId");
-        String ownerId    = session.get("ownerId");
-        Instant startedAt = Instant.parse(session.get("startedAt"));
+                TreeMap<Long, byte[]> allChunks =
+                        storageGateway.loadCheckpointedChunks(recordingSessionId);
+                log.info("[VSS] closeRecordingSession: loaded " + allChunks.size()
+                        + " checkpointed chunks from Postgres for sessionId=" + recordingSessionId);
 
-        // 1. Load all checkpointed chunks from Postgres
-        TreeMap<Long, byte[]> allChunks = storageGateway.loadCheckpointedChunks(recordingSessionId);
-        log.info("[VSS] closeRecordingSession: loaded " + allChunks.size()
-                + " checkpointed chunks from Postgres for sessionId=" + recordingSessionId);
+                TreeMap<Long, byte[]> inMemory = sessionChunks.get(recordingSessionId);
+                if (inMemory != null && !inMemory.isEmpty()) {
+                    log.info("[VSS] closeRecordingSession: merging " + inMemory.size()
+                            + " in-memory chunks for sessionId=" + recordingSessionId);
+                    allChunks.putAll(inMemory);
+                }
 
-        // 2. Merge with any in-memory chunks not yet flushed
-        TreeMap<Long, byte[]> inMemory = sessionChunks.remove(recordingSessionId);
-        if (inMemory != null && !inMemory.isEmpty()) {
-            log.info("[VSS] closeRecordingSession: merging " + inMemory.size()
-                    + " in-memory chunks for sessionId=" + recordingSessionId);
-            allChunks.putAll(inMemory);
-        }
-        lastCheckpointedSeq.remove(recordingSessionId);
+                if (allChunks.isEmpty()) {
+                    log.warning("[VSS] closeRecordingSession: no chunks for sessionId="
+                            + recordingSessionId + " — skipping archive");
+                    return;
+                }
 
-        // 3. Delete the recording session and all checkpointed chunks from Postgres
-        storageGateway.deleteRecordingSession(recordingSessionId);
-        storageGateway.deleteCheckpointedChunks(recordingSessionId);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                for (byte[] chunk : allChunks.values()) {
+                    out.writeBytes(chunk);
+                }
+                byte[] assembledBytes = out.toByteArray();
+                log.info("[VSS] Assembled " + allChunks.size() + " chunks = "
+                        + assembledBytes.length + " bytes for sessionId=" + recordingSessionId);
 
-        // 4. Assemble and archive
-        if (allChunks.isEmpty()) {
-            log.warning("[VSS] closeRecordingSession: no chunks for sessionId="
-                    + recordingSessionId + " — skipping archive");
-            return;
-        }
-
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        for (byte[] chunk : allChunks.values()) {
-            out.writeBytes(chunk);
-        }
-        byte[] assembledBytes = out.toByteArray();
-        log.info("[VSS] Assembled " + allChunks.size() + " chunks = "
-                + assembledBytes.length + " bytes for sessionId=" + recordingSessionId);
-
-        try {
-            VideoClip clip = archiveFootage(deviceId, ownerId, startedAt, assembledBytes);
-            log.info("[VSS] Session archived: sessionId=" + recordingSessionId
-                    + " clipId=" + clip.clipId()
-                    + " bytes=" + assembledBytes.length
-                    + " duration=" + Duration.between(startedAt, Instant.now()).toSeconds() + "s");
-        } catch (Exception e) {
-            log.severe("[VSS] Failed to archive session: sessionId=" + recordingSessionId
-                    + " error=" + e.getMessage());
+                try {
+                    VideoClip clip = archiveFootage(deviceId, ownerId, startedAt, assembledBytes);
+                    log.info("[VSS] Session archived: sessionId=" + recordingSessionId
+                            + " clipId=" + clip.clipId()
+                            + " bytes=" + assembledBytes.length
+                            + " duration=" + Duration.between(startedAt, Instant.now()).toSeconds() + "s");
+                } catch (Exception e) {
+                    log.severe("[VSS] Failed to archive session: sessionId=" + recordingSessionId
+                            + " error=" + e.getMessage());
+                }
+            } finally {
+                sessionChunks.remove(recordingSessionId);
+                lastCheckpointedSeq.remove(recordingSessionId);
+                storageGateway.deleteRecordingSession(recordingSessionId);
+                storageGateway.deleteCheckpointedChunks(recordingSessionId);
+                sessionLocks.remove(recordingSessionId, sessionLock);
+            }
         }
     }
 
@@ -192,44 +203,40 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
                                      byte[] chunkBytes) throws IllegalArgumentException {
         requireNonBlank(recordingSessionId, "recordingSessionId");
         Objects.requireNonNull(chunkBytes, "chunkBytes");
+        Object sessionLock = getSessionLock(recordingSessionId);
+        synchronized (sessionLock) {
+            sessionChunks.computeIfAbsent(recordingSessionId, id -> {
+                log.info("[VSS] ingestChunk: session not in memory, loading from Postgres: sessionId=" + id);
+                TreeMap<Long, byte[]> recovered = storageGateway.loadCheckpointedChunks(id);
+                long maxSeq = recovered.isEmpty() ? -1L : recovered.lastKey();
+                lastCheckpointedSeq.put(id, maxSeq);
+                log.info("[VSS] ingestChunk: recovered " + recovered.size()
+                        + " checkpointed chunks, maxSeq=" + maxSeq + " for sessionId=" + id);
+                return recovered;
+            });
 
-        // If this VSS doesn't know about the session in memory, it may be
-        // a resumed session — load checkpointed chunks from Postgres.
-        sessionChunks.computeIfAbsent(recordingSessionId, id -> {
-            log.info("[VSS] ingestChunk: session not in memory, loading from Postgres: sessionId=" + id);
-            TreeMap<Long, byte[]> recovered = storageGateway.loadCheckpointedChunks(id);
-            long maxSeq = recovered.isEmpty() ? -1L : recovered.lastKey();
-            lastCheckpointedSeq.put(id, maxSeq);
-            log.info("[VSS] ingestChunk: recovered " + recovered.size()
-                    + " checkpointed chunks, maxSeq=" + maxSeq + " for sessionId=" + id);
-            // We loaded these from Postgres already — keep them in memory so
-            // closeRecordingSession merge works, but don't re-checkpoint them.
-            return recovered;
-        });
+            storageGateway.findRecordingSession(recordingSessionId)
+                    .orElseThrow(() -> {
+                        log.warning("[VSS] ingestChunk: unknown session sessionId=" + recordingSessionId);
+                        return new IllegalArgumentException(
+                                "Unknown or closed session: " + recordingSessionId);
+                    });
 
-        // Validate session still exists in Postgres
-        storageGateway.findRecordingSession(recordingSessionId)
-                .orElseThrow(() -> {
-                    log.warning("[VSS] ingestChunk: unknown session sessionId=" + recordingSessionId);
-                    return new IllegalArgumentException(
-                            "Unknown or closed session: " + recordingSessionId);
-                });
+            TreeMap<Long, byte[]> chunks = sessionChunks.get(recordingSessionId);
+            chunks.put(sequenceNumber, chunkBytes);
 
-        TreeMap<Long, byte[]> chunks = sessionChunks.get(recordingSessionId);
-        chunks.put(sequenceNumber, chunkBytes);
+            log.fine("[VSS] Chunk ingested: sessionId=" + recordingSessionId
+                    + " seq=" + sequenceNumber + " bytes=" + chunkBytes.length);
 
-        log.fine("[VSS] Chunk ingested: sessionId=" + recordingSessionId
-                + " seq=" + sequenceNumber + " bytes=" + chunkBytes.length);
+            long prevCheckpoint = lastCheckpointedSeq.getOrDefault(recordingSessionId, -1L);
+            long chunksInBatch  = chunks.tailMap(prevCheckpoint + 1).size();
 
-        // Count total chunks since last checkpoint
-        long prevCheckpoint = lastCheckpointedSeq.getOrDefault(recordingSessionId, -1L);
-        long chunksInBatch  = chunks.tailMap(prevCheckpoint + 1).size();
+            if (chunksInBatch >= CHECKPOINT_INTERVAL) {
+                return flushCheckpoint(recordingSessionId, chunks, prevCheckpoint);
+            }
 
-        if (chunksInBatch >= CHECKPOINT_INTERVAL) {
-            return flushCheckpoint(recordingSessionId, chunks, prevCheckpoint);
+            return -1L;
         }
-
-        return -1L; // no checkpoint this call
     }
 
     /**
@@ -291,29 +298,29 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
     public Map<String, Object> resumeSession(String sessionId, String vssUrl)
             throws IllegalArgumentException {
         requireNonBlank(sessionId, "sessionId");
+        Object sessionLock = getSessionLock(sessionId);
+        synchronized (sessionLock) {
+            storageGateway.findRecordingSession(sessionId)
+                    .orElseThrow(() -> {
+                        log.warning("[VSS] resumeSession: unknown session sessionId=" + sessionId);
+                        return new IllegalArgumentException("Unknown session: " + sessionId);
+                    });
 
-        storageGateway.findRecordingSession(sessionId)
-                .orElseThrow(() -> {
-                    log.warning("[VSS] resumeSession: unknown session sessionId=" + sessionId);
-                    return new IllegalArgumentException("Unknown session: " + sessionId);
-                });
+            long maxSeq = storageGateway.getMaxCheckpointedSeq(sessionId);
 
-        long maxSeq = storageGateway.getMaxCheckpointedSeq(sessionId);
+            log.info("[VSS] resumeSession: sessionId=" + sessionId
+                    + " resumeFrom=" + maxSeq + " vssUrl=" + vssUrl);
 
-        log.info("[VSS] resumeSession: sessionId=" + sessionId
-                + " resumeFrom=" + maxSeq + " vssUrl=" + vssUrl);
+            sessionChunks.computeIfAbsent(sessionId, id -> {
+                TreeMap<Long, byte[]> recovered = storageGateway.loadCheckpointedChunks(id);
+                lastCheckpointedSeq.put(id, maxSeq);
+                log.info("[VSS] resumeSession: pre-loaded " + recovered.size()
+                        + " chunks into memory for sessionId=" + id);
+                return recovered;
+            });
 
-        // Pre-load checkpointed chunks into memory so this instance is
-        // ready to continue accumulating without re-fetching on first chunk
-        sessionChunks.computeIfAbsent(sessionId, id -> {
-            TreeMap<Long, byte[]> recovered = storageGateway.loadCheckpointedChunks(id);
-            lastCheckpointedSeq.put(id, maxSeq);
-            log.info("[VSS] resumeSession: pre-loaded " + recovered.size()
-                    + " chunks into memory for sessionId=" + id);
-            return recovered;
-        });
-
-        return Map.of("vssUrl", vssUrl, "resumeFrom", maxSeq);
+            return Map.of("vssUrl", vssUrl, "resumeFrom", maxSeq);
+        }
     }
 
     // =====================================================================
@@ -404,5 +411,9 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
     private static void requireNonBlank(String value, String fieldName) {
         if (value == null || value.isBlank())
             throw new IllegalArgumentException(fieldName + " is required");
+    }
+
+    private Object getSessionLock(String sessionId) {
+        return sessionLocks.computeIfAbsent(sessionId, id -> new Object());
     }
 }

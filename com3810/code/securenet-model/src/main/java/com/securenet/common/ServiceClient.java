@@ -6,6 +6,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -55,15 +56,20 @@ public class ServiceClient {
      * @throws IOException if the request fails at the network level
      */
     public ServiceResponse post(String url, Object body) throws IOException {
+        return post(url, body, Map.of());
+    }
+
+    public ServiceResponse post(String url, Object body, Map<String, String> headers)
+            throws IOException {
         String json = (body != null) ? JsonUtil.toJson(body) : "";
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(10))
-                .build();
-        return execute(request);
+                .timeout(Duration.ofSeconds(10));
+        headers.forEach(builder::header);
+        return execute(builder.build());
     }
 
     /**

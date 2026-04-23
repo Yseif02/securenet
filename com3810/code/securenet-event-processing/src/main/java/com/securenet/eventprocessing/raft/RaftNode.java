@@ -42,13 +42,19 @@ public class RaftNode {
     private final Map<String, Long> matchIndex = new ConcurrentHashMap<>();
 
     private static final int HEARTBEAT_INTERVAL_MS   = 150;
-    private static final int ELECTION_TIMEOUT_MIN_MS = 500;
-    private static final int ELECTION_TIMEOUT_MAX_MS = 1000;
+    private static final int ELECTION_TIMEOUT_MIN_MS = 2000;
+    private static final int ELECTION_TIMEOUT_MAX_MS = 4000;
+    private static final int COMMIT_TIMEOUT_MS       = 4500;
     private final Random random = new Random();
     private volatile long lastHeartbeatTime = System.currentTimeMillis();
+    private volatile long electionDeadlineTime = System.currentTimeMillis();
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final ExecutorService replicationExecutor;
+    private volatile ScheduledFuture<?> heartbeatTask;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final ConcurrentMap<Long, CompletableFuture<LogEntry>> pendingCommits =
+            new ConcurrentHashMap<>();
 
     private final CommitCallback commitCallback;
 
@@ -63,6 +69,8 @@ public class RaftNode {
         this.commitCallback = Objects.requireNonNull(commitCallback, "commitCallback");
         this.httpClient     = new ServiceClient();
         this.log2           = new RaftLog();
+        this.replicationExecutor = Executors.newFixedThreadPool(
+                Math.max(4, this.peerUrls.size() * 4));
     }
 
     // =====================================================================
@@ -72,6 +80,7 @@ public class RaftNode {
     public void start() {
         running.set(true);
         lastHeartbeatTime = System.currentTimeMillis();
+        resetElectionDeadline();
 
         scheduler.scheduleAtFixedRate(this::electionTimerTick,
                 randomElectionTimeout(), 50, TimeUnit.MILLISECONDS);
@@ -82,7 +91,11 @@ public class RaftNode {
 
     public void stop() {
         running.set(false);
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(true);
+        }
         scheduler.shutdownNow();
+        replicationExecutor.shutdownNow();
         System.out.println("[Raft:" + nodeId + "] Stopped");
     }
 
@@ -94,8 +107,7 @@ public class RaftNode {
         if (!running.get()) return;
         if (state == RaftState.LEADER) return;
 
-        long elapsed = System.currentTimeMillis() - lastHeartbeatTime;
-        if (elapsed >= randomElectionTimeout()) {
+        if (System.currentTimeMillis() >= electionDeadlineTime) {
             startElection();
         }
     }
@@ -112,6 +124,7 @@ public class RaftNode {
         votedFor = nodeId;
         leaderId = null;
         lastHeartbeatTime = System.currentTimeMillis();
+        resetElectionDeadline();
 
         long electionTerm = currentTerm;
         log.info("[Raft:" + nodeId + "] Starting election for term " + electionTerm);
@@ -123,7 +136,7 @@ public class RaftNode {
         CountDownLatch latch = new CountDownLatch(peerUrls.size());
 
         for (String peerUrl : peerUrls) {
-            scheduler.execute(() -> {
+            replicationExecutor.execute(() -> {
                 try {
                     Map<String, Object> request = Map.of(
                             "term",         electionTerm,
@@ -180,7 +193,10 @@ public class RaftNode {
 
         log.info("[Raft:" + nodeId + "] Became LEADER for term " + currentTerm);
 
-        scheduler.scheduleAtFixedRate(this::sendHeartbeats,
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(false);
+        }
+        heartbeatTask = scheduler.scheduleAtFixedRate(this::sendHeartbeats,
                 0, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -188,6 +204,12 @@ public class RaftNode {
         currentTerm = newTerm;
         state       = RaftState.FOLLOWER;
         votedFor    = null;
+        leaderId    = null;
+        if (heartbeatTask != null) {
+            heartbeatTask.cancel(false);
+            heartbeatTask = null;
+        }
+        resetElectionDeadline();
         log.info("[Raft:" + nodeId + "] Stepped down to FOLLOWER, term=" + newTerm);
     }
 
@@ -216,6 +238,7 @@ public class RaftNode {
                 votedFor = candidateId;
                 granted  = true;
                 lastHeartbeatTime = System.currentTimeMillis();
+                resetElectionDeadline();
                 log.info("[Raft:" + nodeId + "] Voted for " + candidateId
                         + " in term " + candidateTerm);
             }
@@ -253,6 +276,7 @@ public class RaftNode {
         state    = RaftState.FOLLOWER;
         leaderId = leaderIdParam;
         lastHeartbeatTime = System.currentTimeMillis();
+        resetElectionDeadline();
 
         if (prevLogIndex > 0) {
             long termAtPrev = log2.getTermAt(prevLogIndex);
@@ -296,7 +320,7 @@ public class RaftNode {
     private void sendHeartbeats() {
         if (!running.get() || state != RaftState.LEADER) return;
         for (String peerUrl : peerUrls) {
-            scheduler.execute(() -> sendAppendEntries(peerUrl));
+            replicationExecutor.execute(() -> sendAppendEntries(peerUrl));
         }
     }
 
@@ -394,6 +418,16 @@ public class RaftNode {
                 } catch (Exception e) {
                     log.severe("[Raft:" + nodeId + "] Error applying entry "
                             + lastApplied + ": " + e.getMessage());
+                    CompletableFuture<LogEntry> failed = pendingCommits.remove(lastApplied);
+                    if (failed != null) {
+                        failed.completeExceptionally(e);
+                    }
+                    continue;
+                }
+                CompletableFuture<LogEntry> future = pendingCommits.remove(lastApplied);
+                if (future != null) {
+                    log.info("[Raft:" + nodeId + "] Entry committed: index=" + lastApplied);
+                    future.complete(entry);
                 }
             }
         }
@@ -421,28 +455,18 @@ public class RaftNode {
         log.info("[Raft:" + nodeId + "] Appended entry index=" + newIndex
                 + " deviceId=" + deviceId + " type=" + eventType);
 
-        scheduler.execute(this::sendHeartbeats);
-
         CompletableFuture<LogEntry> future = new CompletableFuture<>();
-        scheduler.execute(() -> {
-            long deadline = System.currentTimeMillis() + 5000;
-            while (System.currentTimeMillis() < deadline && running.get()) {
-                if (lastApplied >= newIndex) {
-                    log.info("[Raft:" + nodeId + "] Entry committed: index=" + newIndex);
-                    future.complete(entry);
-                    return;
-                }
-                try { Thread.sleep(10); } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-            if (!future.isDone()) {
+        pendingCommits.put(newIndex, future);
+
+        replicationExecutor.execute(this::sendHeartbeats);
+        scheduler.schedule(() -> {
+            CompletableFuture<LogEntry> timedOut = pendingCommits.remove(newIndex);
+            if (timedOut != null) {
                 log.severe("[Raft:" + nodeId + "] Commit timeout for index=" + newIndex);
-                future.completeExceptionally(
+                timedOut.completeExceptionally(
                         new TimeoutException("Entry " + newIndex + " not committed within timeout"));
             }
-        });
+        }, COMMIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
         return future;
     }
@@ -474,6 +498,10 @@ public class RaftNode {
 
     private int randomElectionTimeout() {
         return ELECTION_TIMEOUT_MIN_MS +
-                random.nextInt(ELECTION_TIMEOUT_MAX_MS - ELECTION_TIMEOUT_MIN_MS);
+                random.nextInt(ELECTION_TIMEOUT_MAX_MS - ELECTION_TIMEOUT_MIN_MS + 1);
+    }
+
+    private void resetElectionDeadline() {
+        electionDeadlineTime = System.currentTimeMillis() + randomElectionTimeout();
     }
 }

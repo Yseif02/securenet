@@ -43,7 +43,7 @@ public class RaftRpcServer {
 
     public void start() throws IOException {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
-        httpServer.setExecutor(Executors.newFixedThreadPool(4));
+        httpServer.setExecutor(Executors.newFixedThreadPool(16));
 
         httpServer.createContext("/raft/request-vote",   this::handleRequestVote);
         httpServer.createContext("/raft/append-entries", this::handleAppendEntries);

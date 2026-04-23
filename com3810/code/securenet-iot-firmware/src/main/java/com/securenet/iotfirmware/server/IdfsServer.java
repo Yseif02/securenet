@@ -97,6 +97,9 @@ public class IdfsServer {
 
     private HttpServer httpServer;
     private MqttClient mqttClient;
+    private ExecutorService ackExecutor;
+    private ExecutorService eventExecutor;
+    private ExecutorService chunkExecutor;
 
     /**
      * In-memory chunk buffers keyed by sessionId.
@@ -167,6 +170,22 @@ public class IdfsServer {
     }
 
     public void start() throws IOException {
+        ackExecutor = Executors.newFixedThreadPool(4, r -> {
+            Thread t = new Thread(r, "idfs-ack-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        eventExecutor = Executors.newFixedThreadPool(8, r -> {
+            Thread t = new Thread(r, "idfs-event-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        chunkExecutor = Executors.newFixedThreadPool(8, r -> {
+            Thread t = new Thread(r, "idfs-chunk-worker");
+            t.setDaemon(true);
+            return t;
+        });
+
         connectMqtt();
 
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
@@ -189,6 +208,9 @@ public class IdfsServer {
     public void stop() {
         if (httpServer != null) httpServer.stop(0);
         disconnectMqtt();
+        shutdownExecutor(ackExecutor, "ackExecutor");
+        shutdownExecutor(eventExecutor, "eventExecutor");
+        shutdownExecutor(chunkExecutor, "chunkExecutor");
         System.out.println("[IDFS] stopped");
     }
 
@@ -221,9 +243,21 @@ public class IdfsServer {
             // If you upgrade to a Moquette version that supports MQTT5 / shared subs,
             // replace these three lines with $share/... topic strings.
 
-            mqttClient.subscribe("securenet/devices/+/acks",          1, this::onAckReceived);
-            mqttClient.subscribe("securenet/devices/+/events/#",      1, this::onDeviceEventReceived);
-            mqttClient.subscribe("securenet/devices/+/stream/chunks", 1, this::onChunkReceived);
+            mqttClient.subscribe("securenet/devices/+/acks", 1,
+                    (topic, message) -> submitMqttTask(
+                            ackExecutor,
+                            "ack",
+                            () -> onAckReceived(topic, message)));
+            mqttClient.subscribe("securenet/devices/+/events/#", 1,
+                    (topic, message) -> submitMqttTask(
+                            eventExecutor,
+                            "event",
+                            () -> onDeviceEventReceived(topic, message)));
+            mqttClient.subscribe("securenet/devices/+/stream/chunks", 1,
+                    (topic, message) -> submitMqttTask(
+                            chunkExecutor,
+                            "chunk",
+                            () -> onChunkReceived(topic, message)));
 
             log.info("[IDFS] MQTT connected to " + mqttBrokerUrl);
             log.info("[IDFS] Subscribed: acks (all), events (all), stream/chunks (all, slot-filtered)");
@@ -613,6 +647,20 @@ public class IdfsServer {
         try { Thread.sleep(ms); } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private void submitMqttTask(ExecutorService executor, String taskType, Runnable task) {
+        try {
+            executor.submit(task);
+        } catch (RejectedExecutionException e) {
+            log.warning("[IDFS] Dropping " + taskType + " task during shutdown");
+        }
+    }
+
+    private void shutdownExecutor(ExecutorService executor, String name) {
+        if (executor == null) return;
+        executor.shutdownNow();
+        log.info("[IDFS] Stopped " + name);
     }
 
     // =====================================================================

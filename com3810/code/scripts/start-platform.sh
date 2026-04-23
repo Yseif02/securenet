@@ -71,8 +71,10 @@ echo ""
 STORAGE_URL="http://localhost:9000,http://localhost:9010,http://localhost:9020"
 DMS_URLS="http://localhost:9002,http://localhost:9012,http://localhost:9022"
 EPS_URLS="http://localhost:9003,http://localhost:9103,http://localhost:9203"
+EPS_API_URLS="eps-1=http://localhost:9003,eps-2=http://localhost:9103,eps-3=http://localhost:9203"
 VSS_URLS="http://localhost:9005,http://localhost:9015,http://localhost:9025"
 IDFS_URLS="http://localhost:8080,http://localhost:8081,http://localhost:8082"
+CLUSTER_MANAGER_URL="http://localhost:9090"
 MQTT_URL="tcp://localhost:1883"
 
 # =====================================================================
@@ -124,7 +126,7 @@ start_service "idfs-1" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090 \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --instance-index 0 \
     --idfs-cluster-size 3
 sleep 0.3
@@ -135,7 +137,7 @@ start_service "idfs-2" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090 \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --instance-index 1 \
     --idfs-cluster-size 3
 sleep 0.3
@@ -146,7 +148,7 @@ start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090 \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --instance-index 2 \
     --idfs-cluster-size 3
 sleep 2
@@ -158,15 +160,15 @@ echo ""
 echo "--- User Management Service (3 instances) ---"
 start_service "ums-1" "com.securenet.usermanagement.UmsMain" \
     --port 9001 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "ums-2" "com.securenet.usermanagement.UmsMain" \
     --port 9011 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "ums-3" "com.securenet.usermanagement.UmsMain" \
     --port 9021 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 
 # =====================================================================
@@ -178,19 +180,19 @@ start_service "dms-1" "com.securenet.devicemanagement.DmsMain" \
     --port 9002 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "dms-2" "com.securenet.devicemanagement.DmsMain" \
     --port 9012 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "dms-3" "com.securenet.devicemanagement.DmsMain" \
     --port 9022 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 
 # =====================================================================
@@ -202,21 +204,24 @@ start_service "eps-1" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-1 --api-port 9003 --raft-port 9013 \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
-    --cluster-manager-url http://localhost:9090 \
+    --eps-api-urls "$EPS_API_URLS" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --peers http://localhost:9023,http://localhost:9033
 sleep 0.5
 start_service "eps-2" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-2 --api-port 9103 --raft-port 9023 \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
-    --cluster-manager-url http://localhost:9090 \
+    --eps-api-urls "$EPS_API_URLS" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --peers http://localhost:9013,http://localhost:9033
 sleep 0.5
 start_service "eps-3" "com.securenet.eventprocessing.EpsMain" \
     --node-id eps-3 --api-port 9203 --raft-port 9033 \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
-    --cluster-manager-url http://localhost:9090 \
+    --eps-api-urls "$EPS_API_URLS" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --peers http://localhost:9013,http://localhost:9023
 sleep 1
 
@@ -227,15 +232,15 @@ echo ""
 echo "--- Notification Service (3 instances) ---"
 start_service "notify-1" "com.securenet.notification.NotificationMain" \
     --port 9004 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "notify-2" "com.securenet.notification.NotificationMain" \
     --port 9014 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "notify-3" "com.securenet.notification.NotificationMain" \
     --port 9024 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 
 # =====================================================================
@@ -246,17 +251,17 @@ echo "--- Video Streaming Service (3 instances) ---"
 start_service "vss-1" "com.securenet.videostreaming.VssMain" \
     --port 9005 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9005 \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "vss-2" "com.securenet.videostreaming.VssMain" \
     --port 9015 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9015 \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 start_service "vss-3" "com.securenet.videostreaming.VssMain" \
     --port 9025 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9025 \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.3
 
 # =====================================================================
@@ -271,7 +276,7 @@ start_service "gateway" "com.securenet.gateway.GatewayMain" \
     --eps-urls "$EPS_URLS" \
     --notify-urls http://localhost:9004,http://localhost:9014,http://localhost:9024 \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url http://localhost:9090
+    --cluster-manager-url "$CLUSTER_MANAGER_URL"
 sleep 0.5
 
 # =====================================================================
