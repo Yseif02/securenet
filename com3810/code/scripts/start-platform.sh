@@ -12,12 +12,16 @@ RESTART_DIR="$SCRIPT_DIR/restart"
 RUN_TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
 LOG_DIR="$PROJECT_DIR/logs/run_$RUN_TIMESTAMP"
 PID_DIR="$PROJECT_DIR/pids"
+DEVICE_RECORDS_DIR="$LOG_DIR/device-records"
+DEVICE_RECORDS_PATH_FILE="$LOG_DIR/device-records.path"
 
-mkdir -p "$LOG_DIR" "$PID_DIR"
+mkdir -p "$LOG_DIR" "$PID_DIR" "$DEVICE_RECORDS_DIR"
 rm -f "$PID_DIR"/*.pid
 ln -sfn "$LOG_DIR" "$PROJECT_DIR/logs/latest"
+printf '%s\n' "$DEVICE_RECORDS_DIR" > "$DEVICE_RECORDS_PATH_FILE"
 
 echo "Logs directory: $LOG_DIR"
+echo "Device records directory: $DEVICE_RECORDS_DIR"
 
 chmod +x "$RESTART_DIR"/*.sh
 
@@ -59,6 +63,7 @@ EOF
     java -cp "$CLASSPATH" \
         -Djava.util.logging.config.file="$props_file" \
         -Dinstance.name="$name" \
+        -Dsecurenet.device.records.dir="$DEVICE_RECORDS_DIR" \
         "$main_class" "$@" \
         >> "$log_file" 2>&1 &
     echo $! > "$PID_DIR/$name.pid"

@@ -233,7 +233,8 @@ public class MockDevice implements Runnable {
 
         while (running.get()) {
             try {
-                mqttClient = new MqttClient(mqttBrokerUrl, mqttClientId);
+                mqttClient = MqttPersistenceDirectories.createMockDeviceClient(
+                        mqttBrokerUrl, mqttClientId);
 
                 MqttConnectOptions opts = new MqttConnectOptions();
                 opts.setUserName(mqttUsername);
