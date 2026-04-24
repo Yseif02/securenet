@@ -1,18 +1,22 @@
 package com.securenet.demo;
 
 import com.securenet.client.impl.ClientApplicationServiceImpl;
+import com.securenet.common.JsonUtil;
 import com.securenet.model.Device;
 import com.securenet.model.DeviceType;
 import com.securenet.model.EventSummary;
 import com.securenet.model.exception.DeviceOfflineException;
 import com.securenet.storage.StorageGateway;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Stress Demo — 10 concurrent simulated users each with real mock devices,
@@ -79,11 +83,15 @@ public class StressDemo {
     public static void main(String[] args) throws Exception {
         int numUsers   = 10;
         int thinkTimeMs = 2000; // pause between operation loops per user
+        long durationMs = 0;
+        String summaryFile = null;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--users"      -> numUsers    = Integer.parseInt(args[++i]);
                 case "--think-time" -> thinkTimeMs = Integer.parseInt(args[++i]);
+                case "--duration-ms" -> durationMs = Long.parseLong(args[++i]);
+                case "--summary-file" -> summaryFile = args[++i];
             }
         }
 
@@ -118,12 +126,31 @@ public class StressDemo {
         System.out.println("[StressDemo] Press Ctrl+C to stop.\n");
 
         // Shutdown hook — stop all devices cleanly
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        long startedAtMs = System.currentTimeMillis();
+        AtomicBoolean shuttingDown = new AtomicBoolean(false);
+        String finalSummaryFile = summaryFile;
+        int finalNumUsers = numUsers;
+        Runnable shutdown = () -> {
+            if (!shuttingDown.compareAndSet(false, true)) return;
             System.out.println("\n[StressDemo] Shutting down...");
             users.forEach(UserThread::shutdown);
             pool.shutdownNow();
+            try {
+                pool.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             printFinalSummary();
-        }));
+            writeSummaryFile(finalSummaryFile, finalNumUsers, startedAtMs);
+        };
+
+        Runtime.getRuntime().addShutdownHook(new Thread(shutdown));
+
+        if (durationMs > 0) {
+            Thread.sleep(durationMs);
+            shutdown.run();
+            return;
+        }
 
         // Run forever — Ctrl+C triggers shutdown hook
         Thread.currentThread().join();
@@ -450,6 +477,41 @@ public class StressDemo {
         System.out.printf( "║    EVENTS=%-4d  STREAM=%-4d  ONBOARD=%-4d%-15s║%n",
                 errEventQuery.get(), errStream.get(), errOnboarding.get(), "");
         System.out.println("╚══════════════════════════════════════════════════════════════╝");
+    }
+
+    private static void writeSummaryFile(String summaryFile, int numUsers, long startedAtMs) {
+        if (summaryFile == null || summaryFile.isBlank()) return;
+        Map<String, Object> summary = new LinkedHashMap<>();
+        long requests = totalRequests.get();
+        long errors = totalErrors.get();
+        long latency = totalLatencyMs.get();
+        summary.put("startedAtMs", startedAtMs);
+        summary.put("finishedAtMs", System.currentTimeMillis());
+        summary.put("totalRequests", requests);
+        summary.put("totalErrors", errors);
+        summary.put("errorRatePct", requests > 0 ? (errors * 100.0 / requests) : 0.0);
+        summary.put("avgLatencyMs", requests > 0 ? (latency * 1.0 / requests) : 0.0);
+        summary.put("usersReady", usersReady.get());
+        summary.put("usersTarget", numUsers);
+        summary.put("errorBreakdown", Map.of(
+                "lock", errLock.get(),
+                "unlock", errUnlock.get(),
+                "dashboard", errDashboard.get(),
+                "events", errEventQuery.get(),
+                "stream", errStream.get(),
+                "onboarding", errOnboarding.get()
+        ));
+
+        try {
+            Path output = Path.of(summaryFile).toAbsolutePath().normalize();
+            if (output.getParent() != null) {
+                Files.createDirectories(output.getParent());
+            }
+            Files.writeString(output, JsonUtil.toJson(summary));
+            System.out.println("[StressDemo] Wrote summary: " + output);
+        } catch (Exception e) {
+            System.err.println("[StressDemo] Failed to write summary file: " + e.getMessage());
+        }
     }
 
     // =========================================================================

@@ -41,6 +41,42 @@ java -cp "$(find . -name '*.jar' -path '*/target/*' | grep -v sources | tr '\n' 
 ./scripts/stop-platform.sh
 ```
 
+## Testing
+
+### Fast unit and component tests
+```bash
+mvn test
+```
+
+This is the default fast layer. It runs `*Test` classes only and excludes the heavier full-platform suites.
+
+### Full-platform smoke and correctness tests
+Prerequisite: the platform is already running via `./scripts/start-platform.sh`.
+
+```bash
+mvn verify -P integration
+```
+
+This runs `*IT` suites such as the assertion-driven smoke flow in `demo`.
+
+### Resilience and failover tests
+Prerequisite: the full platform and ClusterManager are already running.
+
+```bash
+mvn verify -P resilience
+```
+
+This runs `*ResilienceIT` suites that use the real load balancer and ClusterManager failover harness.
+
+### Load tests
+Prerequisite: the full platform is already running.
+
+```bash
+mvn verify -P load
+```
+
+This runs `*LoadE2E` suites. The stress harness now supports finite runs and writes a machine-readable JSON summary file when given `--summary-file`.
+
 ## Project Structure
 ```
 com3810/code/
