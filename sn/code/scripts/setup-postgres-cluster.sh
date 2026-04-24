@@ -32,6 +32,7 @@ PG_CLUSTER_DIR="$PROJECT_DIR/pg-cluster"
 PRIMARY_PORT=5432
 STANDBY1_PORT=5433
 STANDBY2_PORT=5434
+SOCKET_DIR=/tmp
 
 PRIMARY_DIR="$PG_CLUSTER_DIR/primary"
 STANDBY1_DIR="$PG_CLUSTER_DIR/standby1"
@@ -61,6 +62,7 @@ cat >> "$PRIMARY_DIR/postgresql.conf" << EOF
 
 # SecureNet replication config
 listen_addresses = 'localhost'
+unix_socket_directories = '$SOCKET_DIR'
 port = $PRIMARY_PORT
 wal_level = replica
 max_wal_senders = 4
@@ -87,7 +89,7 @@ sleep 2
 
 # Create the securenet database
 echo "Creating securenet database..."
-createdb -p $PRIMARY_PORT securenet 2>/dev/null || echo "  Database already exists"
+createdb -h localhost -p $PRIMARY_PORT securenet 2>/dev/null || echo "  Database already exists"
 
 # --- 2. Create standby 1 via pg_basebackup ---
 echo ""
@@ -99,6 +101,7 @@ pg_basebackup -D "$STANDBY1_DIR" -R -X stream \
 cat >> "$STANDBY1_DIR/postgresql.conf" << EOF
 
 # Standby 1 overrides
+unix_socket_directories = '$SOCKET_DIR'
 port = $STANDBY1_PORT
 EOF
 
@@ -117,6 +120,7 @@ pg_basebackup -D "$STANDBY2_DIR" -R -X stream \
 cat >> "$STANDBY2_DIR/postgresql.conf" << EOF
 
 # Standby 2 overrides
+unix_socket_directories = '$SOCKET_DIR'
 port = $STANDBY2_PORT
 EOF
 
@@ -128,7 +132,7 @@ sleep 1
 # --- 4. Verify replication ---
 echo ""
 echo "--- Verifying replication ---"
-psql -p $PRIMARY_PORT -d securenet -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
+psql -h localhost -p $PRIMARY_PORT -d securenet -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
 
 echo ""
 echo "=== PostgreSQL Cluster Ready ==="
