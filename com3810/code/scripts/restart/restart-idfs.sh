@@ -53,7 +53,7 @@ java -cp "$CLASSPATH" \
     --eps-urls          "$EPS_URL" \
     --vss-urls          "$VSS_URL" \
     --storage-url       "$STORAGE_URL" \
-    --cluster-manager-url http://localhost:9090 \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --instance-index    "$INSTANCE_INDEX" \
     --idfs-cluster-size "$IDFS_CLUSTER_SIZE" \
     >> "$LOG_DIR/$NEW_INSTANCE_ID.log" 2>&1 &

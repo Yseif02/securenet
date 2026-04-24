@@ -30,9 +30,10 @@ class StressLoadE2E {
                 "--think-time", "500",
                 "--duration-ms", "15000",
                 "--summary-file", summaryPath.toString()
-        ).inheritIO().start();
+        ).redirectErrorStream(true).start();
 
         assertTrue(process.waitFor(90, TimeUnit.SECONDS), "StressDemo did not exit in time");
+        process.getInputStream().readAllBytes();
         assertEquals(0, process.exitValue(), "StressDemo exited with non-zero status");
         assertTrue(Files.exists(summaryPath), "StressDemo did not write summary file");
 

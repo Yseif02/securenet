@@ -74,12 +74,14 @@ echo "=== Starting SecureNet Platform ==="
 echo ""
 
 STORAGE_URL="http://localhost:9000,http://localhost:9010,http://localhost:9020"
+STORAGE_JDBC_URL="jdbc:postgresql://localhost:5432,localhost:5433,localhost:5434/securenet?targetServerType=primary"
 DMS_URLS="http://localhost:9002,http://localhost:9012,http://localhost:9022"
 EPS_URLS="http://localhost:9003,http://localhost:9103,http://localhost:9203"
 EPS_API_URLS="eps-1=http://localhost:9003,eps-2=http://localhost:9103,eps-3=http://localhost:9203"
 VSS_URLS="http://localhost:9005,http://localhost:9015,http://localhost:9025"
 IDFS_URLS="http://localhost:8080,http://localhost:8081,http://localhost:8082"
-CLUSTER_MANAGER_URL="http://localhost:9090"
+CLUSTER_MANAGER_URLS="http://localhost:9090,http://localhost:9091,http://localhost:9092"
+CLUSTER_MANAGER_PEERS="cm-1=http://localhost:9090,cm-2=http://localhost:9091,cm-3=http://localhost:9092"
 MQTT_URL="tcp://localhost:1883"
 
 # =====================================================================
@@ -105,17 +107,17 @@ echo ""
 echo "--- Storage Service (3 instances) ---"
 start_service "storage-1" "com.securenet.storage.StorageMain" \
     --port 9000 \
-    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --jdbc-url "$STORAGE_JDBC_URL" \
     --pool-size 10
 sleep 1
 start_service "storage-2" "com.securenet.storage.StorageMain" \
     --port 9010 \
-    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --jdbc-url "$STORAGE_JDBC_URL" \
     --pool-size 10
 sleep 1
 start_service "storage-3" "com.securenet.storage.StorageMain" \
     --port 9020 \
-    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --jdbc-url "$STORAGE_JDBC_URL" \
     --pool-size 10
 sleep 1
 
@@ -131,7 +133,7 @@ start_service "idfs-1" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --instance-index 0 \
     --idfs-cluster-size 3
 sleep 0.3
@@ -142,7 +144,7 @@ start_service "idfs-2" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --instance-index 1 \
     --idfs-cluster-size 3
 sleep 0.3
@@ -153,7 +155,7 @@ start_service "idfs-3" "com.securenet.iotfirmware.IdfsMain" \
     --eps-urls "$EPS_URLS" \
     --vss-urls "$VSS_URLS" \
     --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --instance-index 2 \
     --idfs-cluster-size 3
 sleep 2
@@ -165,15 +167,15 @@ echo ""
 echo "--- User Management Service (3 instances) ---"
 start_service "ums-1" "com.securenet.usermanagement.UmsMain" \
     --port 9001 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "ums-2" "com.securenet.usermanagement.UmsMain" \
     --port 9011 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "ums-3" "com.securenet.usermanagement.UmsMain" \
     --port 9021 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 
 # =====================================================================
@@ -185,19 +187,19 @@ start_service "dms-1" "com.securenet.devicemanagement.DmsMain" \
     --port 9002 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "dms-2" "com.securenet.devicemanagement.DmsMain" \
     --port 9012 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "dms-3" "com.securenet.devicemanagement.DmsMain" \
     --port 9022 --storage-url "$STORAGE_URL" \
     --idfs-url "$IDFS_URLS" \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 
 # =====================================================================
@@ -210,7 +212,7 @@ start_service "eps-1" "com.securenet.eventprocessing.EpsMain" \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
     --eps-api-urls "$EPS_API_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --peers http://localhost:9023,http://localhost:9033
 sleep 0.5
 start_service "eps-2" "com.securenet.eventprocessing.EpsMain" \
@@ -218,7 +220,7 @@ start_service "eps-2" "com.securenet.eventprocessing.EpsMain" \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
     --eps-api-urls "$EPS_API_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --peers http://localhost:9013,http://localhost:9033
 sleep 0.5
 start_service "eps-3" "com.securenet.eventprocessing.EpsMain" \
@@ -226,7 +228,7 @@ start_service "eps-3" "com.securenet.eventprocessing.EpsMain" \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URLS" \
     --eps-api-urls "$EPS_API_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS" \
     --peers http://localhost:9013,http://localhost:9023
 sleep 1
 
@@ -237,15 +239,15 @@ echo ""
 echo "--- Notification Service (3 instances) ---"
 start_service "notify-1" "com.securenet.notification.NotificationMain" \
     --port 9004 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "notify-2" "com.securenet.notification.NotificationMain" \
     --port 9014 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "notify-3" "com.securenet.notification.NotificationMain" \
     --port 9024 --storage-url "$STORAGE_URL" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 
 # =====================================================================
@@ -256,17 +258,17 @@ echo "--- Video Streaming Service (3 instances) ---"
 start_service "vss-1" "com.securenet.videostreaming.VssMain" \
     --port 9005 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9005 \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "vss-2" "com.securenet.videostreaming.VssMain" \
     --port 9015 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9015 \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 start_service "vss-3" "com.securenet.videostreaming.VssMain" \
     --port 9025 --storage-url "$STORAGE_URL" \
     --self-url http://localhost:9025 \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.3
 
 # =====================================================================
@@ -281,52 +283,65 @@ start_service "gateway" "com.securenet.gateway.GatewayMain" \
     --eps-urls "$EPS_URLS" \
     --notify-urls http://localhost:9004,http://localhost:9014,http://localhost:9024 \
     --vss-urls "$VSS_URLS" \
-    --cluster-manager-url "$CLUSTER_MANAGER_URL"
+    --cluster-manager-url "$CLUSTER_MANAGER_URLS"
 sleep 0.5
 
 # =====================================================================
 # 11. Cluster Manager
 # =====================================================================
 echo ""
-echo "--- Cluster Manager ---"
-start_service "cluster-manager" "com.securenet.common.ClusterManagerMain" \
-    --port 9090 \
-    --check-interval 5000 \
-    --failure-threshold 15000 \
-    --scripts-dir "$RESTART_DIR" \
-    --log-dir "$LOG_DIR" \
-    --initial-delay 30000 \
-    --instance "MqttBroker:mqtt-broker:http://localhost:1884|restart-mqtt-broker.sh" \
-    --instance "IDFS:idfs-1:http://localhost:8080|restart-idfs.sh" \
-    --instance "IDFS:idfs-2:http://localhost:8081|restart-idfs.sh" \
-    --instance "IDFS:idfs-3:http://localhost:8082|restart-idfs.sh" \
-    --instance "Storage:storage-1:http://localhost:9000|restart-storage.sh" \
-    --instance "Storage:storage-2:http://localhost:9010|restart-storage.sh" \
-    --instance "Storage:storage-3:http://localhost:9020|restart-storage.sh" \
-    --instance "UMS:ums-1:http://localhost:9001|restart-ums.sh" \
-    --instance "UMS:ums-2:http://localhost:9011|restart-ums.sh" \
-    --instance "UMS:ums-3:http://localhost:9021|restart-ums.sh" \
-    --instance "DMS:dms-1:http://localhost:9002|restart-dms.sh" \
-    --instance "DMS:dms-2:http://localhost:9012|restart-dms.sh" \
-    --instance "DMS:dms-3:http://localhost:9022|restart-dms.sh" \
-    --instance "EPS:eps-1:http://localhost:9003|restart-eps.sh" \
-    --instance "EPS:eps-2:http://localhost:9103|restart-eps.sh" \
-    --instance "EPS:eps-3:http://localhost:9203|restart-eps.sh" \
-    --instance "Notification:notify-1:http://localhost:9004|restart-notification.sh" \
-    --instance "Notification:notify-2:http://localhost:9014|restart-notification.sh" \
-    --instance "Notification:notify-3:http://localhost:9024|restart-notification.sh" \
-    --instance "VSS:vss-1:http://localhost:9005|restart-vss.sh" \
-    --instance "VSS:vss-2:http://localhost:9015|restart-vss.sh" \
-    --instance "VSS:vss-3:http://localhost:9025|restart-vss.sh" \
-    --instance "Gateway:gateway:http://localhost:8443"
-sleep 0.5
+echo "--- Cluster Manager Cluster ---"
+for cm_name in cluster-manager-1 cluster-manager-2 cluster-manager-3; do
+    cm_port=9090
+    cm_node_id=cm-1
+    if [ "$cm_name" = "cluster-manager-2" ]; then
+        cm_port=9091
+        cm_node_id=cm-2
+    elif [ "$cm_name" = "cluster-manager-3" ]; then
+        cm_port=9092
+        cm_node_id=cm-3
+    fi
+    start_service "$cm_name" "com.securenet.common.ClusterManagerMain" \
+        --port "$cm_port" \
+        --node-id "$cm_node_id" \
+        --cluster-peers "$CLUSTER_MANAGER_PEERS" \
+        --check-interval 5000 \
+        --failure-threshold 15000 \
+        --scripts-dir "$RESTART_DIR" \
+        --log-dir "$LOG_DIR" \
+        --initial-delay 30000 \
+        --instance "MqttBroker:mqtt-broker:http://localhost:1884|restart-mqtt-broker.sh" \
+        --instance "IDFS:idfs-1:http://localhost:8080|restart-idfs.sh" \
+        --instance "IDFS:idfs-2:http://localhost:8081|restart-idfs.sh" \
+        --instance "IDFS:idfs-3:http://localhost:8082|restart-idfs.sh" \
+        --instance "Storage:storage-1:http://localhost:9000|restart-storage.sh" \
+        --instance "Storage:storage-2:http://localhost:9010|restart-storage.sh" \
+        --instance "Storage:storage-3:http://localhost:9020|restart-storage.sh" \
+        --instance "UMS:ums-1:http://localhost:9001|restart-ums.sh" \
+        --instance "UMS:ums-2:http://localhost:9011|restart-ums.sh" \
+        --instance "UMS:ums-3:http://localhost:9021|restart-ums.sh" \
+        --instance "DMS:dms-1:http://localhost:9002|restart-dms.sh" \
+        --instance "DMS:dms-2:http://localhost:9012|restart-dms.sh" \
+        --instance "DMS:dms-3:http://localhost:9022|restart-dms.sh" \
+        --instance "EPS:eps-1:http://localhost:9003|restart-eps.sh" \
+        --instance "EPS:eps-2:http://localhost:9103|restart-eps.sh" \
+        --instance "EPS:eps-3:http://localhost:9203|restart-eps.sh" \
+        --instance "Notification:notify-1:http://localhost:9004|restart-notification.sh" \
+        --instance "Notification:notify-2:http://localhost:9014|restart-notification.sh" \
+        --instance "Notification:notify-3:http://localhost:9024|restart-notification.sh" \
+        --instance "VSS:vss-1:http://localhost:9005|restart-vss.sh" \
+        --instance "VSS:vss-2:http://localhost:9015|restart-vss.sh" \
+        --instance "VSS:vss-3:http://localhost:9025|restart-vss.sh" \
+        --instance "Gateway:gateway:http://localhost:8443|restart-gateway.sh"
+    sleep 0.2
+done
 
 # =====================================================================
 # Summary
 # =====================================================================
 echo ""
 echo "================================================================"
-echo "  SecureNet Platform Running — 28 Java processes"
+echo "  SecureNet Platform Running — 30 Java processes"
 echo "================================================================"
 echo ""
 echo "  PostgreSQL Cluster:"
@@ -337,7 +352,7 @@ echo ""
 echo "  Infrastructure:"
 echo "    MQTT Broker:   localhost:1883  (standalone, auto-restart)"
 echo "    API Gateway:   localhost:8443"
-echo "    Cluster Mgr:   localhost:9090"
+echo "    Cluster Mgrs:  localhost:9090, 9091, 9092"
 echo ""
 echo "  Service Clusters (3 instances, load balanced, auto-restart):"
 echo "    IDFS:          localhost:8080, 8081, 8082  (all symmetric)"
@@ -358,5 +373,6 @@ echo ""
 echo "  Commands:"
 echo "    Raft status:     curl http://localhost:9013/raft/status"
 echo "    Cluster health:  curl http://localhost:9090/cluster/status"
+echo "    Cluster leader:  curl http://localhost:9090/cluster/leader"
 echo "    Stop all:        ./scripts/stop-platform.sh"
 echo "================================================================"

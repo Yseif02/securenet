@@ -87,7 +87,7 @@ fi
 # Fallback: kill any java processes still holding our ports
 for port in 1883 8080 8081 8082 8443 9000 9001 9002 9003 9004 9005 \
             9010 9011 9012 9013 9014 9015 9020 9021 9022 9023 9024 \
-            9025 9033 9090 9103 9203; do
+            9025 9033 9090 9091 9092 9103 9203; do
     pid=$(lsof -ti :$port 2>/dev/null)
     if [ -n "$pid" ]; then
         echo "  Force-killing PID $pid on port $port"

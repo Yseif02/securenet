@@ -45,6 +45,8 @@ public class ClusterManager {
     private final long checkIntervalMs;
     private final long failureThresholdMs;
     private final String logDir;
+    private volatile boolean healthChecksEnabled = true;
+    private volatile long stateVersion = 0;
 
     /**
      * @param checkIntervalMs    how often to health-check each instance (ms)
@@ -84,6 +86,7 @@ public class ClusterManager {
         instances.put(instanceId, new ManagedInstance(
                 serviceName, instanceId, url, restartScript,
                 InstanceStatus.HEALTHY, System.currentTimeMillis()));
+        stateVersion++;
         log.info("[ClusterManager] Registered " + instanceId
                 + " (" + serviceName + ") at " + url
                 + (restartScript != null ? " [auto-restart]" : " [manual]"));
@@ -117,11 +120,85 @@ public class ClusterManager {
         return status;
     }
 
+    public synchronized Map<String, Object> getStateSnapshot() {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("version", stateVersion);
+        List<Map<String, Object>> instanceList = new ArrayList<>();
+        for (ManagedInstance inst : instances.values()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("serviceName", inst.serviceName);
+            entry.put("instanceId", inst.instanceId);
+            entry.put("originalInstanceId", inst.originalInstanceId);
+            entry.put("restartScript", inst.restartScript);
+            entry.put("url", inst.url);
+            entry.put("status", inst.status.name());
+            entry.put("lastHealthyTime", inst.lastHealthyTime);
+            entry.put("restartCount", inst.restartCount);
+            instanceList.add(entry);
+        }
+        snapshot.put("instances", instanceList);
+        return snapshot;
+    }
+
+    @SuppressWarnings("unchecked")
+    public synchronized void replaceStateSnapshot(Map<String, Object> snapshot) {
+        Object versionObj = snapshot.get("version");
+        long incomingVersion = versionObj instanceof Number
+                ? ((Number) versionObj).longValue()
+                : 0;
+        if (incomingVersion < stateVersion) {
+            return;
+        }
+
+        Map<String, ManagedInstance> replacement = new LinkedHashMap<>();
+        Object instancesObj = snapshot.get("instances");
+        if (instancesObj instanceof List<?> list) {
+            for (Object raw : list) {
+                if (!(raw instanceof Map<?, ?> map)) continue;
+                String serviceName = asString(map.get("serviceName"));
+                String instanceId = asString(map.get("instanceId"));
+                String originalInstanceId = asString(map.get("originalInstanceId"));
+                String restartScript = asString(map.get("restartScript"));
+                String url = asString(map.get("url"));
+                String status = asString(map.get("status"));
+                long lastHealthyTime = toLong(map.get("lastHealthyTime"));
+                int restartCount = (int) toLong(map.get("restartCount"));
+                if (serviceName == null || instanceId == null || url == null || status == null) {
+                    continue;
+                }
+                replacement.put(instanceId, new ManagedInstance(
+                        serviceName,
+                        instanceId,
+                        url,
+                        restartScript,
+                        InstanceStatus.valueOf(status),
+                        lastHealthyTime,
+                        originalInstanceId != null ? originalInstanceId : instanceId,
+                        restartCount));
+            }
+        }
+
+        instances.clear();
+        instances.putAll(replacement);
+        stateVersion = incomingVersion;
+    }
+
+    public void setHealthChecksEnabled(boolean enabled) {
+        this.healthChecksEnabled = enabled;
+    }
+
+    public boolean isHealthChecksEnabled() {
+        return healthChecksEnabled;
+    }
+
     // =====================================================================
     // Health check loop
     // =====================================================================
 
     private void checkAll() {
+        if (!healthChecksEnabled) {
+            return;
+        }
         for (ManagedInstance inst : instances.values()) {
             if (inst.status == InstanceStatus.REPLACED) continue;
             checkInstance(inst);
@@ -143,6 +220,7 @@ public class ClusterManager {
                 if (inst.status != InstanceStatus.HEALTHY) {
                     log.info("[ClusterManager] " + inst.instanceId
                             + " recovered → HEALTHY");
+                    stateVersion++;
                 }
                 inst.status          = InstanceStatus.HEALTHY;
                 inst.lastHealthyTime = System.currentTimeMillis();
@@ -159,12 +237,14 @@ public class ClusterManager {
 
         if (inst.status == InstanceStatus.HEALTHY) {
             inst.status = InstanceStatus.SUSPECTED;
+            stateVersion++;
             log.warning("[ClusterManager] " + inst.instanceId
                     + " → SUSPECTED (no health response)");
 
         } else if (inst.status == InstanceStatus.SUSPECTED
                 && downTime >= failureThresholdMs) {
             inst.status = InstanceStatus.FAILED;
+            stateVersion++;
             log.warning("[ClusterManager] " + inst.instanceId
                     + " → FAILED (down for " + (downTime / 1000) + "s)");
 
@@ -188,7 +268,9 @@ public class ClusterManager {
      *             cannot discover a new broker port at runtime.
      */
     private static boolean usesFixedPort(String serviceName) {
-        return "EPS".equals(serviceName) || "MqttBroker".equals(serviceName);
+        return "EPS".equals(serviceName)
+                || "MqttBroker".equals(serviceName)
+                || "Gateway".equals(serviceName);
     }
 
     private void restartInstance(ManagedInstance inst) {
@@ -236,6 +318,7 @@ public class ClusterManager {
             // Mark original as replaced
             inst.restartCount = nextRestartCount;
             inst.status = InstanceStatus.REPLACED;
+            stateVersion++;
             log.info("[ClusterManager] " + inst.instanceId
                     + " → REPLACED by " + newInstanceId);
 
@@ -245,6 +328,7 @@ public class ClusterManager {
                     inst.serviceName, newInstanceId, newUrl, inst.restartScript,
                     InstanceStatus.HEALTHY, System.currentTimeMillis(),
                     inst.originalInstanceId, nextRestartCount));
+            stateVersion++;
 
             log.info("[ClusterManager] Replacement " + newInstanceId
                     + " registered at " + newUrl
@@ -266,6 +350,14 @@ public class ClusterManager {
             ss.setReuseAddress(true);
             return ss.getLocalPort();
         }
+    }
+
+    private static String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static long toLong(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     // =====================================================================

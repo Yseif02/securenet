@@ -53,8 +53,9 @@ class LoadBalancerTest {
             clusterManager = startServer("/cluster/status", 200, clusterBody);
 
             LoadBalancer lb = new LoadBalancer("Test", List.of(existingUrl));
+            lb.watchClusterManager(clusterManagerBase(), "Test");
 
-            invoke(lb, "pollClusterManager", clusterManagerBase(), "Test");
+            invoke(lb, "pollClusterManager", "Test");
 
             Map<String, Boolean> status = lb.getStatus();
             assertFalse(status.containsKey(existingUrl));
@@ -62,6 +63,23 @@ class LoadBalancerTest {
         } finally {
             serviceNew.stop(0);
         }
+    }
+
+    @Test
+    void pollClusterManager_fallsBackToNextClusterManagerUrl() throws Exception {
+        service200 = startServer(200, "{\"status\":\"UP\"}");
+        String clusterBody = JsonUtil.toJson(Map.of(
+                "svc-1", Map.of("service", "Test", "url", url(service200), "status", "HEALTHY")
+        ));
+        clusterManager = startServer("/cluster/status", 200, clusterBody);
+
+        LoadBalancer lb = new LoadBalancer("Test", List.of("http://localhost:65530"));
+        lb.watchClusterManager("http://localhost:65531," + clusterManagerBase(), "Test");
+
+        invoke(lb, "pollClusterManager", "Test");
+
+        Map<String, Boolean> status = lb.getStatus();
+        assertEquals(Boolean.TRUE, status.get(url(service200)));
     }
 
     @Test
