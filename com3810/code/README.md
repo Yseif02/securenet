@@ -1,103 +1,126 @@
-# SecureNet IoT Security Platform — README
+# SecureNet IoT Security Platform
+
+SecureNet is a distributed smart-home security platform built as a multi-service Java system. It includes user management, device management, IoT firmware delivery, MQTT-based device communication, event processing, notifications, video streaming, an API gateway, and a demo client flow that exercises the platform end to end.
 
 ## Prerequisites
+
 - Java 21+
 - Maven 3.9+
-- PostgreSQL 14+ (with `createdb` command available)
+- PostgreSQL 14+ with `createdb` and `dropdb`
 
 ## Quick Start
 
-### 1. Set up PostgreSQL
-```bash
-# Create the database (run once)
-createdb securenet
+### Build everything
 
-# If you need to reset (drops all tables):
-dropdb securenet && createdb securenet
-```
-
-### 2. Build
 ```bash
-cd com3810/code
 mvn clean package -DskipTests
 ```
 
-### 3. Run the Full Distributed Platform (Multi-JVM mode)
+### Start the full platform
+
 ```bash
-# Set up PostgreSQL replication cluster (primary + 2 standbys)
 ./scripts/setup-postgres-cluster.sh
-
-#Start PostgresSQL cluster (if not already running)
-./scripts/start-postgres-cluster.sh
-
-# Start all 21 processes
 ./scripts/start-platform.sh
+```
 
-# Run the demo against the running platform
+This launches the PostgreSQL replication cluster plus the SecureNet services, mock-device infrastructure, Raft nodes, and ClusterManager ensemble.
+
+### Run the guided demo
+
+```bash
 java -cp "$(find . -name '*.jar' -path '*/target/*' | grep -v sources | tr '\n' ':')" \
   com.securenet.demo.PlatformDemo
+```
 
-# Stop everything
-./scripts/stop-platform.sh
+The demo walks through:
+
+- homeowner registration and login
+- firmware seeding
+- device onboarding
+- mock device bootstrap + MQTT provisioning
+- door lock and camera commands
+- event timeline reads
+- archived video playback lookup
+- cluster-status inspection
+
+### Stop the platform
+
+```bash
+./scripts/stop-platform.sh --with-pg
 ```
 
 ## Testing
 
 ### Fast unit and component tests
+
 ```bash
 mvn test
 ```
 
-This is the default fast layer. It runs `*Test` classes only and excludes the heavier full-platform suites.
+Runs the regular `*Test` layer. (15 sec)
 
-### Full-platform smoke and correctness tests
-Prerequisite: the platform is already running via `./scripts/start-platform.sh`.
+
+### Integration suites
+
+Prerequisite: `./scripts/start-platform.sh` is already running. (about 5 min)
 
 ```bash
 mvn verify -P integration
 ```
 
-This runs `*IT` suites such as the assertion-driven smoke flow in `demo`. (This took me about 5 min to run)
+### Load suites
 
-### Resilience and failover tests
-Prerequisite: the full platform and ClusterManager are already running.
-
-```bash
-mvn verify -P resilience
-```
-
-This runs `*ResilienceIT` suites that use the real load balancer and ClusterManager failover harness. (This took me about 3:30 to run)
-
-### Load tests
-Prerequisite: the full platform is already running.
+Prerequisite: the full platform is already running. (about 45 seconds)
 
 ```bash
 mvn verify -P load
 ```
 
-This runs `*LoadE2E` suites. The stress harness now supports finite runs and writes a machine-readable JSON summary file when given `--summary-file`. (Took less than a minute to run)
-
 ## Project Structure
-```
+
+```text
 com3810/code/
-├── securenet-model/           Model records, enums, exceptions, common utilities
-├── securenet-storage/         PostgreSQL-backed storage (port 9000)
-├── securenet-user-management/ User accounts + auth tokens (port 9001)
-├── securenet-device-management/ Device registry + commands (port 9002)
-├── securenet-iot-firmware/    IDFS device gateway + MQTT broker (port 8080)
-├── securenet-event-processing/ Event ingestion + Raft consensus (port 9003)
-├── securenet-notification/    Push notification dispatch (port 9004)
-├── securenet-video-streaming/ Recording sessions + archives (port 9005)
-├── securenet-api-gateway/     Client-facing API gateway (port 8443)
-├── securenet-client-api/      Client application service
-├── demo/                      Orchestrator + mock devices
-└── scripts/                   Platform start/stop scripts
+├── securenet-model/              Shared model objects, JSON, clients, common infra
+├── securenet-storage/            PostgreSQL-backed storage service
+├── securenet-user-management/    User accounts, auth, push-token registry
+├── securenet-device-management/  Device registry, ownership, remote commands
+├── securenet-iot-firmware/       IDFS device gateway and MQTT-facing firmware flow
+├── securenet-event-processing/   Security event ingestion and Raft-backed processing
+├── securenet-notification/       Push notification delivery and retry outbox logic
+├── securenet-video-streaming/    Recording sessions, chunk persistence, playback
+├── securenet-api-gateway/        Client-facing edge API
+├── securenet-client-api/         High-level client abstraction used by demos/tests
+├── demo/                         End-to-end walkthroughs and mock devices
+└── scripts/                      Platform lifecycle and PostgreSQL cluster scripts
 ```
+
+## Operational Notes
+
+- `start-platform.sh` is the standard local topology entrypoint.
+- `stop-platform.sh --with-pg` is the cleanest shutdown path after demos or tests.
+- Mock devices talk to IDFS over HTTP for registration/provisioning, then switch to MQTT for steady-state command/event traffic.
+- Notification retries are persisted in PostgreSQL through the notification outbox table.
 
 ## Troubleshooting
 
 ### Port already in use
-Kill any lingering Java processes: `pkill -f securenet` or `./scripts/stop-platform.sh`
 
-### Database already has data
-Reset: `dropdb securenet && createdb securenet`
+```bash
+./scripts/stop-platform.sh --with-pg
+```
+
+If needed, rerun the start script after shutdown completes.
+
+### Reset local database state
+
+```bash
+dropdb securenet && createdb securenet
+```
+
+### Demo compile issues after partial reverts
+
+If a revert removed helper classes used by the demo devices, rebuild from the current repository state with:
+
+```bash
+mvn -q -pl demo -am compile
+```
