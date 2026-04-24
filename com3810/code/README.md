@@ -57,7 +57,7 @@ Prerequisite: the platform is already running via `./scripts/start-platform.sh`.
 mvn verify -P integration
 ```
 
-This runs `*IT` suites such as the assertion-driven smoke flow in `demo`.
+This runs `*IT` suites such as the assertion-driven smoke flow in `demo`. (This took me about 5 min to run)
 
 ### Resilience and failover tests
 Prerequisite: the full platform and ClusterManager are already running.
@@ -66,7 +66,7 @@ Prerequisite: the full platform and ClusterManager are already running.
 mvn verify -P resilience
 ```
 
-This runs `*ResilienceIT` suites that use the real load balancer and ClusterManager failover harness.
+This runs `*ResilienceIT` suites that use the real load balancer and ClusterManager failover harness. (This took me about 3:30 to run)
 
 ### Load tests
 Prerequisite: the full platform is already running.
@@ -75,7 +75,7 @@ Prerequisite: the full platform is already running.
 mvn verify -P load
 ```
 
-This runs `*LoadE2E` suites. The stress harness now supports finite runs and writes a machine-readable JSON summary file when given `--summary-file`.
+This runs `*LoadE2E` suites. The stress harness now supports finite runs and writes a machine-readable JSON summary file when given `--summary-file`. (Took less than a minute to run)
 
 ## Project Structure
 ```
