@@ -14,12 +14,14 @@ public class UmsMain {
         int port = 9001;
         String host = "0.0.0.0";
         String storageUrl = "http://localhost:9000";
+        String clusterManagerUrl = "http://localhost:9090";
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
-                case "--port"        -> port       = Integer.parseInt(args[++i]);
-                case "--host"        -> host        = args[++i];
-                case "--storage-url" -> storageUrl  = args[++i];
+                case "--port"                -> port             = Integer.parseInt(args[++i]);
+                case "--host"                -> host              = args[++i];
+                case "--storage-url"         -> storageUrl       = args[++i];
+                case "--cluster-manager-url" -> clusterManagerUrl = args[++i];
             }
         }
 
@@ -28,7 +30,7 @@ public class UmsMain {
         log.info("  Port:         " + port);
         log.info("  Storage URL:  " + storageUrl);
 
-        StorageGateway gateway = new StorageGateway(storageUrl);
+        StorageGateway gateway = new StorageGateway(storageUrl, clusterManagerUrl);
         UserManagementServiceImpl service = new UserManagementServiceImpl(gateway);
         UserManagementServer server = new UserManagementServer(host, port, service);
         server.start();

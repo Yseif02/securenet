@@ -253,7 +253,8 @@ public abstract class AbstractMockDevice implements Runnable {
         int backoffMs = INITIAL_BACKOFF_MS;
         while (running.get()) {
             try {
-                mqttClient = new MqttClient(mqttBrokerUrl, mqttClientId);
+                mqttClient = MqttPersistenceDirectories.createMockDeviceClient(
+                        mqttBrokerUrl, mqttClientId);
                 MqttConnectOptions opts = new MqttConnectOptions();
                 opts.setUserName(mqttUsername);
                 opts.setPassword(mqttPassword.toCharArray());

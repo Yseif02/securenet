@@ -62,6 +62,8 @@ java -cp "$CLASSPATH" \
     --raft-port "$RAFT_PORT" \
     --storage-url "$STORAGE_URL" \
     --dms-urls "$DMS_URL" \
+    --eps-api-urls "$EPS_API_URLS" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     --peers "$PEERS" \
     >> "$LOG_DIR/$INSTANCE_ID-restarted.log" 2>&1 &
 

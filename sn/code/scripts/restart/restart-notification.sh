@@ -21,6 +21,7 @@ java -cp "$CLASSPATH" \
     com.securenet.notification.NotificationMain \
     --port "$NEW_PORT" \
     --storage-url "$STORAGE_URL" \
+    --cluster-manager-url "$CLUSTER_MANAGER_URL" \
     >> "$LOG_DIR/$INSTANCE_ID.log" 2>&1 &
 
 PID=$!

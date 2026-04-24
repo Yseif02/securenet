@@ -26,6 +26,11 @@ import java.util.logging.Logger;
  *
  * <p>URL pattern: {@code /api/{serviceName}/{endpoint...}}
  * <br>Example: {@code POST /api/device-management/devices/lock}
+ *
+ * <p>Cameras communicate exclusively over MQTT — they never call the
+ * Gateway directly. The /device/vss/ unauthenticated context that was
+ * previously added for camera-side VSS failover is no longer needed
+ * because IDFS now owns chunk forwarding and the VSS resume handshake.
  */
 public class APIGatewayServer {
 
@@ -63,18 +68,6 @@ public class APIGatewayServer {
         }
     }
 
-    /**
-     * Handles all {@code /api/{serviceName}/{endpoint...}} requests.
-     *
-     * <p>Flow:
-     * <ol>
-     *   <li>Extract bearer token from Authorization header</li>
-     *   <li>Authenticate via {@link APIGatewayService#authenticateRequest}</li>
-     *   <li>Parse service name and endpoint from URL path</li>
-     *   <li>Route to downstream service</li>
-     *   <li>Return downstream response to client</li>
-     * </ol>
-     */
     private void handleApiRequest(HttpExchange ex) throws IOException {
         String method = ex.getRequestMethod();
         String path = ex.getRequestURI().getPath();
@@ -112,9 +105,8 @@ public class APIGatewayServer {
                 return;
             }
             String serviceName = afterApi.substring(0, slashIdx);
-            String endpoint = afterApi.substring(slashIdx);
+            String endpoint    = afterApi.substring(slashIdx);
 
-            // Include query string in endpoint
             String query = ex.getRequestURI().getQuery();
             if (query != null) endpoint += "?" + query;
 
@@ -139,12 +131,10 @@ public class APIGatewayServer {
             writeRaw(ex, 200, responseBody);
 
         } catch (APIGatewayService.ServiceUnavailableException e) {
-            log.warning("[APIGateway] 503: service unavailable — " + e.getMessage()
-                    + " for " + method + " " + path);
+            log.warning("[APIGateway] 503: " + e.getMessage() + " for " + method + " " + path);
             writeJson(ex, 503, Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            log.severe("[APIGateway] 500: unexpected error for " + method + " " + path
-                    + " — " + e.getMessage());
+            log.severe("[APIGateway] 500: " + e.getMessage() + " for " + method + " " + path);
             writeJson(ex, 500, Map.of("error", e.getMessage()));
         }
     }

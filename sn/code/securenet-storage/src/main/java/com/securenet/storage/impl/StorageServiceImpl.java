@@ -147,6 +147,17 @@ public class StorageServiceImpl implements StorageService {
                 raw_bytes   BYTEA NOT NULL
             )""",
 
+                """
+            CREATE TABLE IF NOT EXISTS vss_pending_chunks (
+                session_id      VARCHAR(255) NOT NULL,
+                sequence_number BIGINT       NOT NULL,
+                chunk_bytes     BYTEA        NOT NULL,
+                checkpointed_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (session_id, sequence_number)
+            )""",
+
+                "CREATE INDEX IF NOT EXISTS idx_vss_chunks_session ON vss_pending_chunks(session_id, sequence_number)",
+
                 // --- Firmware binaries ---
                 """
             CREATE TABLE IF NOT EXISTS firmware (
@@ -704,8 +715,11 @@ public class StorageServiceImpl implements StorageService {
 
     @Override
     public List<VideoClip> findClipsByDevice(String deviceId, Instant from, Instant to) {
-        String sql = "SELECT clip_id, device_id, owner_id, start_time, duration_millis, file_size_bytes, storage_key FROM video_clips " +
-                "WHERE device_id = ? AND start_time >= ? AND start_time <= ? ORDER BY start_time ASC";
+        String sql = """
+                SELECT clip_id, device_id, owner_id, start_time, duration_millis, file_size_bytes, storage_key 
+                FROM video_clips 
+                WHERE device_id = ? AND start_time >= ? AND start_time <= ? ORDER BY start_time ASC
+                """;
         try (Connection conn = dataSource.getConnection();
             PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, deviceId);
@@ -731,6 +745,99 @@ public class StorageServiceImpl implements StorageService {
             throw new VideoNotFoundException(storageKey);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to load video bytes", e);
+        }
+    }
+
+    // =====================================================================
+    // VSS pending chunks (checkpoint/resume)
+    // =====================================================================
+
+    // Add this to initializeSchema() DDL array:
+    //
+    // """
+    // CREATE TABLE IF NOT EXISTS vss_pending_chunks (
+    //     session_id      VARCHAR(255) NOT NULL,
+    //     sequence_number BIGINT       NOT NULL,
+    //     chunk_bytes     BYTEA        NOT NULL,
+    //     checkpointed_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    //     PRIMARY KEY (session_id, sequence_number)
+    // )""",
+    // "CREATE INDEX IF NOT EXISTS idx_vss_chunks_session ON vss_pending_chunks(session_id, sequence_number)",
+
+    public void saveChunkCheckpoint(String sessionId, long sequenceNumber, byte[] chunkBytes) {
+        String sql = """
+            INSERT INTO vss_pending_chunks (session_id, sequence_number, chunk_bytes)
+            VALUES (?, ?, ?)
+            ON CONFLICT (session_id, sequence_number) DO NOTHING
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ps.setLong(2, sequenceNumber);
+            ps.setBytes(3, chunkBytes);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to save chunk checkpoint", e);
+        }
+    }
+
+    /**
+     * Loads all checkpointed chunks for a session, ordered by sequence number.
+     * Returns a TreeMap so callers get natural seq-order iteration.
+     */
+    public TreeMap<Long, byte[]> loadCheckpointedChunks(String sessionId) {
+        String sql = """
+            SELECT sequence_number, chunk_bytes
+            FROM vss_pending_chunks
+            WHERE session_id = ?
+            ORDER BY sequence_number ASC
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ResultSet rs = ps.executeQuery();
+            TreeMap<Long, byte[]> chunks = new TreeMap<>();
+            while (rs.next()) {
+                chunks.put(rs.getLong("sequence_number"), rs.getBytes("chunk_bytes"));
+            }
+            return chunks;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to load checkpointed chunks", e);
+        }
+    }
+
+    /**
+     * Returns the highest sequence number checkpointed for a session,
+     * or -1 if no chunks have been checkpointed yet.
+     */
+    public long getMaxCheckpointedSeq(String sessionId) {
+        String sql = """
+            SELECT MAX(sequence_number)
+            FROM vss_pending_chunks
+            WHERE session_id = ?
+            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                long val = rs.getLong(1);
+                return rs.wasNull() ? -1L : val;
+            }
+            return -1L;
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to get max checkpointed seq", e);
+        }
+    }
+
+    public void deleteCheckpointedChunks(String sessionId) {
+        String sql = "DELETE FROM vss_pending_chunks WHERE session_id = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to delete checkpointed chunks", e);
         }
     }
 

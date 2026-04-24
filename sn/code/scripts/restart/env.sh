@@ -22,6 +22,7 @@ CLASSPATH="${CLASSPATH#:}"
 
 # Storage URLs — all three instances, load balanced
 STORAGE_URL="http://localhost:9000,http://localhost:9010,http://localhost:9020"
+STORAGE_JDBC_URL="jdbc:postgresql://localhost:5432,localhost:5433,localhost:5434/securenet?targetServerType=primary"
 
 # IDFS URLs — all three instances, load balanced
 IDFS_URL="http://localhost:8080,http://localhost:8081,http://localhost:8082"
@@ -29,11 +30,18 @@ IDFS_URL="http://localhost:8080,http://localhost:8081,http://localhost:8082"
 # DMS URLs
 DMS_URL="http://localhost:9002,http://localhost:9012,http://localhost:9022"
 
-# EPS URL (leader handles writes)
-EPS_URL="http://localhost:9003"
+# EPS URLs — all three, load balanced
+EPS_URL="http://localhost:9003,http://localhost:9103,http://localhost:9203"
+EPS_API_URLS="eps-1=http://localhost:9003,eps-2=http://localhost:9103,eps-3=http://localhost:9203"
 
-# MQTT broker
+# VSS URLs — all three instances, load balanced
+VSS_URL="http://localhost:9005,http://localhost:9015,http://localhost:9025"
+
+# MQTT broker — standalone process on 1883
 MQTT_URL="tcp://localhost:1883"
+
+# Cluster Manager — used by services for dynamic instance discovery
+CLUSTER_MANAGER_URL="http://localhost:9090,http://localhost:9091,http://localhost:9092"
 
 # Log directory — passed in from ClusterManager as LOG_DIR env var,
 # falls back to logs/latest if not set

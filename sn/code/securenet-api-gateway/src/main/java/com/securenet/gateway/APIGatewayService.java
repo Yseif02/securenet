@@ -82,6 +82,22 @@ public interface APIGatewayService {
      */
     void logServiceIncident(String serviceName, String instanceId, String reason);
 
+
+    /**
+     * Routes an unauthenticated device request directly to the VSS load balancer.
+     *
+     * <p>Used for camera-side VSS failover — cameras do not have user bearer
+     * tokens, so they cannot go through the normal authenticated {@code /api/}
+     * path for the session resume handshake.
+     *
+     * @param vssEndpoint the VSS path, e.g. {@code /vss/session/resume}
+     * @param payload     the JSON request body
+     * @return the raw JSON response body from VSS
+     * @throws ServiceUnavailableException if no healthy VSS instance is available
+     */
+    //String routeDeviceVssRequest(String vssEndpoint, String payload)
+            //throws ServiceUnavailableException;
+
     // -------------------------------------------------------------------------
     // Inner exception types scoped to gateway concerns
     // -------------------------------------------------------------------------

@@ -21,7 +21,7 @@ java -cp "$CLASSPATH" \
     -Djava.util.logging.config.file="$LOG_PROPS_FILE" \
     com.securenet.storage.StorageMain \
     --port "$NEW_PORT" \
-    --jdbc-url jdbc:postgresql://localhost:5432/securenet \
+    --jdbc-url "$STORAGE_JDBC_URL" \
     --pool-size 10 \
     >> "$LOG_DIR/$INSTANCE_ID.log" 2>&1 &
 

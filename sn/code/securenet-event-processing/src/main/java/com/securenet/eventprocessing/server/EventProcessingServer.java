@@ -1,6 +1,8 @@
 package com.securenet.eventprocessing.server;
 
 import com.securenet.common.JsonUtil;
+import com.securenet.common.ServiceClient;
+import com.securenet.common.ServiceClient.ServiceResponse;
 import com.securenet.eventprocessing.EventProcessingService;
 import com.securenet.eventprocessing.impl.EventProcessingServiceImpl;
 import com.securenet.model.EventType;
@@ -35,22 +37,31 @@ public class EventProcessingServer {
     private final String host;
     private final int port;
     private final EventProcessingService service;
+    private final Map<String, String> leaderApiUrls;
+    private final ServiceClient httpClient = new ServiceClient();
     private HttpServer httpServer;
 
     public EventProcessingServer(String host, int port, EventProcessingService service) {
+        this(host, port, service, Map.of());
+    }
+
+    public EventProcessingServer(String host, int port, EventProcessingService service,
+                                 Map<String, String> leaderApiUrls) {
         this.host = Objects.requireNonNull(host, "host");
         this.port = port;
         this.service = Objects.requireNonNull(service, "service");
+        this.leaderApiUrls = Map.copyOf(leaderApiUrls);
     }
 
     public void start() throws IOException {
         httpServer = HttpServer.create(new InetSocketAddress(host, port), 0);
-        httpServer.setExecutor(Executors.newFixedThreadPool(8));
+        httpServer.setExecutor(Executors.newFixedThreadPool(32));
 
         httpServer.createContext("/eps/events/ingest",  this::handleIngest);
         httpServer.createContext("/eps/events/device",  this::handleDeviceHistory);
         httpServer.createContext("/eps/events/owner",   this::handleOwnerFeed);
         httpServer.createContext("/eps/events/get",     this::handleGetEvent);
+        httpServer.createContext("/eps/raft/status",    this::handleRaftStatus);
         httpServer.createContext("/health", ex -> {
             log.fine("[EPS] Health check from " + ex.getRemoteAddress());
             writeJson(ex, 200, Map.of("status", "UP"));
@@ -76,9 +87,8 @@ public class EventProcessingServer {
             writeJson(ex, 405, Map.of("error", "Method not allowed"));
             return;
         }
+        Map body = readBody(ex, Map.class);
         try {
-            Map body = readBody(ex, Map.class);
-
             String deviceId    = (String) body.get("deviceId");
             EventType eventType = EventType.valueOf((String) body.get("eventType"));
             Instant occurredAt = Instant.parse((String) body.get("occurredAt"));
@@ -106,6 +116,28 @@ public class EventProcessingServer {
         } catch (IllegalStateException e) {
             // Raft: not the leader
             log.warning("[EPS] Ingest rejected (not leader): " + e.getMessage());
+            if (!"true".equalsIgnoreCase(ex.getRequestHeaders()
+                    .getFirst("X-SecureNet-Eps-Forwarded"))
+                    && service instanceof EventProcessingServiceImpl epsImpl
+                    && epsImpl.getRaftNode() != null) {
+                String leaderId = epsImpl.getRaftNode().getLeaderId();
+                String leaderUrl = leaderApiUrls.get(leaderId);
+                if (leaderUrl != null) {
+                    try {
+                        ServiceResponse forwarded = httpClient.post(
+                                leaderUrl + "/eps/events/ingest", body,
+                                Map.of("X-SecureNet-Eps-Forwarded", "true"));
+                        log.info("[EPS] Forwarded ingest to leader: leaderId="
+                                + leaderId + " url=" + leaderUrl
+                                + " status=" + forwarded.statusCode());
+                        writeRawJson(ex, forwarded.statusCode(), forwarded.body());
+                        return;
+                    } catch (Exception forwardError) {
+                        log.warning("[EPS] Forward to leader failed: leaderId="
+                                + leaderId + " error=" + forwardError.getMessage());
+                    }
+                }
+            }
             Map<String, Object> error = new HashMap<>();
             error.put("error", e.getMessage());
             if (service instanceof EventProcessingServiceImpl epsImpl
@@ -231,6 +263,19 @@ public class EventProcessingServer {
         }
     }
 
+    private void handleRaftStatus(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            writeJson(ex, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        if (service instanceof EventProcessingServiceImpl epsImpl
+                && epsImpl.getRaftNode() != null) {
+            writeJson(ex, 200, epsImpl.getRaftNode().getStatus());
+        } else {
+            writeJson(ex, 200, Map.of("state", "SINGLE_NODE"));
+        }
+    }
+
     // =====================================================================
     // Helpers
     // =====================================================================
@@ -242,7 +287,11 @@ public class EventProcessingServer {
     }
 
     private static void writeJson(HttpExchange ex, int statusCode, Object body) throws IOException {
-        byte[] bytes = JsonUtil.toJson(body).getBytes(StandardCharsets.UTF_8);
+        writeRawJson(ex, statusCode, JsonUtil.toJson(body));
+    }
+
+    private static void writeRawJson(HttpExchange ex, int statusCode, String json) throws IOException {
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         ex.sendResponseHeaders(statusCode, bytes.length);
         try (OutputStream os = ex.getResponseBody()) {

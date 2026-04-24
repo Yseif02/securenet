@@ -51,7 +51,7 @@ public class ServiceFailoverTest {
 
     private final String serviceName;
     private final List<String> allUrls;
-    private final String clusterManagerUrl;
+    private final String clusterManagerUrls;
     private final boolean epsMode;
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -70,7 +70,7 @@ public class ServiceFailoverTest {
                                boolean epsMode) {
         this.serviceName       = serviceName;
         this.allUrls           = allUrls;
-        this.clusterManagerUrl = clusterManagerUrl;
+        this.clusterManagerUrls = clusterManagerUrl;
         this.epsMode           = epsMode;
     }
 
@@ -80,8 +80,13 @@ public class ServiceFailoverTest {
         print("  Testing: " + serviceName + " failover");
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-        LoadBalancer lb = new LoadBalancer(serviceName, new ArrayList<>(allUrls));
-        lb.watchClusterManager(clusterManagerUrl, serviceName);
+        List<String> seedUrls = currentServiceUrls();
+        if (seedUrls.isEmpty()) {
+            seedUrls = new ArrayList<>(allUrls);
+        }
+
+        LoadBalancer lb = new LoadBalancer(serviceName, seedUrls);
+        lb.watchClusterManager(clusterManagerUrls, serviceName);
         lb.start();
 
         try {
@@ -93,9 +98,11 @@ public class ServiceFailoverTest {
 
             // ── Phase 2: Round-robin across all 3 ────────────────────────
             print("\n[Phase 2] Sending " + REQUESTS_PER_PHASE + " requests — expecting all 3 ports...");
-            Map<String, AtomicInteger> counts = sendRequests(lb, REQUESTS_PER_PHASE);
+            Map<String, AtomicInteger> counts = waitForTrafficDistribution(lb, 3, 20_000);
+            if (counts == null)
+                return fail(start, "Phase 2 failed: traffic never stabilized across 3 ports");
             print("  Port hit counts: " + formatCounts(counts));
-            if (counts.size() < 3)
+            if (counts.size() != 3)
                 return fail(start, "Phase 2 failed: only " + counts.size()
                         + " ports received traffic, expected 3. Counts: " + formatCounts(counts));
             print("  ✓ All 3 ports received traffic");
@@ -122,7 +129,9 @@ public class ServiceFailoverTest {
 
             // ── Phase 5: Only 2 ports get traffic ────────────────────────
             print("\n[Phase 5] Sending " + REQUESTS_PER_PHASE + " requests — expecting only 2 ports...");
-            counts = sendRequests(lb, REQUESTS_PER_PHASE);
+            counts = waitForTrafficDistribution(lb, 2, 20_000);
+            if (counts == null)
+                return fail(start, "Phase 5 failed: traffic never stabilized across 2 ports");
             print("  Port hit counts: " + formatCounts(counts));
             if (counts.size() != 2)
                 return fail(start, "Phase 5 failed: " + counts.size()
@@ -149,11 +158,16 @@ public class ServiceFailoverTest {
                 print("  ✓ LB discovered restarted instance");
             }
 
+            err = waitForHealthyCount(lb, 3, RESTART_TIMEOUT_MS);
+            if (err != null) return fail(start, "Phase 6 failed after discovery: " + err);
+
             // ── Phase 7: All 3 ports get traffic again ────────────────────
             print("\n[Phase 7] Sending " + REQUESTS_PER_PHASE + " requests — expecting 3 ports again...");
-            counts = sendRequests(lb, REQUESTS_PER_PHASE);
+            counts = waitForTrafficDistribution(lb, 3, 30_000);
+            if (counts == null)
+                return fail(start, "Phase 7 failed: traffic never stabilized across 3 ports");
             print("  Port hit counts: " + formatCounts(counts));
-            if (counts.size() < 3)
+            if (counts.size() != 3)
                 return fail(start, "Phase 7 failed: only " + counts.size()
                         + " ports received traffic after restart. Counts: " + formatCounts(counts));
             print("  ✓ All 3 ports (including restarted) received traffic");
@@ -184,17 +198,8 @@ public class ServiceFailoverTest {
     @SuppressWarnings("unchecked")
     private KillTarget findKillTarget() {
         try {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(clusterManagerUrl + "/cluster/status"))
-                    .GET().timeout(Duration.ofSeconds(3))
-                    .build();
-            HttpResponse<String> resp = http.send(req,
-                    HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return null;
-
-            Map<String, Map<String, Object>> status =
-                    (Map<String, Map<String, Object>>) JsonUtil.fromJson(
-                            resp.body(), Map.class);
+            Map<String, Map<String, Object>> status = clusterStatus();
+            if (status == null) return null;
 
             // Collect all HEALTHY instances for our service
             List<CandidateInstance> candidates = new ArrayList<>();
@@ -239,6 +244,26 @@ public class ServiceFailoverTest {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Map<String, Object>> clusterStatus() {
+        for (String clusterManagerUrl : clusterManagerUrls.split(",")) {
+            String trimmed = clusterManagerUrl.trim();
+            if (trimmed.isEmpty()) continue;
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(trimmed + "/cluster/status"))
+                        .GET().timeout(Duration.ofSeconds(3))
+                        .build();
+                HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200) {
+                    return (Map<String, Map<String, Object>>) JsonUtil.fromJson(resp.body(), Map.class);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
     /**
      * Uses {@code lsof -ti :<port>} to find the PID listening on a port.
      * Returns -1 if not found or on error.
@@ -277,19 +302,55 @@ public class ServiceFailoverTest {
         for (int i = 0; i < count; i++) {
             try {
                 String url = lb.nextHealthyUrl();
-                String port = url.replaceAll(".*:(\\d+)$", "$1");
-                portCounts.computeIfAbsent(port, k -> new AtomicInteger()).incrementAndGet();
                 HttpRequest req = HttpRequest.newBuilder()
                         .uri(URI.create(url + "/health"))
                         .GET().timeout(Duration.ofSeconds(2))
                         .build();
-                http.send(req, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response = http.send(req, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200) {
+                    String port = url.replaceAll(".*:(\\d+)$", "$1");
+                    portCounts.computeIfAbsent(port, k -> new AtomicInteger()).incrementAndGet();
+                } else {
+                    portCounts.computeIfAbsent("ERROR", k -> new AtomicInteger()).incrementAndGet();
+                }
                 Thread.sleep(50);
             } catch (Exception e) {
                 portCounts.computeIfAbsent("ERROR", k -> new AtomicInteger()).incrementAndGet();
             }
         }
         return portCounts;
+    }
+
+    private Map<String, AtomicInteger> waitForTrafficDistribution(LoadBalancer lb,
+                                                                  int expectedPorts,
+                                                                  int timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        Map<String, AtomicInteger> latest = Map.of();
+        while (System.currentTimeMillis() < deadline) {
+            latest = sendRequests(lb, REQUESTS_PER_PHASE);
+            boolean noErrors = !latest.containsKey("ERROR");
+            boolean expectedCount = latest.size() == expectedPorts;
+            if (noErrors && expectedCount) {
+                return latest;
+            }
+            Thread.sleep(POLL_INTERVAL_MS);
+        }
+        return null;
+    }
+
+    private List<String> currentServiceUrls() {
+        Map<String, Map<String, Object>> status = clusterStatus();
+        if (status == null) {
+            return List.of();
+        }
+        return status.values().stream()
+                .filter(entry -> serviceName.equals(entry.get("service")))
+                .filter(entry -> !"FAILED".equals(entry.get("status")))
+                .filter(entry -> !"REPLACED".equals(entry.get("status")))
+                .map(entry -> String.valueOf(entry.get("url")))
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
     }
 
     // =========================================================================

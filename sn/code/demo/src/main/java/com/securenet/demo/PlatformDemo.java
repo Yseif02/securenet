@@ -38,17 +38,30 @@ public class PlatformDemo {
     /** How often to poll (ms). */
     private static final long CLIP_POLL_INTERVAL_MS = 2_000;
 
+    private static void section(String title) {
+        System.out.println();
+        System.out.println("----------------------------------------------------------------");
+        System.out.println(" " + title);
+        System.out.println("----------------------------------------------------------------");
+    }
+
+    private static void step(String message) {
+        System.out.println("  " + message);
+    }
+
     public static void main(String[] args) throws Exception {
         System.out.println("================================================================");
         System.out.println("  SecureNet Platform — End-to-End Demo");
-        System.out.println("  All requests route through API Gateway + Client API");
+        System.out.println("  Walkthrough: user onboarding, device onboarding, MQTT runtime,");
+        System.out.println("  commands, alerts, event timeline, and video playback.");
         System.out.println("================================================================");
+        System.out.println("  Prerequisite: ./scripts/start-platform.sh is already running");
         System.out.println();
 
         ServiceClient rawClient = new ServiceClient();
 
         // 1. Create homeowner account
-        System.out.println("--- 1. Creating homeowner account ---");
+        section("1. Creating homeowner account");
         String email = "demo-" + System.currentTimeMillis() + "@example.com";
         ServiceResponse regResp = rawClient.post(UMS + "/ums/register",
                 Map.of("email",       email,
@@ -58,31 +71,31 @@ public class PlatformDemo {
             System.err.println("Registration failed: " + regResp.body());
             return;
         }
-        System.out.println("  Registered: " + email);
+        step("Registered homeowner: " + email);
 
         // 2. Seed firmware
-        System.out.println("\n--- 2. Seeding firmware ---");
+        section("2. Seeding firmware");
         StorageGateway storage = new StorageGateway(STORAGE);
         for (DeviceType dt : DeviceType.values()) {
             try {
                 storage.saveFirmwareBinary(dt.name(), "1.0.0", "SECURENET_FW".getBytes());
-                System.out.println("  " + dt.name() + " v1.0.0 ✓");
+                step("Seeded firmware " + dt.name() + " v1.0.0");
             } catch (Exception e) {
-                System.out.println("  " + dt.name() + " already seeded");
+                step("Firmware already present for " + dt.name());
             }
         }
 
         // 3. Login via Client API
-        System.out.println("\n--- 3. Logging in ---");
+        section("3. Logging in through the client API");
         ClientApplicationServiceImpl client = new ClientApplicationServiceImpl(GATEWAY, UMS);
         client.login(email, "securenet123");
 
         // 4. Register push token
-        System.out.println("\n--- 4. Push token ---");
+        section("4. Registering a push token");
         client.registerPushToken("fcm-token-" + System.currentTimeMillis());
 
         // 5. Onboard devices
-        System.out.println("\n--- 5. Onboarding devices ---");
+        section("5. Creating onboarding records");
         String suffix = String.valueOf(System.currentTimeMillis() % 10000);
         record Seed(String id, String token, DeviceType type) {}
         List<Seed> seeds = List.of(
@@ -92,60 +105,64 @@ public class PlatformDemo {
 
         for (Seed s : seeds) {
             client.startDeviceOnboarding(s.id() + ":" + s.token(), s.type().name());
+            step("Prepared onboarding for " + s.type().name() + " -> " + s.id());
         }
 
         // 6. Dashboard (devices pending)
-        System.out.println("\n--- 6. Dashboard (pre-onboarding) ---");
+        section("6. Dashboard before devices boot");
         client.loadDashboard();
 
         // 7. Launch mock devices
-        System.out.println("\n--- 7. Launching mock devices ---");
+        section("7. Launching mock devices");
         MockSensor sensor = new MockSensor(seeds.get(0).id(), seeds.get(0).token(), IDFS);
         MockCamera camera = new MockCamera(seeds.get(1).id(), seeds.get(1).token(), IDFS);
         MockLock   lock   = new MockLock(seeds.get(2).id(),   seeds.get(2).token(), IDFS);
 
         for (AbstractMockDevice d : List.of(sensor, camera, lock)) {
             new Thread(d, "Mock-" + d.getDeviceId()).start();
-            System.out.println("  " + d.getClass().getSimpleName() + ": " + d.getDeviceId());
+            step("Started " + d.getClass().getSimpleName() + " -> " + d.getDeviceId());
             Thread.sleep(200);
         }
-        System.out.println("  Waiting for onboarding (6s)...");
+        step("Waiting for bootstrap + provisioning to settle (6s)");
         Thread.sleep(6000);
 
         // 8. Dashboard (devices online)
-        System.out.println("\n--- 8. Dashboard (post-onboarding) ---");
+        section("8. Dashboard after devices come online");
         for (Device d : client.loadDashboard()) {
-            System.out.println("  " + d.deviceId() + " [" + d.type() + "] " + d.status());
+            step(d.deviceId() + " [" + d.type() + "] " + d.status());
         }
 
         // 9. Commands via Client API → Gateway → DMS → IDFS → MQTT → Device
         // startLiveStream: DMS opens VSS session → STREAM_START → MockCamera
         // sends chunks → DMS auto-closes after 10s → clip archived to PostgreSQL
-        System.out.println("\n--- 9. Commands ---");
+        section("9. Sending commands through the full stack");
+        step("Locking door");
         client.sendLockCommand(seeds.get(2).id());
         Thread.sleep(1000);
+        step("Unlocking door");
         client.sendUnlockCommand(seeds.get(2).id());
         Thread.sleep(1000);
+        step("Starting live stream on camera");
         Instant streamStarted = Instant.now();
         client.startLiveStream(seeds.get(1).id());
 
         // 10. Event timeline
-        System.out.println("\n--- 10. Event timeline ---");
+        section("10. Reading the event timeline");
         Thread.sleep(5000);
         Instant now = Instant.now();
         for (Seed s : seeds) {
             List<EventSummary> events = client.loadEventTimeline(
                     s.id(), now.minus(1, ChronoUnit.HOURS), now, 10);
-            System.out.println("  " + s.id() + ": " + events.size() + " event(s)");
+            step(s.id() + ": " + events.size() + " event(s)");
             for (EventSummary e : events) {
-                System.out.println("    " + e.type() + " at " + e.occurredAt());
+                step("  " + e.type() + " at " + e.occurredAt());
             }
         }
 
         // 10b. Video playback — poll until a clip appears or timeout
-        System.out.println("\n--- 10b. Video playback ---");
-        System.out.println("  Polling for archived clip (up to "
-                + (CLIP_POLL_TIMEOUT_MS / 1000) + "s)...");
+        section("10b. Polling for archived video playback");
+        step("Polling for archived clip (up to "
+                + (CLIP_POLL_TIMEOUT_MS / 1000) + "s)");
 
         String cameraId  = seeds.get(1).id();
         Instant queryFrom = streamStarted.minus(1, ChronoUnit.MINUTES);
@@ -161,11 +178,11 @@ public class PlatformDemo {
                 String body  = clipsResp.body();
                 int startIdx = body.indexOf("\"clipId\":\"") + 10;
                 clipId       = body.substring(startIdx, body.indexOf("\"", startIdx));
-                System.out.println("  ✓ Clip archived: " + clipId);
+                step("Clip archived: " + clipId);
                 break;
             }
 
-            System.out.println("  No clip yet, retrying in "
+            step("No clip yet, retrying in "
                     + (CLIP_POLL_INTERVAL_MS / 1000) + "s...");
             Thread.sleep(CLIP_POLL_INTERVAL_MS);
         }
@@ -178,41 +195,42 @@ public class PlatformDemo {
                 int urlStart       = urlBody.indexOf("\"playbackUrl\":\"") + 15;
                 String playbackUrl = urlBody.substring(urlStart,
                         urlBody.indexOf("\"", urlStart));
-                System.out.println("  ✓ Signed playback URL: " + playbackUrl);
+                step("Signed playback URL: " + playbackUrl);
             } else {
-                System.out.println("  Playback URL generation failed: " + urlResp.body());
+                step("Playback URL generation failed: " + urlResp.body());
             }
         } else {
-            System.out.println("  No clip found within timeout — stream may not have closed yet");
+            step("No clip found within timeout — stream may not have closed yet");
         }
 
         // 11. Raft + Cluster Manager status
-        System.out.println("\n--- 11. Cluster status ---");
+        section("11. Inspecting cluster status");
         for (int p : List.of(9013, 9023, 9033)) {
             try {
-                System.out.println("  Raft " + p + ": "
+                step("Raft " + p + ": "
                         + rawClient.get("http://localhost:" + p + "/raft/status").body());
             } catch (Exception e) {
-                System.out.println("  Raft " + p + ": unreachable");
+                step("Raft " + p + ": unreachable");
             }
         }
         try {
             String clusterStatus = rawClient.get(
                     "http://localhost:9090/cluster/status").body();
-            System.out.println("  Cluster Manager: "
+            step("Cluster Manager: "
                     + clusterStatus.substring(0, Math.min(200, clusterStatus.length()))
                     + "...");
         } catch (Exception e) {
-            System.out.println("  Cluster Manager: unreachable");
+            step("Cluster Manager: unreachable");
         }
 
         // 12. Logout — only reached after video playback completes
-        System.out.println("\n--- 12. Logout ---");
+        section("12. Logging out");
         client.logout();
 
         System.out.println("\n================================================================");
-        System.out.println("  Demo complete — mock devices running in background");
-        System.out.println("  Press Ctrl+C to stop");
+        System.out.println("  Demo complete");
+        System.out.println("  Mock devices are still running in the background.");
+        System.out.println("  Press Ctrl+C to stop them and end the demo cleanly.");
         System.out.println("================================================================");
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

@@ -50,6 +50,7 @@ public class LoadBalancer {
     private final AtomicInteger roundRobinIndex = new AtomicInteger(0);
     private final HttpClient httpClient;
     private final ScheduledExecutorService scheduler;
+    private volatile List<String> watchedClusterManagerUrls = List.of();
 
     // =========================================================================
     // Construction
@@ -112,8 +113,12 @@ public class LoadBalancer {
      *                          (case-sensitive)
      */
     public void watchClusterManager(String clusterManagerUrl, String serviceName) {
+        this.watchedClusterManagerUrls = Arrays.stream(clusterManagerUrl.split(","))
+                .map(String::trim)
+                .filter(url -> !url.isEmpty())
+                .toList();
         scheduler.scheduleAtFixedRate(
-                () -> pollClusterManager(clusterManagerUrl, serviceName),
+                () -> pollClusterManager(serviceName),
                 HEALTH_CHECK_INTERVAL_MS, HEALTH_CHECK_INTERVAL_MS,
                 TimeUnit.MILLISECONDS);
         log.info("[LB:" + serviceName + "] Watching ClusterManager at "
@@ -217,7 +222,18 @@ public class LoadBalancer {
      * </ul>
      */
     @SuppressWarnings("unchecked")
-    private void pollClusterManager(String clusterManagerUrl, String serviceName) {
+    private void pollClusterManager(String serviceName) {
+        for (String clusterManagerUrl : watchedClusterManagerUrls) {
+            if (pollSingleClusterManager(clusterManagerUrl, serviceName)) {
+                return;
+            }
+        }
+        log.warning("[LB:" + serviceName + "] ClusterManager poll failed for all URLs: "
+                + watchedClusterManagerUrls);
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean pollSingleClusterManager(String clusterManagerUrl, String serviceName) {
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(clusterManagerUrl + "/cluster/status"))
@@ -231,7 +247,7 @@ public class LoadBalancer {
             if (resp.statusCode() != 200) {
                 log.warning("[LB:" + serviceName + "] ClusterManager returned HTTP "
                         + resp.statusCode());
-                return;
+                return false;
             }
 
             // Status JSON: { "instanceId": { "service":"DMS", "url":"http://...",
@@ -269,10 +285,11 @@ public class LoadBalancer {
                 }
             }
 
+            return true;
         } catch (Exception e) {
-            // ClusterManager is temporarily unreachable — keep last known state
-            log.warning("[LB:" + serviceName + "] ClusterManager poll failed: "
-                    + e.getMessage());
+            log.warning("[LB:" + serviceName + "] ClusterManager poll failed at "
+                    + clusterManagerUrl + ": " + e.getMessage());
+            return false;
         }
     }
 }

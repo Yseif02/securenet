@@ -9,6 +9,47 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PID_DIR="$PROJECT_DIR/pids"
+LATEST_LOG="$PROJECT_DIR/logs/latest"
+DEVICE_RECORDS_PATH_FILE="$LATEST_LOG/device-records.path"
+
+cleanup_device_records() {
+    local candidate=""
+
+    if [ -f "$DEVICE_RECORDS_PATH_FILE" ]; then
+        candidate="$(cat "$DEVICE_RECORDS_PATH_FILE")"
+    elif [ -e "$LATEST_LOG/device-records" ]; then
+        candidate="$LATEST_LOG/device-records"
+    fi
+
+    if [ -z "$candidate" ]; then
+        echo "  No device records directory recorded for cleanup"
+        return
+    fi
+
+    local resolved
+    resolved="$(cd "$(dirname "$candidate")" 2>/dev/null && pwd)/$(basename "$candidate")"
+    if [ ! -e "$resolved" ]; then
+        echo "  Device records directory already absent: $resolved"
+        return
+    fi
+
+    case "$resolved" in
+        ""|"/"|"$PROJECT_DIR"|"$PROJECT_DIR/logs"|"$PROJECT_DIR/logs/latest")
+            echo "  Refusing unsafe device-records cleanup target: $resolved"
+            return
+            ;;
+    esac
+
+    case "$resolved" in
+        "$PROJECT_DIR"/logs/run_*/device-records|"$PROJECT_DIR"/logs/latest/device-records)
+            echo "  Removing device records directory: $resolved"
+            rm -rf "$resolved"
+            ;;
+        *)
+            echo "  Refusing cleanup outside run-owned logs directory: $resolved"
+            ;;
+    esac
+}
 
 echo "=== Stopping SecureNet Platform ==="
 echo ""
@@ -30,7 +71,6 @@ done
 
 # Also stop any processes restarted by the Cluster Manager
 # (their PID files are written to the log directory by restart scripts)
-LATEST_LOG="$PROJECT_DIR/logs/latest"
 if [ -d "$LATEST_LOG" ]; then
     for pid_file in "$LATEST_LOG"/*.pid; do
         [ -f "$pid_file" ] || continue
@@ -47,7 +87,7 @@ fi
 # Fallback: kill any java processes still holding our ports
 for port in 1883 8080 8081 8082 8443 9000 9001 9002 9003 9004 9005 \
             9010 9011 9012 9013 9014 9015 9020 9021 9022 9023 9024 \
-            9025 9033 9090 9103 9203; do
+            9025 9033 9090 9091 9092 9103 9203; do
     pid=$(lsof -ti :$port 2>/dev/null)
     if [ -n "$pid" ]; then
         echo "  Force-killing PID $pid on port $port"
@@ -60,6 +100,8 @@ if [ "$1" = "--with-pg" ]; then
     echo ""
     "$SCRIPT_DIR/stop-postgres-cluster.sh"
 fi
+
+cleanup_device_records
 
 echo ""
 echo "=== All services stopped ==="

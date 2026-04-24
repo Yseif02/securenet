@@ -39,9 +39,23 @@ public class StorageGateway {
      *                    e.g. "http://localhost:9000,http://localhost:9010,http://localhost:9020"
      */
     public StorageGateway(String storageUrls) {
+        this(storageUrls, null);
+    }
+
+    /**
+     * @param storageUrls       comma-separated storage service URLs
+     * @param clusterManagerUrl URL of the ClusterManager for dynamic instance
+     *                          discovery (e.g. "http://localhost:9090").
+     *                          Pass {@code null} to disable — the gateway will
+     *                          only use the initial URL list.
+     */
+    public StorageGateway(String storageUrls, String clusterManagerUrl) {
         Objects.requireNonNull(storageUrls, "storageUrls");
         this.loadBalancer = new LoadBalancer("Storage",
                 Arrays.asList(storageUrls.split(",")));
+        if (clusterManagerUrl != null) {
+            this.loadBalancer.watchClusterManager(clusterManagerUrl, "Storage");
+        }
         this.loadBalancer.start();
         this.client = new ServiceClient();
     }
@@ -168,7 +182,7 @@ public class StorageGateway {
     }
 
     public List<SecurityEvent> findEventsByOwnerAndType(String ownerId, String eventType,
-                                                         Instant from, Instant to, int maxEvents) {
+                                                        Instant from, Instant to, int maxEvents) {
         String url = "/storage/events/owner/" + ownerId + "/type/" + eventType +
                 "?from=" + from + "&to=" + to + "&max=" + maxEvents;
         ServiceResponse resp = get(url);
@@ -209,6 +223,54 @@ public class StorageGateway {
         }
         Map map = resp.bodyAs(Map.class);
         return Base64.getDecoder().decode((String) map.get("bytes"));
+    }
+
+
+    // =====================================================================
+    // VSS pending chunks (checkpoint/resume)
+    // =====================================================================
+
+    public void saveChunkCheckpoint(String sessionId, long sequenceNumber, byte[] chunkBytes) {
+        String b64 = Base64.getEncoder().encodeToString(chunkBytes);
+        post("/storage/vss-chunks", Map.of(
+                "sessionId",      sessionId,
+                "sequenceNumber", sequenceNumber,
+                "chunkBytes",     b64));
+    }
+
+    /**
+     * Returns all checkpointed chunks for the session as a TreeMap keyed by
+     * sequence number, so callers get natural ascending order.
+     */
+    @SuppressWarnings("unchecked")
+    public TreeMap<Long, byte[]> loadCheckpointedChunks(String sessionId) {
+        ServiceResponse resp = get("/storage/vss-chunks/" + sessionId);
+        List<Map<String, Object>> rows = JsonUtil.gson().fromJson(resp.body(),
+                new TypeToken<List<Map<String, Object>>>(){}.getType());
+        TreeMap<Long, byte[]> result = new TreeMap<>();
+        for (Map<String, Object> row : rows) {
+            long seq = ((Number) row.get("sequenceNumber")).longValue();
+            byte[] bytes = Base64.getDecoder().decode((String) row.get("chunkBytes"));
+            result.put(seq, bytes);
+        }
+        return result;
+    }
+
+    /**
+     * Returns the highest sequence number checkpointed for a session,
+     * or -1 if none yet.
+     */
+    public long getMaxCheckpointedSeq(String sessionId) {
+        ServiceResponse resp = get("/storage/vss-chunks/" + sessionId + "/max-seq");
+        if (resp.statusCode() == 404) return -1L;
+        Map map = resp.bodyAs(Map.class);
+        Object val = map.get("maxSeq");
+        if (val == null) return -1L;
+        return ((Number) val).longValue();
+    }
+
+    public void deleteCheckpointedChunks(String sessionId) {
+        delete("/storage/vss-chunks/" + sessionId);
     }
 
     // =====================================================================

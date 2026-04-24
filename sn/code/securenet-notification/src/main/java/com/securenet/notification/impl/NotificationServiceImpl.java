@@ -128,16 +128,17 @@ public class NotificationServiceImpl implements NotificationService {
     public boolean dispatchViaApns(String apnsToken, String payload) {
         log.info("[Notification] APNS dispatch: token=" + apnsToken
                 + " payload=" + truncate(payload, 80));
-        // Simulated — always succeeds
-        return true;
+        // Simulated — succeed 4/5 times
+        return apnsToken.hashCode() % 5 !=0;
     }
 
     @Override
     public boolean dispatchViaFcm(String fcmToken, String payload) {
         log.info("[Notification] FCM dispatch: token=" + fcmToken
                 + " payload=" + truncate(payload, 80));
-        // Simulated — always succeeds
-        return true;
+
+        // Simulated — succeed 4/5 times
+        return fcmToken.hashCode() % 5 !=0;
     }
 
     // =====================================================================

@@ -62,6 +62,7 @@ public class StorageServiceServer {
         httpServer.createContext("/storage/recording-sessions",   this::handleRecordingSessions);
         httpServer.createContext("/storage/notification-outbox",  this::handleNotificationOutbox);
         httpServer.createContext("/storage/pending-commands", this::handlePendingCommands);
+        httpServer.createContext("/storage/vss-chunks", this::handleVssChunks);
         httpServer.createContext("/health", ex -> {
             log.fine("[Storage] Health check from " + ex.getRemoteAddress());
             writeJson(ex, 200, Map.of("status", "UP"));
@@ -959,5 +960,70 @@ public class StorageServiceServer {
             }
         }
         return params;
+    }
+
+
+
+    // =====================================================================
+    // VSS chunk checkpoint handlers
+    // =====================================================================
+
+    private void handleVssChunks(HttpExchange ex) throws IOException {
+        try {
+            String method    = ex.getRequestMethod();
+            String[] segments = ex.getRequestURI().getPath().split("/");
+            // segments: ["", "storage", "vss-chunks", <sessionId?>, <"max-seq"?>]
+
+            // POST /storage/vss-chunks  — save one chunk
+            if ("POST".equals(method) && segments.length == 3) {
+                Map body = readBody(ex, Map.class);
+                String sessionId = (String) body.get("sessionId");
+                long seq         = ((Number) body.get("sequenceNumber")).longValue();
+                byte[] bytes     = Base64.getDecoder().decode((String) body.get("chunkBytes"));
+                log.fine("[Storage] saveChunkCheckpoint: sessionId=" + sessionId + " seq=" + seq);
+                storageService.saveChunkCheckpoint(sessionId, seq, bytes);
+                writeJson(ex, 201, Map.of("status", "ok"));
+                return;
+            }
+
+            // GET /storage/vss-chunks/{sessionId}/max-seq  — highest checkpointed seq
+            if ("GET".equals(method) && segments.length == 5 && "max-seq".equals(segments[4])) {
+                String sessionId = segments[3];
+                log.fine("[Storage] getMaxCheckpointedSeq: sessionId=" + sessionId);
+                long maxSeq = storageService.getMaxCheckpointedSeq(sessionId);
+                writeJson(ex, 200, Map.of("maxSeq", maxSeq));
+                return;
+            }
+
+            // GET /storage/vss-chunks/{sessionId}  — load all chunks for session
+            if ("GET".equals(method) && segments.length == 4) {
+                String sessionId = segments[3];
+                log.fine("[Storage] loadCheckpointedChunks: sessionId=" + sessionId);
+                TreeMap<Long, byte[]> chunks = storageService.loadCheckpointedChunks(sessionId);
+                List<Map<String, Object>> rows = new ArrayList<>();
+                for (Map.Entry<Long, byte[]> entry : chunks.entrySet()) {
+                    rows.add(Map.of(
+                            "sequenceNumber", entry.getKey(),
+                            "chunkBytes",     Base64.getEncoder().encodeToString(entry.getValue())
+                    ));
+                }
+                writeJson(ex, 200, rows);
+                return;
+            }
+
+            // DELETE /storage/vss-chunks/{sessionId}  — cleanup after session close
+            if ("DELETE".equals(method) && segments.length == 4) {
+                String sessionId = segments[3];
+                log.info("[Storage] deleteCheckpointedChunks: sessionId=" + sessionId);
+                storageService.deleteCheckpointedChunks(sessionId);
+                writeJson(ex, 200, Map.of("status", "ok"));
+                return;
+            }
+
+            writeJson(ex, 400, Map.of("error", "Bad request"));
+        } catch (Exception e) {
+            log.severe("[Storage] handleVssChunks 500: " + e.getMessage());
+            writeJson(ex, 500, Map.of("error", e.getMessage()));
+        }
     }
 }
