@@ -10,6 +10,17 @@ SecureNet is a distributed smart-home security platform built as a multi-service
 
 ## Quick Start
 
+### Setup Database
+Run in bash:
+```bash
+createdb securenet
+```
+Or open Postgres terminal and run:
+```bash
+create database securenet
+```
+
+
 ### Build everything
 
 ```bash
