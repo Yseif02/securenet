@@ -1,2 +1,9 @@
-SecureNet IoT Security Platform
-SecureNet is a distributed smart-home security platform built as a multi-service Java system. It includes user management, device management, IoT firmware delivery, MQTT-based device communication, event processing, notifications, video streaming, an API gateway, and a demo client flow that exercises the platform end to end.
+### SecureNet IoT Security Platform
+
+SecureNet is a distributed home-security platform that brings together smart locks, motion sensors, and cameras into one coordinated system. At a high level, it gives homeowners a single interface for registration, authentication, device onboarding, device control, event history, notifications, and archived video access. The platform is designed as a real multi-service system rather than a monolith, with clear boundaries between gateway, device management, user management, event processing, notification, video streaming, firmware-facing services, and persistent storage.
+
+On the backend, SecureNet is built around distributed-systems principles so the platform can keep operating even when individual nodes fail. Requests enter through an API Gateway and are routed to specialized services, while health-aware load balancing, service discovery, replicated storage, and coordinated event processing help the system tolerate faults and recover cleanly. Security and state consistency are also central concerns: device lifecycle, user authentication, command routing, event persistence, and media archival are all handled through explicit service contracts instead of ad hoc cross-service behavior.
+
+On the device side, SecureNet also includes embedded firmware for ESP32-based hardware such as smart locks, motion sensors, and cameras. Those devices participate in the same platform through secure bootstrap flows, heartbeat and telemetry reporting, MQTT-based command channels, OTA firmware delivery, and camera upload pipelines for archived clips. The result is an end-to-end system that spans embedded systems, backend infrastructure, distributed coordination, and a browser-based client, making SecureNet both a full-stack product and a substantial distributed and embedded systems engineering project.
+
+See https://github.com/Yseif02/SecureNet-Framework for firmware
